@@ -63,6 +63,17 @@ main { height: 100%; position: relative; min-height: 0; }
   cursor: pointer;
 }
 
+.tool-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tool-row button {
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
 #expand-bar {
   display: flex;
   align-items: center;

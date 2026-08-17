@@ -40,9 +40,13 @@
 
 ## 回声关系
 
-(书籍A) -[:ECHO]-> (被书籍A所提及的书籍B)
+### EDGES
 
 | 属性 | 类型 | 说明 |
 |---|---|---|
+| `source_work_id` | String | 当前作品 |
+| `target_work_id` | String | 被提及作品 |
 | `evidence` | String | 摘抄文本，即正文某片段出现另一本书的名称 |
 | `note` | String | 备注或补充说明 |
+| `confidence` | String | 置信度 |
+| `reviewStatus` | String | 草稿/已审核 |

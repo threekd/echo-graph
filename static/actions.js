@@ -2,7 +2,7 @@
 
 import { el, esc } from "./util.js";
 import { state } from "./state.js";
-import { renderView } from "./renderer.js";
+import { renderView, getCameraState, applyCameraState } from "./renderer.js";
 import {
   showEmptyPanel,
   showPickError,
@@ -13,7 +13,13 @@ import {
   renderPathPanel,
 } from "./panels.js";
 
-var rippleCenter = null; // 当前涟漪视图的中心作品
+var rippleCenter = null;   // 当前涟漪视图的中心作品
+var currentActionView = "main"; // 与异步布局解耦的"动作层"视图状态
+var pathFromId = null;
+var pathToId = null;
+var currentAuthorId = null;
+var urlLock = false;       // 应用 URL 期间禁止回写,避免循环
+var lastHandledHash = null;
 
 export function loadGraph() {
   return fetch("/api/graph")
@@ -94,9 +100,10 @@ function countIslands(data) {
   }).length;
 }
 
-function renderMain() {
+function renderMain(opts) {
+  currentActionView = "main";
   var data = isIslandsHidden() ? filterIslands(state.fullData) : state.fullData;
-  renderView("main", data, { preserveCamera: true });
+  renderView("main", data, opts || { preserveCamera: true });
 }
 
 export function selectNode(id) {
@@ -109,11 +116,13 @@ export function selectNode(id) {
         renderRipple(d);     // 自动进入涟漪视图
         renderWorkPanel(d);  // 侧边栏显示详情
         showToast("已展开《" + node.label + "》的涟漪");
+        syncUrl(true);
       });
   } else {
     renderAuthorView(node);  // 3D:该作者 + 他的书
     renderAuthorPanel(node);
     showToast("视图:作者 · " + node.label + "(" + countWorks(node.id) + " 部作品)");
+    syncUrl(true);
   }
 }
 
@@ -135,6 +144,8 @@ export function showNodeDetail(id) {
 }
 
 function renderAuthorView(author) {
+  currentActionView = "author";
+  currentAuthorId = author.id;
   var nodes = [author];
   var edges = [];
   state.fullData.nodes.filter(function (n) {
@@ -147,6 +158,7 @@ function renderAuthorView(author) {
 }
 
 function renderRipple(detail) {
+  currentActionView = "ripple";
   var center = detail.work.id;
   rippleCenter = center;
   el("expand-range").value = "1";
@@ -182,6 +194,7 @@ function expandRipple() {
       renderView("ripple", data, { preserveCamera: true }); // 拖动滑动条时保持当前视角
       el("expand-value").textContent = hops + " 级 · " + data.nodes.length + " 本书";
       showToast(hops + " 级扩散 · " + data.nodes.length + " 本书");
+      syncUrl(false);
     });
 }
 
@@ -190,6 +203,8 @@ function findPath() {
   var t = el("to").value.trim();
   var fromId = state.workLookup[f];
   var toId = state.workLookup[t];
+  pathFromId = fromId || null;
+  pathToId = toId || null;
   if (!fromId || !toId) {
     showPickError();
     showToast("请从下拉列表中选择两部作品");
@@ -205,10 +220,12 @@ function findPath() {
       }
       renderPath(result, f, t);
       showToast("提及链 · " + result.nodes.length + " 本书 / " + result.edges.length + " 次提及");
+      syncUrl(true);
     });
 }
 
 function renderPath(result, f, t) {
+  currentActionView = "path";
   var nodes = [];
   var edges = [];
   var ids = {};
@@ -272,7 +289,9 @@ function swapPath() {
 
 export function wireEvents() {
   el("btn-path").onclick = findPath;
-  el("btn-back-main").onclick = function () { loadGraph(); };
+  el("btn-back-main").onclick = function () {
+    loadGraph().then(function () { syncUrl(true); });
+  };
   el("btn-swap").onclick = swapPath;
   el("btn-example").onclick = function () {
     el("from").value = "伊利亚特 - 荷马";
@@ -287,7 +306,11 @@ export function wireEvents() {
       showToast("已显示全部作品");
     }
     if (state.currentView === "main") renderMain();
+    syncUrl(true);
   });
+  el("btn-share").onclick = shareLink;
+  el("btn-export-png").onclick = exportPng;
+  el("btn-export-data").onclick = exportData;
   setupPathAutocomplete("from", "from-results");
   setupPathAutocomplete("to", "to-results");
 
@@ -346,31 +369,159 @@ export function wireEvents() {
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && state.currentView !== "main") {
-      loadGraph();
+      loadGraph().then(function () { syncUrl(true); });
     }
   });
+  window.addEventListener("popstate", handleHash);
+  window.addEventListener("hashchange", handleHash);
 }
 
-// 深链:#path=workA,workB / #ripple=workId / #author=authorId
-export function handleHash() {
-  var h = location.hash.replace(/^#/, "");
-  if (!h) return;
-  if (h.indexOf("path=") === 0) {
-    var parts = h.slice(5).split(",");
-    if (parts.length === 2) {
-      var f = findNode(parts[0]);
-      var t = findNode(parts[1]);
-      if (f && t) {
-        el("from").value = f.label + " - " + (f.author || "");
-        el("to").value = t.label + " - " + (t.author || "");
-        findPath();
-      }
-    }
-  } else if (h.indexOf("ripple=") === 0) {
-    fetch("/api/work/" + encodeURIComponent(h.slice(7)))
-      .then(function (r) { return r.json(); })
-      .then(renderRipple);
-  } else if (h.indexOf("author=") === 0) {
-    selectNode(h.slice(7));
+// ---- URL 状态化 ----
+
+function buildUrlHash() {
+  var v = "main";
+  if (currentActionView === "ripple" && rippleCenter) {
+    v = "ripple:" + rippleCenter + ":" + (el("expand-range").value || 1);
+  } else if (currentActionView === "author" && currentAuthorId) {
+    v = "author:" + currentAuthorId;
+  } else if (currentActionView === "path" && pathFromId && pathToId) {
+    v = "path:" + pathFromId + "," + pathToId;
   }
+  var parts = ["v=" + v];
+  if (isIslandsHidden()) parts.push("islands=1");
+  return parts.join("&");
+}
+
+function syncUrl(push) {
+  if (urlLock) return;
+  var url = "#" + buildUrlHash();
+  try {
+    if (push) history.pushState(null, "", url);
+    else history.replaceState(null, "", url);
+  } catch (e) { /* 忽略 */ }
+}
+
+function parseCam(s) {
+  var n = s.split(",").map(function (x) { return parseFloat(x); });
+  if (n.length < 3 || n.some(isNaN)) return null;
+  return { theta: n[0], phi: n[1], radius: n[2], cx: n[3] || 0, cy: n[4] || 0, cz: n[5] || 0 };
+}
+
+// 深链(新格式 #v=...) + 兼容旧格式(#path= / #ripple= / #author=)
+export function handleHash() {
+  var hash = location.hash;
+  if (hash === lastHandledHash) return;
+  lastHandledHash = hash;
+  var h = hash.replace(/^#/, "");
+  if (!h) return;
+  if (!state.fullData.nodes.length) return; // 数据未就绪时忽略(启动时 loadGraph 后再调用)
+
+  var v = null, islands = false, cam = null;
+  h.split("&").forEach(function (p) {
+    if (p.indexOf("v=") === 0) v = p.slice(2);
+    else if (p.indexOf("path=") === 0) v = "path:" + p.slice(5);
+    else if (p.indexOf("ripple=") === 0) v = "ripple:" + p.slice(7) + ":1";
+    else if (p.indexOf("author=") === 0) v = "author:" + p.slice(7);
+    else if (p.indexOf("islands=") === 0) islands = p.slice(8) === "1";
+    else if (p.indexOf("cam=") === 0) cam = parseCam(p.slice(4));
+  });
+  el("hide-islands").checked = !!islands;
+
+  urlLock = true;
+  var parts = (v || "main").split(":");
+  function finish() {
+    urlLock = false;
+    syncUrl(false); // 规范化 URL(替换,不产生历史记录)
+  }
+
+  if (parts[0] === "ripple" && parts[1]) {
+    fetch("/api/work/" + encodeURIComponent(parts[1]))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        renderRipple(d);
+        renderWorkPanel(d);
+        var hops = parseInt(parts[2], 10) || 1;
+        if (hops > 1) {
+          el("expand-range").value = String(hops);
+          expandRipple();
+        }
+        if (cam) applyCameraState(cam);
+        finish();
+      })
+      .catch(finish);
+  } else if (parts[0] === "author" && parts[1]) {
+    selectNode(parts[1]);
+    if (cam) applyCameraState(cam);
+    finish();
+  } else if (parts[0] === "path" && parts[1]) {
+    var ids = parts[1].split(",");
+    var f = findNode(ids[0]);
+    var t = findNode(ids[1]);
+    if (f && t) {
+      el("from").value = f.label + " - " + (f.author || "");
+      el("to").value = t.label + " - " + (t.author || "");
+      findPath();
+      if (cam) applyCameraState(cam);
+    }
+    finish();
+  } else {
+    renderMain(cam ? { camera: cam } : {});
+    finish();
+  }
+}
+
+// ---- 分享与导出 ----
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(function () { legacyCopy(text); });
+  } else {
+    legacyCopy(text);
+  }
+}
+
+function legacyCopy(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+  ta.remove();
+}
+
+function shareLink() {
+  var cam = getCameraState();
+  var hash = buildUrlHash() + "&cam=" +
+    [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz]
+      .map(function (x) { return +x.toFixed(3); }).join(",");
+  var url = location.origin + location.pathname + "#" + hash;
+  copyText(url);
+  showToast("分享链接已复制");
+}
+
+function exportPng() {
+  var canvas = document.querySelector("#graph canvas");
+  if (!canvas) return;
+  var a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = "echo-graph-" + Date.now() + ".png";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast("已导出当前视图 PNG");
+}
+
+function exportData() {
+  var blob = new Blob([JSON.stringify(state.fullData, null, 2)], { type: "application/json" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "echo-graph-data.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("已导出图谱数据 JSON");
 }

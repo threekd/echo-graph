@@ -33,6 +33,26 @@ export function setOnNodeHover(fn) {
   onNodeHover = fn;
 }
 
+export function getCameraState() {
+  return {
+    theta: cameraState.theta,
+    phi: cameraState.phi,
+    radius: cameraState.radius,
+    cx: center.x,
+    cy: center.y,
+    cz: center.z,
+  };
+}
+
+export function applyCameraState(cam) {
+  if (!cam) return;
+  if (typeof cam.theta === "number") cameraState.theta = cam.theta;
+  if (typeof cam.phi === "number") cameraState.phi = cam.phi;
+  if (typeof cam.radius === "number") cameraState.radius = cam.radius;
+  if (typeof cam.cx === "number") center.set(cam.cx, cam.cy || 0, cam.cz || 0);
+  applyCamera();
+}
+
 // =============================== 初始化 ===============================
 
 export function initThree() {
@@ -46,7 +66,7 @@ export function initThree() {
   camera = new THREE.PerspectiveCamera(55, w / h, 1, 12000);
   applyCamera();
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(w, h);
   renderer.domElement.style.position = "absolute";
@@ -455,7 +475,9 @@ function viewLabel(kind, data) {
 
 function finishView(kind, data, opts) {
   opts = opts || {};
-  if (!opts.preserveCamera) {
+  if (opts.camera) {
+    applyCameraState(opts.camera);
+  } else if (!opts.preserveCamera) {
     if (kind === "main") {
       cameraState.radius = 1500; cameraState.theta = -Math.PI / 2 + 0.4; cameraState.phi = Math.PI / 2 - 0.18;
     } else if (kind === "ripple") {
@@ -467,7 +489,7 @@ function finishView(kind, data, opts) {
     }
     center.set(0, 0, 0); // 切换视图时重置平移
   }
-  applyCamera();
+  if (!opts.camera) applyCamera();
   lastInteraction = Date.now();
   state.currentView = kind;
   el("btn-back-main").style.display = kind === "main" ? "none" : "block";

@@ -7,53 +7,42 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <h1>The Echo Graph <span class="sub">回声图谱 · 世界文学影响</span></h1>
-      <span class="badge">演示数据</span>
-    </div>
-    <nav>
-      <input id="q" type="text" placeholder="搜索作家 / 作品…" autocomplete="off" />
-      <ul id="q-results"></ul>
-      <div class="path-box">
-        <input id="from" list="works" placeholder="起点作品" />
-        <span class="arrow">→</span>
-        <input id="to" list="works" placeholder="终点作品" />
-        <button id="btn-path">寻找路径</button>
-        <button id="btn-example" title="示例:伊利亚特 → 活着">示例</button>
-        <button id="btn-reset" class="ghost">全部图谱</button>
-      </div>
-      <datalist id="works"></datalist>
-    </nav>
-  </header>
-
   <main>
     <div id="graph">
+      <button id="btn-back-main" class="corner-btn" style="display:none">返回全部图谱</button>
       <div id="stars">
         <div class="shooting"></div>
         <div class="shooting"></div>
       </div>
     </div>
     <aside id="panel">
-      <div id="panel-empty">
-        <p>点击任意节点查看详情;</p>
-        <p>选中作品后可查看「涟漪」与「影响链」。</p>
+      <div id="sidebar-top">
+        <div class="brand">
+          <h1>The Echo Graph <span class="sub">回声图谱 · 世界文学影响</span></h1>
+          <span class="badge">演示数据</span>
+        </div>
+        <nav>
+          <input id="q" type="text" placeholder="搜索作家 / 作品…" autocomplete="off" />
+          <ul id="q-results"></ul>
+          <div class="path-box">
+            <input id="from" list="works" placeholder="起点作品" />
+            <span class="arrow">→</span>
+            <input id="to" list="works" placeholder="终点作品" />
+            <button id="btn-path">寻找路径</button>
+            <button id="btn-example" title="示例:伊利亚特 → 活着">示例</button>
+            <button id="btn-reset" class="ghost">全部图谱</button>
+          </div>
+          <datalist id="works"></datalist>
+        </nav>
+      </div>
+      <div id="panel-content">
+        <div id="panel-empty">
+          <p>点击任意节点查看详情;</p>
+          <p>选中作品后可查看「涟漪」与「提及链」。</p>
+        </div>
       </div>
     </aside>
   </main>
-
-  <footer>
-    <div id="legend">
-      <span class="lg"><i class="dot author"></i>作家</span>
-      <span class="lg"><i class="dot work"></i>作品</span>
-      <span class="lg"><i class="line homage"></i>致敬</span>
-      <span class="lg"><i class="line quote"></i>引用</span>
-      <span class="lg"><i class="line mentorship"></i>师承</span>
-      <span class="lg"><i class="line translation"></i>翻译传播</span>
-      <span class="lg"><i class="line wrote"></i>创作归属</span>
-    </div>
-    <p class="notice">当前数据为<strong>编造演示数据</strong>:作家/作品信息大致符合文学史,但所有影响关系与引文均为演示用途,不可作为学术依据。</p>
-  </footer>
 
   <script src="/static/vendor/three.min.js"></script>
   <script src="/static/vendor/CSS2DRenderer.js"></script>

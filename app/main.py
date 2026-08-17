@@ -16,7 +16,7 @@ logger = logging.getLogger("echo_graph")
 
 ROOT = Path(__file__).resolve().parent.parent
 
-app = FastAPI(title="Echo Graph API", version="0.1.0", description="世界文学影响图谱 API(演示)")
+app = FastAPI(title="Echo Graph API", version="0.2.0", description="世界文学提及图谱 API(演示)")
 
 store = get_store()
 
@@ -57,7 +57,7 @@ def path(
 ) -> dict:
     result = store.path(frm.strip(), to.strip(), max_hops)
     if result is None:
-        raise HTTPException(status_code=404, detail="no influence path found")
+        raise HTTPException(status_code=404, detail="no mention path found")
     return result
 
 

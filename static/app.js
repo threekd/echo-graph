@@ -10,24 +10,11 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  var KIND_ZH = {
-    homage: "致敬",
-    quote: "引用",
-    mentorship: "师承",
-    translation: "翻译传播",
-    rebuttal: "回应",
-  };
-  var KIND_COLOR = {
-    homage: 0xff7b6b,
-    quote: 0xffb86b,
-    mentorship: 0x5b9dff,
-    translation: 0xffe066,
-    rebuttal: 0x5eead4,
-  };
-  var NODE_COLORS = { author: 0x9cc7ff, work: 0xffd166 };
+  var MENTION_COLOR = 0x67e8f9; // 提及连线:青色星光
 
   var fullData = { nodes: [], edges: [] }; // full dataset (lookups, panels)
   var viewData = { nodes: [], edges: [] }; // current 3D view
+  var currentView = "main";
   var workLookup = {};
 
   // ---- Three.js state ----
@@ -37,8 +24,9 @@
   var edgeLines = [];    // line with userData.edge
   var positions = {};    // id -> THREE.Vector3
   var cameraState = { radius: 1500, theta: -Math.PI / 2 + 0.4, phi: Math.PI / 2 - 0.18 };
+  var center = new THREE.Vector3(0, 0, 0); // 相机注视点(平移时移动它)
   var lastInteraction = 0;
-  var dragging = false, dragMoved = false, lastX = 0, lastY = 0;
+  var dragging = false, dragButton = 0, dragMoved = false, lastX = 0, lastY = 0;
   var glowTexture = null;
 
   // =============================== Three.js core ===============================
@@ -87,12 +75,13 @@
     var r = cameraState.radius;
     var th = cameraState.theta;
     var ph = cameraState.phi;
-    camera.position.set(
+    var offset = new THREE.Vector3(
       r * Math.sin(ph) * Math.cos(th),
       r * Math.cos(ph),
       r * Math.sin(ph) * Math.sin(th)
     );
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(center).add(offset);
+    camera.lookAt(center);
   }
 
   function addBackgroundStars() {
@@ -138,7 +127,7 @@
 
   function createNodeGroup(n, pos) {
     var isAuthor = n.type === "author";
-    var color = NODE_COLORS[isAuthor ? "author" : "work"] || 0xffffff;
+    var color = isAuthor ? 0x9cc7ff : 0xffd166; // 作者星:蓝白 / 作品星:金色
     var r = isAuthor ? 6 : 8.5;
     if (!glowTexture) glowTexture = makeGlowTexture();
 
@@ -183,13 +172,12 @@
   }
 
   function createEdgeLine(e) {
-    var isWrote = e.type === "wrote";
-    var color = isWrote ? 0x556080 : (KIND_COLOR[e.kind] || 0x8ab8ff);
+    var isAuthored = e.type === "authored";
     var mat = new THREE.LineBasicMaterial({
-      color: color,
+      color: isAuthored ? 0x7b88b8 : MENTION_COLOR,
       transparent: true,
-      opacity: isWrote ? 0.22 : 0.55,
-      blending: THREE.AdditiveBlending,
+      opacity: isAuthored ? 0.28 : 0.55,
+      blending: isAuthored ? THREE.NormalBlending : THREE.AdditiveBlending,
       depthWrite: false,
       fog: true,
     });
@@ -222,6 +210,7 @@
   function layoutFor(kind, data) {
     if (kind === "ripple") return rippleLayout(data);
     if (kind === "path") return pathLayout(data);
+    if (kind === "author") return authorLayout(data);
     return forceLayout(data.nodes.map(function (n) { return n.id; }), data.edges);
   }
 
@@ -283,7 +272,6 @@
     var positions = {};
     var centerId = data.centerId;
     var workNodes = data.nodes.filter(function (n) { return n.type === "work"; });
-    var authorNodes = data.nodes.filter(function (n) { return n.type === "author"; });
 
     positions[centerId] = new THREE.Vector3(0, 0, 0);
     var R = 300;
@@ -294,16 +282,20 @@
       var th = i * 2.399963;
       positions[n.id] = new THREE.Vector3(R * rr * Math.cos(th), R * y, R * rr * Math.sin(th));
     });
-    workNodes.forEach(function (n) {
-      var p = positions[n.id];
-      if (p && authorNodes.some(function (a) { return a.id === n.author_id; })) {
-        positions[n.author_id] = p.clone().normalize().multiplyScalar(100);
-      }
-    });
-    var centerAuthor = workNodes.filter(function (n) { return n.id === centerId; }).map(function (n) { return n.author_id; })[0];
-    if (centerAuthor) positions[centerAuthor] = new THREE.Vector3(0, -125, 0);
-    authorNodes.forEach(function (a) {
-      if (!positions[a.id]) positions[a.id] = new THREE.Vector3(90, 0, 90);
+    return positions;
+  }
+
+  function authorLayout(data) {
+    var positions = {};
+    var authorNode = data.nodes.filter(function (n) { return n.type === "author"; })[0];
+    var works = data.nodes.filter(function (n) { return n.type === "work"; });
+    if (authorNode) positions[authorNode.id] = new THREE.Vector3(0, 0, 0);
+    var R = 320;
+    works.forEach(function (w, i) {
+      var y = 1 - (i / Math.max(works.length - 1, 1)) * 2;
+      var rr = Math.sqrt(Math.max(0, 1 - y * y));
+      var th = i * 2.399963;
+      positions[w.id] = new THREE.Vector3(R * rr * Math.cos(th), R * y, R * rr * Math.sin(th));
     });
     return positions;
   }
@@ -319,20 +311,17 @@
         Math.cos(i * 1.2) * 50
       );
     });
-    data.edges.forEach(function (e) {
-      if (e.type !== "wrote") return;
-      if (positions[e.source] && !positions[e.target]) {
-        positions[e.target] = positions[e.source].clone().add(new THREE.Vector3(0, 70, 45));
-      } else if (positions[e.target] && !positions[e.source]) {
-        positions[e.source] = positions[e.target].clone().add(new THREE.Vector3(0, 70, 45));
-      }
-    });
     return positions;
   }
 
   // =============================== View management ===============================
 
   function clearScene() {
+    // CSS2DRenderer 不会自动移除已离开场景的标签 DOM,需手动清理,否则旧书名残留
+    Object.keys(nodeLabels).forEach(function (id) {
+      var elm = nodeLabels[id].element;
+      if (elm && elm.parentNode) elm.parentNode.removeChild(elm);
+    });
     Object.keys(nodeGroups).forEach(function (id) {
       var g = nodeGroups[id];
       scene.remove(g);
@@ -375,11 +364,16 @@
       cameraState.radius = 1500; cameraState.theta = -Math.PI / 2 + 0.4; cameraState.phi = Math.PI / 2 - 0.18;
     } else if (kind === "ripple") {
       cameraState.radius = 1150; cameraState.theta = -Math.PI / 2; cameraState.phi = Math.PI / 2 - 0.12;
+    } else if (kind === "author") {
+      cameraState.radius = 1200; cameraState.theta = -Math.PI / 2 + 0.3; cameraState.phi = Math.PI / 2 - 0.15;
     } else {
       cameraState.radius = 1250; cameraState.theta = -Math.PI / 2 + 0.35; cameraState.phi = Math.PI / 2 - 0.15;
     }
+    center.set(0, 0, 0); // 切换视图时重置平移
     applyCamera();
     lastInteraction = Date.now();
+    currentView = kind;
+    el("btn-back-main").style.display = kind === "main" ? "none" : "block";
   }
 
   // =============================== Interaction ===============================
@@ -387,7 +381,9 @@
   function bindControls(container) {
     var dom = renderer.domElement;
     dom.addEventListener("pointerdown", function (e) {
-      dragging = true; dragMoved = false;
+      dragging = true;
+      dragButton = e.button; // 0=左键(平移/选择),2=右键(旋转)
+      dragMoved = false;
       lastX = e.clientX; lastY = e.clientY;
       lastInteraction = Date.now();
       if (dom.setPointerCapture) dom.setPointerCapture(e.pointerId);
@@ -399,9 +395,15 @@
         var dy = e.clientY - lastY;
         lastX = e.clientX; lastY = e.clientY;
         if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;
-        cameraState.theta -= dx * 0.005;
-        cameraState.phi -= dy * 0.005;
-        cameraState.phi = Math.max(0.15, Math.min(Math.PI - 0.15, cameraState.phi));
+        if (dragButton === 2) {
+          // 右键拖拽:旋转视角
+          cameraState.theta -= dx * 0.005;
+          cameraState.phi -= dy * 0.005;
+          cameraState.phi = Math.max(0.15, Math.min(Math.PI - 0.15, cameraState.phi));
+        } else {
+          // 左键拖拽:平移视角
+          panBy(dx, dy);
+        }
         applyCamera();
       } else {
         hoverPick(e);
@@ -411,15 +413,27 @@
       dragging = false;
       dom.style.cursor = "grab";
       lastInteraction = Date.now();
-      if (!dragMoved) clickPick(e);
+      if (dragButton === 0 && !dragMoved) clickPick(e);
+    });
+    dom.addEventListener("contextmenu", function (e) {
+      e.preventDefault(); // 屏蔽右键菜单,右键用于旋转
     });
     container.addEventListener("wheel", function (e) {
       e.preventDefault();
       cameraState.radius *= 1 + e.deltaY * 0.0011;
-      cameraState.radius = Math.max(380, Math.min(4200, cameraState.radius));
+      cameraState.radius = Math.max(50, Math.min(8000, cameraState.radius));
       lastInteraction = Date.now();
       applyCamera();
     }, { passive: false });
+  }
+
+  function panBy(dx, dy) {
+    var forward = new THREE.Vector3().subVectors(center, camera.position).normalize();
+    var right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    var up = new THREE.Vector3().crossVectors(right, forward).normalize();
+    var scale = cameraState.radius * 0.0016;
+    center.add(right.clone().multiplyScalar(-dx * scale));
+    center.add(up.clone().multiplyScalar(dy * scale));
   }
 
   function pickMesh(e) {
@@ -513,57 +527,85 @@
     if (node.type === "work") {
       fetch("/api/work/" + encodeURIComponent(id))
         .then(function (r) { return r.json(); })
-        .then(renderWorkPanel);
+        .then(function (d) {
+          renderRipple(d);     // 自动进入涟漪视图
+          renderWorkPanel(d);  // 侧边栏显示详情
+        });
     } else {
+      renderAuthorView(node);  // 3D:该作者 + 他的书
       renderAuthorPanel(node);
     }
+  }
+
+  function renderAuthorView(author) {
+    var nodes = [author];
+    var edges = [];
+    fullData.nodes.filter(function (n) {
+      return n.type === "work" && n.author_id === author.id;
+    }).forEach(function (w) {
+      nodes.push(w);
+      edges.push({ source: w.id, target: author.id, type: "authored" });
+    });
+    renderView("author", { nodes: nodes, edges: edges });
   }
 
   function renderAuthorPanel(author) {
     var works = fullData.nodes.filter(function (n) {
       return n.type === "work" && n.author_id === author.id;
     });
+    var years = String(author.birthYear != null ? author.birthYear : "?") + " – " + String(author.deathYear != null ? author.deathYear : "?");
+    var meta = [author.originalName || author.label_en, author.nationality, years, author.primaryLanguage ? "语言 " + author.primaryLanguage : ""]
+      .filter(Boolean).join(" · ");
     var html =
       "<h2>" + esc(author.label) + "</h2>" +
-      "<div class='meta'>" + esc(author.label_en || "") + " · " + esc(author.era || "") + " · " + esc(author.nationality || "") + "</div>" +
+      "<div class='meta'>" + esc(meta) + "</div>" +
+      (author.bio ? "<p style='font-size:12px;color:#93a4c8;line-height:1.7'>" + esc(author.bio) + "</p>" : "") +
       "<h3>作品(" + works.length + ")</h3><ul>" +
       works.map(function (w) {
-        return "<li><strong>" + esc(w.label) + "</strong> <small>(" + (w.year || "?") + " · " + esc(w.language || "") + ")</small></li>";
+        return "<li class='work-item' data-id='" + esc(w.id) + "'><strong>" + esc(w.label) + "</strong> <small>(" + (w.year || "?") + " · " + esc(w.language || "") + ")</small></li>";
       }).join("") +
-      "</ul><p style='font-size:12px;color:#93a4c8'>点击作品星可查看影响关系。</p>";
-    el("panel").innerHTML = html;
+      "</ul><p style='font-size:12px;color:#93a4c8'>点击书籍可查看它的涟漪。</p>";
+    el("panel-content").innerHTML = html;
+    Array.prototype.forEach.call(el("panel-content").querySelectorAll(".work-item"), function (li) {
+      li.addEventListener("click", function () {
+        selectNode(li.getAttribute("data-id"));
+      });
+    });
   }
 
   function renderWorkPanel(d) {
     var w = d.work, a = d.author;
     var html =
       "<h2>" + esc(w.title) + "</h2>" +
-      "<div class='meta'>" + esc(w.title_en) + " · " + esc(a.name) + " · " + (w.year || "?") + " · " + esc(w.language) + " · " + esc(w.genre) + "</div>";
+      "<div class='meta'>" + esc(w.originalTitle || w.title_en) + " · " + esc(a.name) + " · " + (w.year || "?") + " · " + esc(w.language) + "</div>";
+    if (w.summary) {
+      html += "<p style='font-size:12px;color:#93a4c8;line-height:1.7'>" + esc(w.summary) + "</p>";
+    }
 
-    if (d.influenced_by.length) {
-      html += "<h3>被谁影响(回声来源)</h3><ul>";
-      d.influenced_by.forEach(function (e) {
-        html += "<li><span class='kind-tag kind-" + esc(e.kind) + "'>" + esc(KIND_ZH[e.kind] || e.kind) + "</span>" +
+    if (d.mentioned_by.length) {
+      html += "<h3>谁提及了这本书(回声来源)</h3><ul>";
+      d.mentioned_by.forEach(function (e) {
+        html += "<li><span class='tag-mention'>提及</span>" +
           "<strong>" + esc(e.source_title) + "</strong> <small>(" + esc(e.source_author) + ")</small>" +
-          "<div class='quote'>" + esc(e.quote) + "</div></li>";
+          "<div class='quote'>" + esc(e.evidence) + "</div>" +
+          "<div class='quote' style='opacity:0.75'>" + esc(e.note || "") + "</div></li>";
       });
       html += "</ul>";
     }
-    if (d.influences.length) {
-      html += "<h3>影响了谁(涟漪扩散)</h3><ul>";
-      d.influences.forEach(function (e) {
-        html += "<li><span class='kind-tag kind-" + esc(e.kind) + "'>" + esc(KIND_ZH[e.kind] || e.kind) + "</span>" +
+    if (d.mentions.length) {
+      html += "<h3>这本书提及了(涟漪扩散)</h3><ul>";
+      d.mentions.forEach(function (e) {
+        html += "<li><span class='tag-mention'>提及</span>" +
           "<strong>" + esc(e.target_title) + "</strong> <small>(" + esc(e.target_author) + ")</small>" +
-          "<div class='quote'>" + esc(e.quote) + "</div></li>";
+          "<div class='quote'>" + esc(e.evidence) + "</div>" +
+          "<div class='quote' style='opacity:0.75'>" + esc(e.note || "") + "</div></li>";
       });
       html += "</ul>";
     }
-    if (!d.influenced_by.length && !d.influences.length) {
-      html += "<p class='no-path'>该作品暂无影响关系(孤岛星)。</p>";
+    if (!d.mentioned_by.length && !d.mentions.length) {
+      html += "<p class='no-path'>这本书没有被其他书提及,也未提及别的书(孤岛星)。</p>";
     }
-    html += "<div class='actions'><button id='btn-ripple'>查看涟漪</button></div>";
-    el("panel").innerHTML = html;
-    el("btn-ripple").onclick = function () { renderRipple(d); };
+    el("panel-content").innerHTML = html;
   }
 
   function renderRipple(detail) {
@@ -573,31 +615,21 @@
     var nodes = [];
     var edges = [];
 
-    detail.influenced_by.forEach(function (e) {
+    detail.mentioned_by.forEach(function (e) {
       ids[e.source] = true;
-      edges.push({ source: e.source, target: center, type: "influence", kind: e.kind, confidence: 0.9, quote: e.quote });
+      edges.push({ source: e.source, target: center, type: "echo", evidence: e.evidence, note: e.note });
     });
-    detail.influences.forEach(function (e) {
+    detail.mentions.forEach(function (e) {
       ids[e.target] = true;
-      edges.push({ source: center, target: e.target, type: "influence", kind: e.kind, confidence: 0.9, quote: e.quote });
+      edges.push({ source: center, target: e.target, type: "echo", evidence: e.evidence, note: e.note });
     });
     Object.keys(ids).forEach(function (id) {
       var n = fullData.nodes.filter(function (x) { return x.id === id; })[0];
       if (!n) return;
       nodes.push(n);
-      if (n.type === "work" && n.author_id && !ids[n.author_id]) {
-        var an = fullData.nodes.filter(function (x) { return x.id === n.author_id; })[0];
-        if (an) { nodes.push(an); ids[an.id] = true; }
-        edges.push({ source: n.author_id, target: id, type: "wrote" });
-      }
     });
 
     renderView("ripple", { nodes: nodes, edges: edges, centerId: center });
-    el("panel").innerHTML =
-      "<h2>涟漪视图(3D)</h2><div class='meta'>以《" + esc(detail.work.title) + "》为中心,共 " + nodes.length + " 个星点</div>" +
-      "<div class='actions'><button id='btn-back'>返回全部图谱</button><button id='btn-ripple-detail'>回详情</button></div>";
-    el("btn-back").onclick = function () { loadGraph(); };
-    el("btn-ripple-detail").onclick = function () { renderWorkPanel(detail); };
   }
 
   function findPath() {
@@ -606,14 +638,14 @@
     var fromId = workLookup[f];
     var toId = workLookup[t];
     if (!fromId || !toId) {
-      el("panel").innerHTML = "<p class='no-path'>请从下拉列表中选择两部作品。</p>";
+      el("panel-content").innerHTML = "<p class='no-path'>请从下拉列表中选择两部作品。</p>";
       return;
     }
     fetch("/api/path?from=" + encodeURIComponent(fromId) + "&to=" + encodeURIComponent(toId))
       .then(function (r) { return r.status === 404 ? null : r.json(); })
       .then(function (result) {
         if (!result) {
-          el("panel").innerHTML = "<p class='no-path'>未找到「" + esc(f) + " → " + esc(t) + "」的影响链。</p>";
+          el("panel-content").innerHTML = "<p class='no-path'>未找到「" + esc(f) + " → " + esc(t) + "」的提及链。</p>";
           return;
         }
         renderPath(result, f, t);
@@ -629,7 +661,7 @@
       if (n) { nodes.push(n); ids[id] = true; }
     });
     result.edges.forEach(function (e) {
-      edges.push({ source: e.source, target: e.target, type: "influence", kind: e.kind, confidence: e.confidence, quote: e.quote });
+      edges.push({ source: e.source, target: e.target, type: "echo", evidence: e.evidence, note: e.note });
       [e.source, e.target].forEach(function (id) {
         if (!ids[id]) {
           var n = fullData.nodes.filter(function (x) { return x.id === id; })[0];
@@ -637,35 +669,25 @@
         }
       });
     });
-    nodes.filter(function (n) { return n.type === "work" && n.author_id; }).forEach(function (n) {
-      if (!ids[n.author_id]) {
-        var an = fullData.nodes.filter(function (x) { return x.id === n.author_id; })[0];
-        if (an) { nodes.push(an); ids[an.id] = true; }
-        edges.push({ source: n.author_id, target: n.id, type: "wrote" });
-      }
-    });
-
     renderView("path", { nodes: nodes, edges: edges, pathOrder: result.nodes });
 
     var html =
-      "<h2>影响链(3D)</h2><div class='meta'>" + esc(f) + " → " + esc(t) + " · " + result.nodes.length + " 个节点 / " + result.edges.length + " 步</div>";
+      "<h2>提及链(3D)</h2><div class='meta'>" + esc(f) + " → " + esc(t) + " · " + result.nodes.length + " 本书 / " + result.edges.length + " 次提及</div>";
     for (var i = 0; i < result.edges.length; i++) {
       var e = result.edges[i];
       var sn = fullData.nodes.filter(function (x) { return x.id === e.source; })[0];
       var tn = fullData.nodes.filter(function (x) { return x.id === e.target; })[0];
       html += "<div class='path-step'><strong>" + esc(sn ? sn.label : e.source) + "</strong> → " +
         "<strong>" + esc(tn ? tn.label : e.target) + "</strong>" +
-        "<div class='edge'>" + esc(KIND_ZH[e.kind] || e.kind) + " · 置信度 " + (e.confidence || "-") + "</div>" +
-        "<div class='quote'>" + esc(e.quote || "") + "</div></div>";
+        "<div class='edge'>提及 · " + esc(e.note || "") + "</div>" +
+        "<div class='quote'>" + esc(e.evidence || "") + "</div></div>";
     }
-    html += "<div class='actions'><button id='btn-back2'>返回全部图谱</button></div>";
-    el("panel").innerHTML = html;
-    el("btn-back2").onclick = function () { loadGraph(); };
+    el("panel-content").innerHTML = html;
   }
 
   function showEmptyPanel() {
-    el("panel").innerHTML =
-      "<div id='panel-empty'><p>点击任意星星查看详情;</p><p>拖拽旋转星云 · 滚轮缩放 · 选中作品可查看「涟漪」与「影响链」。</p></div>";
+    el("panel-content").innerHTML =
+      "<div id='panel-empty'><p>点击任意星星,自动展开它的涟漪;</p><p>右键拖拽旋转 · 左键拖拽平移 · 滚轮缩放。</p><p>顶部可搜索作品、查找提及链。</p></div>";
   }
 
   // =============================== UI wiring ===============================
@@ -693,6 +715,7 @@
   function wireEvents() {
     el("btn-path").onclick = findPath;
     el("btn-reset").onclick = function () { loadGraph(); showEmptyPanel(); };
+    el("btn-back-main").onclick = function () { loadGraph(); };
     el("btn-example").onclick = function () {
       el("from").value = "伊利亚特 - 荷马";
       el("to").value = "活着 - 余华";
@@ -746,6 +769,8 @@
       fetch("/api/work/" + encodeURIComponent(h.slice(7)))
         .then(function (r) { return r.json(); })
         .then(renderRipple);
+    } else if (h.indexOf("author=") === 0) {
+      selectNode(h.slice(7));
     }
   }
 

@@ -55,13 +55,14 @@ class JsonStore:
                 {
                     "id": a["id"],
                     "type": "author",
-                    "label": a["name"],
-                    "label_en": a["name_en"],
-                    "era": a["era"],
+                    "label": a["Name_CN"],
+                    "label_en": a["Name_EN"],
+                    "originalName": a["originalName"],
                     "nationality": a["nationality"],
-                    "language": a["language"],
-                    "birth": a["birth"],
-                    "death": a["death"],
+                    "primaryLanguage": a["primaryLanguage"],
+                    "birthYear": a["birthYear"],
+                    "deathYear": a["deathYear"],
+                    "bio": a["bio"],
                 }
             )
         for w in self.works.values():
@@ -70,13 +71,16 @@ class JsonStore:
                 {
                     "id": w["id"],
                     "type": "work",
-                    "label": w["title"],
-                    "label_en": w["title_en"],
-                    "year": w["year"],
+                    "label": w["Title_CN"],
+                    "label_en": w["Title_EN"],
+                    "originalTitle": w["originalTitle"],
+                    "year": w["publicationYear"] or w["creationYear"],
+                    "publicationYear": w["publicationYear"],
+                    "creationYear": w["creationYear"],
                     "language": w["language"],
-                    "genre": w["genre"],
+                    "summary": w["summary"],
                     "author_id": w["author_id"],
-                    "author": author["name"],
+                    "author": author["Name_CN"],
                 }
             )
         edges = []
@@ -85,37 +89,37 @@ class JsonStore:
                 {
                     "source": e["source"],
                     "target": e["target"],
-                    "type": "influence",
-                    "kind": e["kind"],
-                    "confidence": e["confidence"],
-                    "quote": e["quote"],
+                    "type": "echo",
+                    "evidence": e["evidence"],
+                    "note": e["note"],
                 }
             )
         for w in self.works.values():
-            edges.append({"source": w["author_id"], "target": w["id"], "type": "wrote"})
+            edges.append({"source": w["id"], "target": w["author_id"], "type": "authored"})
         return {"nodes": nodes, "edges": edges}
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
         ql = q.lower()
         hits = []
         for a in self.authors.values():
-            if ql in a["name"].lower() or ql in a["name_en"].lower():
+            if ql in a["Name_CN"].lower() or ql in a["Name_EN"].lower() or ql in a["originalName"].lower():
                 hits.append(
                     {
                         "id": a["id"],
                         "type": "author",
-                        "label": a["name"],
-                        "sub": f"{a['name_en']} · {a['era']}",
+                        "label": a["Name_CN"],
+                        "sub": f"{a['originalName']} · {a['nationality']}",
                     }
                 )
         for w in self.works.values():
-            if ql in w["title"].lower() or ql in w["title_en"].lower():
+            if ql in w["Title_CN"].lower() or ql in w["Title_EN"].lower() or ql in w["originalTitle"].lower():
+                year = w["publicationYear"] or w["creationYear"]
                 hits.append(
                     {
                         "id": w["id"],
                         "type": "work",
-                        "label": w["title"],
-                        "sub": f"{self.authors[w['author_id']]['name']} · {w['year']}",
+                        "label": w["Title_CN"],
+                        "sub": f"{self.authors[w['author_id']]['Name_CN']} · {year}",
                     }
                 )
         return hits[:limit]
@@ -155,9 +159,8 @@ class JsonStore:
                 {
                     "source": e["source"],
                     "target": e["target"],
-                    "kind": e["kind"],
-                    "confidence": e["confidence"],
-                    "quote": e["quote"],
+                    "evidence": e["evidence"],
+                    "note": e["note"],
                 }
             )
             nodes.append(cur)
@@ -175,40 +178,43 @@ class JsonStore:
         return {
             "work": {
                 "id": w["id"],
-                "title": w["title"],
-                "title_en": w["title_en"],
-                "year": w["year"],
+                "title": w["Title_CN"],
+                "title_en": w["Title_EN"],
+                "originalTitle": w["originalTitle"],
+                "year": w["publicationYear"] or w["creationYear"],
+                "publicationYear": w["publicationYear"],
+                "creationYear": w["creationYear"],
                 "language": w["language"],
-                "genre": w["genre"],
+                "summary": w["summary"],
             },
             "author": {
                 "id": author["id"],
-                "name": author["name"],
-                "name_en": author["name_en"],
-                "birth": author["birth"],
-                "death": author["death"],
+                "name": author["Name_CN"],
+                "name_en": author["Name_EN"],
+                "originalName": author["originalName"],
+                "birthYear": author["birthYear"],
+                "deathYear": author["deathYear"],
                 "nationality": author["nationality"],
-                "era": author["era"],
+                "primaryLanguage": author["primaryLanguage"],
+                "bio": author["bio"],
             },
-            "influenced_by": [
+            "mentioned_by": [
                 {
                     "source": e["source"],
-                    "source_title": self.works[e["source"]]["title"],
-                    "source_author": self.authors[self.works[e["source"]]["author_id"]]["name"],
-                    "kind": e["kind"],
-                    "confidence": e["confidence"],
-                    "quote": e["quote"],
+                    "source_title": self.works[e["source"]]["Title_CN"],
+                    "source_author": self.authors[self.works[e["source"]]["author_id"]]["Name_CN"],
+                    "evidence": e["evidence"],
+                    "note": e["note"],
                 }
                 for e in self.inc.get(work_id, [])
             ],
-            "influences": [
+            "mentions": [
                 {
                     "target": e["target"],
-                    "target_title": self.works[e["target"]]["title"],
-                    "target_author": self.authors[self.works[e["target"]]["author_id"]]["name"],
-                    "kind": e["kind"],
-                    "confidence": e["confidence"],
-                    "quote": e["quote"],
+                    "target_title": self.works[e["target"]]["Title_CN"],
+                    "target_author": self.authors[self.works[e["target"]]["author_id"]]["Name_CN"],
+                    "evidence": e["evidence"],
+                    "note": e["note"],
                 }
                 for e in self.out.get(work_id, [])
             ],
@@ -218,7 +224,7 @@ class JsonStore:
         return {
             "authors": len(self.authors),
             "works": len(self.works),
-            "influence_edges": len(self.edges),
+            "echo_edges": len(self.edges),
             "store": self.name,
             "demo": bool(self.seed.get("meta", {}).get("demo", False)),
         }
@@ -249,65 +255,80 @@ class Neo4jStore:
             return [dict(r) for r in result]
 
     def _node(self, props: dict, label: str) -> dict:
-        if label == "author":
-            return {
-                "id": props.get("id"),
-                "type": "author",
-                "label": props.get("name"),
-                "label_en": props.get("name_en"),
-                "era": props.get("era"),
-                "nationality": props.get("nationality"),
-                "language": props.get("language"),
-                "birth": props.get("birth"),
-                "death": props.get("death"),
-            }
         return {
             "id": props.get("id"),
             "type": "work",
-            "label": props.get("title"),
-            "label_en": props.get("title_en"),
-            "year": props.get("year"),
+            "label": props.get("Title_CN"),
+            "label_en": props.get("Title_EN"),
+            "originalTitle": props.get("originalTitle"),
+            "year": props.get("publicationYear") or props.get("creationYear"),
+            "publicationYear": props.get("publicationYear"),
+            "creationYear": props.get("creationYear"),
             "language": props.get("language"),
-            "genre": props.get("genre"),
+            "summary": props.get("summary"),
             "author_id": props.get("author_id"),
             "author": props.get("author_name", ""),
         }
 
     def graph(self) -> dict:
-        node_rows = self._query(
+        author_rows = self._query(
             """
-            MATCH (n)
-            WHERE n:Author OR n:Work
-            RETURN n.id AS id, labels(n)[0] AS label, properties(n) AS props
+            MATCH (a:Author)
+            RETURN properties(a) AS props
             """
         )
         nodes = []
-        for row in node_rows:
-            nodes.append(self._node(row["props"], row["label"].lower()))
-        # enrich work nodes with author name
-        author_map = {a["id"]: a["label"] for a in nodes if a["type"] == "author"}
-        for n in nodes:
-            if n["type"] == "work":
-                n["author"] = author_map.get(n["author_id"], "")
+        for row in author_rows:
+            p = row["props"]
+            nodes.append(
+                {
+                    "id": p.get("id"),
+                    "type": "author",
+                    "label": p.get("Name_CN"),
+                    "label_en": p.get("Name_EN"),
+                    "originalName": p.get("originalName"),
+                    "nationality": p.get("nationality"),
+                    "primaryLanguage": p.get("primaryLanguage"),
+                    "birthYear": p.get("birthYear"),
+                    "deathYear": p.get("deathYear"),
+                    "bio": p.get("bio"),
+                }
+            )
 
-        wrote_rows = self._query(
-            "MATCH (a:Author)-[r:WROTE]->(w:Work) RETURN a.id AS source, w.id AS target"
-        )
-        influence_rows = self._query(
+        node_rows = self._query(
             """
-            MATCH (w1:Work)-[r:INFLUENCES]->(w2:Work)
+            MATCH (w:Work)
+            OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author)
+            RETURN properties(w) AS props, a.Name_CN AS author_name, a.id AS author_id
+            """
+        )
+        for row in node_rows:
+            row["props"] = dict(row["props"])
+            row["props"]["author_name"] = row["author_name"] or ""
+            row["props"]["author_id"] = row["author_id"]
+        nodes.extend(self._node(row["props"], "work") for row in node_rows)
+
+        echo_rows = self._query(
+            """
+            MATCH (w1:Work)-[r:ECHO]->(w2:Work)
             RETURN w1.id AS source, w2.id AS target,
-                   r.kind AS kind, r.confidence AS confidence, r.quote AS quote
+                   r.evidence AS evidence, r.note AS note
             """
         )
         edges = [
-            {"source": r["source"], "target": r["target"], "type": "influence",
-             "kind": r["kind"], "confidence": r["confidence"], "quote": r["quote"]}
-            for r in influence_rows
+            {"source": r["source"], "target": r["target"], "type": "echo",
+             "evidence": r["evidence"], "note": r["note"]}
+            for r in echo_rows
         ]
+        authored_rows = self._query(
+            """
+            MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)
+            RETURN w.id AS source, a.id AS target
+            """
+        )
         edges += [
-            {"source": r["source"], "target": r["target"], "type": "wrote"}
-            for r in wrote_rows
+            {"source": r["source"], "target": r["target"], "type": "authored"}
+            for r in authored_rows
         ]
         return {"nodes": nodes, "edges": edges}
 
@@ -315,8 +336,8 @@ class Neo4jStore:
         rows = self._query(
             """
             MATCH (n)
-            WHERE (n:Work AND (n.title CONTAINS $q OR toLower(n.title_en) CONTAINS toLower($q)))
-               OR (n:Author AND (n.name CONTAINS $q OR toLower(n.name_en) CONTAINS toLower($q)))
+            WHERE (n:Work AND (n.Title_CN CONTAINS $q OR toLower(n.Title_EN) CONTAINS toLower($q) OR toLower(n.originalTitle) CONTAINS toLower($q)))
+               OR (n:Author AND (n.Name_CN CONTAINS $q OR toLower(n.Name_EN) CONTAINS toLower($q) OR toLower(n.originalName) CONTAINS toLower($q)))
             RETURN n.id AS id, labels(n)[0] AS label, n LIMIT $limit
             """,
             {"q": q, "limit": limit},
@@ -329,17 +350,18 @@ class Neo4jStore:
                     {
                         "id": props["id"],
                         "type": "author",
-                        "label": props["name"],
-                        "sub": f"{props['name_en']} · {props['era']}",
+                        "label": props["Name_CN"],
+                        "sub": f"{props['originalName']} · {props['nationality']}",
                     }
                 )
             else:
+                year = props.get("publicationYear") or props.get("creationYear")
                 hits.append(
                     {
                         "id": props["id"],
                         "type": "work",
-                        "label": props["title"],
-                        "sub": f"{props['title_en']} · {props['year']}",
+                        "label": props["Title_CN"],
+                        "sub": f"{props['Title_EN']} · {year}",
                     }
                 )
         return hits[:limit]
@@ -347,12 +369,12 @@ class Neo4jStore:
     def path(self, from_id: str, to_id: str, max_hops: int) -> Optional[dict]:
         hop = max(1, int(max_hops))
         cypher = (
-            "MATCH p = shortestPath((a:Work {id:$from})-[r:INFLUENCES*1.."
+            "MATCH p = shortestPath((a:Work {id:$from})-[r:ECHO*1.."
             f"{hop}"
             "]->(b:Work {id:$to})) "
             "RETURN [x IN nodes(p) | x.id] AS node_ids, "
             "[rel IN relationships(p) | {source: startNode(rel).id, target: endNode(rel).id, "
-            "kind: rel.kind, confidence: rel.confidence, quote: rel.quote}] AS rels LIMIT 1"
+            "evidence: rel.evidence, note: rel.note}] AS rels LIMIT 1"
         )
         rows = self._query(cypher, {"from": from_id, "to": to_id})
         if not rows:
@@ -363,7 +385,7 @@ class Neo4jStore:
     def work_detail(self, work_id: str) -> Optional[dict]:
         rows = self._query(
             """
-            MATCH (a:Author)-[:WROTE]->(w:Work {id:$id})
+            MATCH (w:Work {id:$id})-[:AUTHORED_BY]->(a:Author)
             RETURN properties(w) AS w, properties(a) AS a LIMIT 1
             """,
             {"id": work_id},
@@ -373,54 +395,57 @@ class Neo4jStore:
         wp, ap = rows[0]["w"], rows[0]["a"]
         inc = self._query(
             """
-            MATCH (i:Work)-[r:INFLUENCES]->(w:Work {id:$id})
-            MATCH (ia:Author)-[:WROTE]->(i)
-            RETURN i.id AS source, i.title AS source_title, ia.name AS source_author,
-                   r.kind AS kind, r.confidence AS confidence, r.quote AS quote
-            ORDER BY r.confidence DESC
+            MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
+            MATCH (i)-[:AUTHORED_BY]->(ia:Author)
+            RETURN i.id AS source, i.Title_CN AS source_title, ia.Name_CN AS source_author,
+                   r.evidence AS evidence, r.note AS note
             """,
             {"id": work_id},
         )
         out = self._query(
             """
-            MATCH (w:Work {id:$id})-[r:INFLUENCES]->(o:Work)
-            MATCH (oa:Author)-[:WROTE]->(o)
-            RETURN o.id AS target, o.title AS target_title, oa.name AS target_author,
-                   r.kind AS kind, r.confidence AS confidence, r.quote AS quote
-            ORDER BY r.confidence DESC
+            MATCH (w:Work {id:$id})-[r:ECHO]->(o:Work)
+            MATCH (o)-[:AUTHORED_BY]->(oa:Author)
+            RETURN o.id AS target, o.Title_CN AS target_title, oa.Name_CN AS target_author,
+                   r.evidence AS evidence, r.note AS note
             """,
             {"id": work_id},
         )
         return {
             "work": {
                 "id": wp.get("id"),
-                "title": wp.get("title"),
-                "title_en": wp.get("title_en"),
-                "year": wp.get("year"),
+                "title": wp.get("Title_CN"),
+                "title_en": wp.get("Title_EN"),
+                "originalTitle": wp.get("originalTitle"),
+                "year": wp.get("publicationYear") or wp.get("creationYear"),
+                "publicationYear": wp.get("publicationYear"),
+                "creationYear": wp.get("creationYear"),
                 "language": wp.get("language"),
-                "genre": wp.get("genre"),
+                "summary": wp.get("summary"),
             },
             "author": {
                 "id": ap.get("id"),
-                "name": ap.get("name"),
-                "name_en": ap.get("name_en"),
-                "birth": ap.get("birth"),
-                "death": ap.get("death"),
+                "name": ap.get("Name_CN"),
+                "name_en": ap.get("Name_EN"),
+                "originalName": ap.get("originalName"),
+                "birthYear": ap.get("birthYear"),
+                "deathYear": ap.get("deathYear"),
                 "nationality": ap.get("nationality"),
-                "era": ap.get("era"),
+                "primaryLanguage": ap.get("primaryLanguage"),
+                "bio": ap.get("bio"),
             },
-            "influenced_by": [dict(r) for r in inc],
-            "influences": [dict(r) for r in out],
+            "mentioned_by": [dict(r) for r in inc],
+            "mentions": [dict(r) for r in out],
         }
 
     def stats(self) -> dict:
         author_count = self._query("MATCH (a:Author) RETURN count(a) AS c")[0]["c"]
         work_count = self._query("MATCH (w:Work) RETURN count(w) AS c")[0]["c"]
-        edge_count = self._query("MATCH (:Work)-[r:INFLUENCES]->(:Work) RETURN count(r) AS c")[0]["c"]
+        edge_count = self._query("MATCH (:Work)-[r:ECHO]->(:Work) RETURN count(r) AS c")[0]["c"]
         return {
             "authors": author_count,
             "works": work_count,
-            "influence_edges": edge_count,
+            "echo_edges": edge_count,
             "store": self.name,
             "demo": False,
         }

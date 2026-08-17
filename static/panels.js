@@ -4,9 +4,21 @@ import { el, esc } from "./util.js";
 import { state } from "./state.js";
 
 var selectHandler = null;
+var toastTimer = null;
 
 export function setOnSelect(fn) {
   selectHandler = fn;
+}
+
+export function showToast(msg) {
+  var t = el("toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () {
+    t.classList.remove("show");
+  }, 2200);
 }
 
 export function showEmptyPanel() {

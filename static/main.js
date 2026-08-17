@@ -26,35 +26,90 @@ function initStarfield() {
 }
 
 function initSidebar() {
+  var lastPointer = { x: 0, y: 0, valid: false };
+  document.addEventListener("mousemove", function (e) {
+    lastPointer.x = e.clientX;
+    lastPointer.y = e.clientY;
+    lastPointer.valid = true;
+  }, { passive: true });
+
+  function pointerOver(panel) {
+    if (!lastPointer.valid) return false;
+    var target = document.elementFromPoint(lastPointer.x, lastPointer.y);
+    return !!target && panel.contains(target);
+  }
+
   function bind(zoneId, panelId) {
     var zone = el(zoneId);
     var panel = el(panelId);
     if (!zone || !panel) return null;
+
+    var composing = false;
+    panel.addEventListener("compositionstart", function () { composing = true; }, true);
+    panel.addEventListener("compositionend", function () { composing = false; }, true);
+    panel.addEventListener("keydown", function (e) {
+      if (e.isComposing) composing = true;
+    }, true);
+    panel.addEventListener("keyup", function (e) {
+      if (!e.isComposing) composing = false;
+    }, true);
+
+    function keepOpen() {
+      var ae = document.activeElement;
+      return composing || (ae && panel.contains(ae));
+    }
+
     zone.addEventListener("mouseenter", function () {
       panel.classList.add("show");
     });
     panel.addEventListener("mouseleave", function (e) {
+      if (keepOpen()) return; // 输入法候选框/输入聚焦时禁止隐藏
       if (!panel.contains(e.relatedTarget)) {
         panel.classList.remove("show");
       }
     });
-    return panel;
+    panel.addEventListener("focusout", function (e) {
+      if (composing) return;
+      if (e.relatedTarget && panel.contains(e.relatedTarget)) return;
+      if (!pointerOver(panel)) {
+        panel.classList.remove("show");
+      }
+    });
+    return { panel: panel, keepOpen: keepOpen };
   }
-  var leftPanel = bind("sidebar-zone-left", "sidebar-left");
-  var rightPanel = bind("sidebar-zone-right", "panel");
+
+  var left = bind("sidebar-zone-left", "sidebar-left");
+  var right = bind("sidebar-zone-right", "panel");
   document.addEventListener("mouseleave", function () {
-    if (leftPanel) leftPanel.classList.remove("show");
-    if (rightPanel) rightPanel.classList.remove("show");
+    if (left && !left.keepOpen()) left.panel.classList.remove("show");
+    if (right && !right.keepOpen()) right.panel.classList.remove("show");
+  });
+}
+
+function initGuide() {
+  var guide = el("guide");
+  if (!guide) return;
+  var seen = false;
+  try { seen = !!localStorage.getItem("echo_graph_guide_seen"); } catch (e) { /* ignore */ }
+  if (seen || location.search.indexOf("skipguide") !== -1) {
+    guide.style.display = "none";
+    return;
+  }
+  el("guide-close").addEventListener("click", function () {
+    guide.style.display = "none";
+    try { localStorage.setItem("echo_graph_guide_seen", "1"); } catch (e) { /* ignore */ }
   });
 }
 
 initThree();
 initStarfield();
 initSidebar();
+initGuide();
 setOnNodeClick(selectNode);
 setOnNodeHover(showNodeDetail);
 setOnSelect(selectNode);
 wireEvents();
+
 loadGraph().catch(function (err) {
   el("graph").innerHTML = "<p style='padding:20px;color:#f87171'>加载图谱失败:" + esc(err.message) + "</p>";
 }).then(function () {

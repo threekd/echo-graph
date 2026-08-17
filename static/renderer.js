@@ -18,6 +18,9 @@ var lastInteraction = 0;
 var dragging = false, dragButton = 0, dragMoved = false, lastX = 0, lastY = 0;
 var hovering = false;          // 鼠标悬停在节点上时暂停自动旋转
 var lastHoveredNodeId = null;
+var activePointers = {};       // 触摸多点支持
+var pinchDist = 0;
+var viewToken = 0;             // 防止异步布局的旧回调覆盖新视图
 var glowTexture = null;
 var onNodeClick = null; // 由 main.js 注入(避免循环依赖)
 var onNodeHover = null; // 由 main.js 注入(悬停显示详情)
@@ -188,11 +191,11 @@ function createEdgeLine(e) {
       fog: true,
     });
   } else {
-    // ECHO 提及线:微弱轨道线(真正的方向由流动的"流星"表达)
+    // ECHO 提及线:轨道线(方向由流动的"流星"表达)
     mat = new THREE.LineBasicMaterial({
       color: MENTION_COLOR,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.28,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       fog: true,
@@ -273,10 +276,10 @@ function layoutFor(kind, data) {
   if (kind === "ripple") return rippleLayout(data);
   if (kind === "path") return pathLayout(data);
   if (kind === "author") return authorLayout(data);
-  return forceLayout(data.nodes.map(function (n) { return n.id; }), data.edges);
+  return {};
 }
 
-function forceLayout(ids, edges) {
+function forceLayoutChunked(ids, edges, callback) {
   var positions = {};
   ids.forEach(function (id) {
     var u = Math.random() * 2 - 1;
@@ -289,7 +292,27 @@ function forceLayout(ids, edges) {
   var k = 850 / Math.sqrt(ids.length || 1);
   var temp = 0.62;
   var iters = 260;
-  for (var it = 0; it < iters; it++) {
+  var it = 0;
+
+  function tick() {
+    var start = Date.now();
+    while (it < iters && Date.now() - start < 14) { // 每帧只算一小段,避免卡顿
+      runIteration();
+      it++;
+    }
+    if (it < iters) {
+      setTimeout(tick, 0);
+      return;
+    }
+    var meanR = 0;
+    ids.forEach(function (id) { meanR += positions[id].length(); });
+    meanR = meanR / Math.max(ids.length, 1);
+    var scale = 520 / Math.max(meanR, 1);
+    ids.forEach(function (id) { positions[id].multiplyScalar(scale); });
+    callback(positions);
+  }
+
+  function runIteration() {
     var disp = {};
     ids.forEach(function (id) { disp[id] = new THREE.Vector3(); });
     for (var i = 0; i < ids.length; i++) {
@@ -322,12 +345,7 @@ function forceLayout(ids, edges) {
     temp = Math.max(0.02, temp * 0.965);
   }
 
-  var meanR = 0;
-  ids.forEach(function (id) { meanR += positions[id].length(); });
-  meanR = meanR / Math.max(ids.length, 1);
-  var scale = 520 / Math.max(meanR, 1);
-  ids.forEach(function (id) { positions[id].multiplyScalar(scale); });
-  return positions;
+  tick();
 }
 
 function rippleLayout(data) {
@@ -422,10 +440,42 @@ function clearScene() {
   positions = {};
 }
 
-export function renderView(kind, data) {
-  state.viewData = data;
-  clearScene();
-  positions = layoutFor(kind, data);
+function viewLabel(kind, data) {
+  if (kind === "main") return "视图:全图谱";
+  if (kind === "ripple") {
+    var c = data.nodes.filter(function (n) { return n.id === data.centerId; })[0];
+    return "视图:涟漪 · " + (c ? c.label : "");
+  }
+  if (kind === "author") {
+    var a = data.nodes.filter(function (n) { return n.type === "author"; })[0];
+    return "视图:作者 · " + (a ? a.label : "");
+  }
+  return "视图:提及链";
+}
+
+function finishView(kind, data, opts) {
+  opts = opts || {};
+  if (!opts.preserveCamera) {
+    if (kind === "main") {
+      cameraState.radius = 1500; cameraState.theta = -Math.PI / 2 + 0.4; cameraState.phi = Math.PI / 2 - 0.18;
+    } else if (kind === "ripple") {
+      cameraState.radius = 1150; cameraState.theta = -Math.PI / 2; cameraState.phi = Math.PI / 2 - 0.12;
+    } else if (kind === "author") {
+      cameraState.radius = 1200; cameraState.theta = -Math.PI / 2 + 0.3; cameraState.phi = Math.PI / 2 - 0.15;
+    } else {
+      cameraState.radius = 1250; cameraState.theta = -Math.PI / 2 + 0.35; cameraState.phi = Math.PI / 2 - 0.15;
+    }
+    center.set(0, 0, 0); // 切换视图时重置平移
+  }
+  applyCamera();
+  lastInteraction = Date.now();
+  state.currentView = kind;
+  el("btn-back-main").style.display = kind === "main" ? "none" : "block";
+  el("expand-bar").style.display = kind === "ripple" ? "flex" : "none";
+  el("view-status").textContent = viewLabel(kind, data);
+}
+
+function buildScene(data) {
   data.nodes.forEach(function (n) {
     if (!positions[n.id]) {
       positions[n.id] = new THREE.Vector3(
@@ -438,29 +488,38 @@ export function renderView(kind, data) {
   });
   data.edges.forEach(createEdgeLine);
   initFlowParticles();
+}
 
+export function renderView(kind, data, opts) {
+  var token = ++viewToken;
+  state.viewData = data;
+  clearScene();
   if (kind === "main") {
-    cameraState.radius = 1500; cameraState.theta = -Math.PI / 2 + 0.4; cameraState.phi = Math.PI / 2 - 0.18;
-  } else if (kind === "ripple") {
-    cameraState.radius = 1150; cameraState.theta = -Math.PI / 2; cameraState.phi = Math.PI / 2 - 0.12;
-  } else if (kind === "author") {
-    cameraState.radius = 1200; cameraState.theta = -Math.PI / 2 + 0.3; cameraState.phi = Math.PI / 2 - 0.15;
-  } else {
-    cameraState.radius = 1250; cameraState.theta = -Math.PI / 2 + 0.35; cameraState.phi = Math.PI / 2 - 0.15;
+    // 分帧布局:大数据量时不阻塞主线程
+    forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
+      if (token !== viewToken) return; // 期间已切换视图,丢弃本次布局结果
+      positions = pos;
+      buildScene(data);
+      finishView(kind, data, opts);
+    });
+    return;
   }
-  center.set(0, 0, 0); // 切换视图时重置平移
-  applyCamera();
-  lastInteraction = Date.now();
-  state.currentView = kind;
-  el("btn-back-main").style.display = kind === "main" ? "none" : "block";
-  el("expand-bar").style.display = kind === "ripple" ? "flex" : "none";
+  positions = layoutFor(kind, data);
+  buildScene(data);
+  finishView(kind, data, opts);
 }
 
 // =============================== 交互 ===============================
 
 function bindControls(container) {
   var dom = renderer.domElement;
+
+  function dist(p1, p2) {
+    return Math.sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+  }
+
   dom.addEventListener("pointerdown", function (e) {
+    activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
     dragging = true;
     dragButton = e.button; // 0=左键(平移/选择),2=右键(旋转)
     dragMoved = false;
@@ -468,20 +527,41 @@ function bindControls(container) {
     lastInteraction = Date.now();
     if (dom.setPointerCapture) dom.setPointerCapture(e.pointerId);
     dom.style.cursor = "grabbing";
+    if (Object.keys(activePointers).length === 2) {
+      var ids = Object.keys(activePointers);
+      pinchDist = dist(activePointers[ids[0]], activePointers[ids[1]]);
+    }
   });
   dom.addEventListener("pointermove", function (e) {
     if (dragging) {
+      var ids = Object.keys(activePointers);
+      if (ids.length >= 2 && activePointers[e.pointerId]) {
+        // 双指捏合:缩放
+        activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+        dragMoved = true;
+        if (ids.length === 2 && pinchDist > 0) {
+          var d = dist(activePointers[ids[0]], activePointers[ids[1]]);
+          if (d > 0) {
+            cameraState.radius *= pinchDist / d;
+            cameraState.radius = Math.max(50, Math.min(8000, cameraState.radius));
+            pinchDist = d;
+            lastInteraction = Date.now();
+            applyCamera();
+          }
+        }
+        return;
+      }
       var dx = e.clientX - lastX;
       var dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;
-      if (dragButton === 2) {
-        // 右键拖拽:旋转视角
+      if (e.pointerType === "touch" || dragButton === 2) {
+        // 触摸单指 / 鼠标右键:旋转视角
         cameraState.theta -= dx * 0.005;
         cameraState.phi -= dy * 0.005;
         cameraState.phi = Math.max(0.15, Math.min(Math.PI - 0.15, cameraState.phi));
       } else {
-        // 左键拖拽:平移视角
+        // 鼠标左键拖拽:平移视角
         panBy(dx, dy);
       }
       applyCamera();
@@ -490,10 +570,16 @@ function bindControls(container) {
     }
   });
   dom.addEventListener("pointerup", function (e) {
-    dragging = false;
-    dom.style.cursor = "grab";
+    delete activePointers[e.pointerId];
+    dragging = Object.keys(activePointers).length > 0;
+    if (!dragging) dom.style.cursor = "grab";
     lastInteraction = Date.now();
     if (dragButton === 0 && !dragMoved) clickPick(e);
+  });
+  dom.addEventListener("pointercancel", function (e) {
+    delete activePointers[e.pointerId];
+    dragging = Object.keys(activePointers).length > 0;
+    dom.style.cursor = "grab";
   });
   dom.addEventListener("contextmenu", function (e) {
     e.preventDefault(); // 屏蔽右键菜单,右键用于旋转

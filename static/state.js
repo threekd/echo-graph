@@ -5,4 +5,5 @@ export const state = {
   viewData: { nodes: [], edges: [] }, // 当前 3D 视图
   currentView: "main",                // main / ripple / path / author
   workLookup: {},                     // "书名 - 作者" -> work id
+  workById: {},                       // work id -> work node
 };

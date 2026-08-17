@@ -49,6 +49,17 @@ def work_detail(work_id: str) -> dict:
     return detail
 
 
+@app.get("/api/expansion/{work_id}")
+def expansion(
+    work_id: str,
+    hops: int = Query(1, ge=1, le=8, description="向外扩散的级数"),
+) -> dict:
+    data = store.expansion(work_id, hops)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
+    return data
+
+
 @app.get("/api/path")
 def path(
     frm: str = Query(..., alias="from", description="起点作品 id"),

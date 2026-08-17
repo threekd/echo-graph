@@ -57,6 +57,33 @@ main { height: 100%; display: flex; min-height: 0; }
   transform: translateY(-1px);
 }
 
+#expand-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(10, 14, 34, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 0 16px rgba(80, 120, 255, 0.15);
+  font-size: 13px;
+  color: var(--ink);
+}
+#expand-bar .expand-label { color: var(--muted); }
+#expand-bar input[type="range"] {
+  width: 160px;
+  accent-color: #67e8f9;
+  cursor: pointer;
+}
+#expand-value { min-width: 42px; text-align: center; color: #9cc3ff; }
+
 #stars {
   position: absolute;
   inset: 0;

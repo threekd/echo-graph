@@ -220,6 +220,56 @@ class JsonStore:
             ],
         }
 
+    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+        """以 work_id 为中心,沿 ECHO 关系(无向)向外扩散 hops 级,返回子图。"""
+        if work_id not in self.works:
+            return None
+        visited = {work_id}
+        frontier = [work_id]
+        for _ in range(max(1, int(hops))):
+            nxt = []
+            for wid in frontier:
+                for e in self.out.get(wid, []) + self.inc.get(wid, []):
+                    other = e["target"] if e["source"] == wid else e["source"]
+                    if other not in visited:
+                        visited.add(other)
+                        nxt.append(other)
+            frontier = nxt
+            if not frontier:
+                break
+        nodes = []
+        for wid in visited:
+            w = self.works[wid]
+            author = self.authors[w["author_id"]]
+            nodes.append(
+                {
+                    "id": w["id"],
+                    "type": "work",
+                    "label": w["Title_CN"],
+                    "label_en": w["Title_EN"],
+                    "originalTitle": w["originalTitle"],
+                    "year": w["publicationYear"] or w["creationYear"],
+                    "publicationYear": w["publicationYear"],
+                    "creationYear": w["creationYear"],
+                    "language": w["language"],
+                    "summary": w["summary"],
+                    "author_id": w["author_id"],
+                    "author": author["Name_CN"],
+                }
+            )
+        edges = [
+            {
+                "source": e["source"],
+                "target": e["target"],
+                "type": "echo",
+                "evidence": e["evidence"],
+                "note": e["note"],
+            }
+            for e in self.edges
+            if e["source"] in visited and e["target"] in visited
+        ]
+        return {"nodes": nodes, "edges": edges, "centerId": work_id}
+
     def stats(self) -> dict:
         return {
             "authors": len(self.authors),
@@ -438,6 +488,46 @@ class Neo4jStore:
             "mentions": [dict(r) for r in out],
         }
 
+    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+        hop = max(1, min(int(hops), 8))
+        node_rows = self._query(
+            "MATCH (c:Work {id:$id}) "
+            f"MATCH (n:Work) WHERE n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n) "
+            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) "
+            "RETURN properties(n) AS props, a.Name_CN AS author_name, a.id AS author_id",
+            {"id": work_id},
+        )
+        if not node_rows:
+            return None
+        nodes = []
+        ids = []
+        for row in node_rows:
+            props = dict(row["props"])
+            props["author_name"] = row["author_name"] or ""
+            props["author_id"] = row["author_id"]
+            nodes.append(self._node(props, "work"))
+            ids.append(props["id"])
+        edge_rows = self._query(
+            f"MATCH (c:Work {{id:$id}}) "
+            f"MATCH (n:Work) WHERE n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n) "
+            "WITH collect(n.id) AS ids "
+            "MATCH (a:Work)-[r:ECHO]->(b:Work) "
+            "WHERE a.id IN ids AND b.id IN ids "
+            "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, r.note AS note",
+            {"id": work_id},
+        )
+        edges = [
+            {
+                "source": r["source"],
+                "target": r["target"],
+                "type": "echo",
+                "evidence": r["evidence"],
+                "note": r["note"],
+            }
+            for r in edge_rows
+        ]
+        return {"nodes": nodes, "edges": edges, "centerId": work_id}
+
     def stats(self) -> dict:
         author_count = self._query("MATCH (a:Author) RETURN count(a) AS c")[0]["c"]
         work_count = self._query("MATCH (w:Work) RETURN count(w) AS c")[0]["c"]
@@ -480,6 +570,9 @@ class ResilientStore:
 
     def work_detail(self, work_id: str) -> Optional[dict]:
         return self._call("work_detail", work_id)
+
+    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+        return self._call("expansion", work_id, hops)
 
     def stats(self) -> dict:
         return self._call("stats")

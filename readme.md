@@ -49,7 +49,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 - **演示种子数据**：50 位作家、100 部作品、50 条 ECHO 关系,由 `scripts/generate_seed_data.py` 生成到 `data/seed.json`。
 - **Neo4j**：`scripts/import_data.py` 将种子数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据,演示不会中断。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据,演示不会中断。
-- **前端**：无构建单页(HTML + Three.js,3D 渲染)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持拖拽旋转、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
+- **前端**：无构建单页(HTML + Three.js,3D 渲染),已按原生 ES module 拆分(util / state / renderer / panels / actions / main,无打包器)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式
 
@@ -83,7 +83,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ### 重要声明
 
 - 当前所有提及关系与"引文"均为**编造演示数据**,仅用于展示产品形态;作家/作品元信息大致符合文学史,但关系不可作为学术依据。正式版本需人工策展并附真实原文片段。
-- 前端暂不依赖 npm(当前机器 npm 工具链损坏),因此采用无构建的单页实现;后续迁移到 React + Vite 时需先修复 npm。
+- 前端目前采用无构建的单页实现(暂不依赖 npm);npm 已可用(12.0.2),后续可平滑迁移到 React + Vite。
 - Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。
 
 ## 节点类型与属性

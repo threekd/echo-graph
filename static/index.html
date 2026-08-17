@@ -4,42 +4,45 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>The Echo Graph · 回声图谱(演示)</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
 </head>
 <body>
   <main>
     <div id="graph">
-      <button id="btn-back-main" class="corner-btn" style="display:none">返回全部图谱</button>
-      <div id="expand-bar" style="display:none">
-        <span class="expand-label">扩散范围</span>
-        <input type="range" id="expand-range" min="1" max="8" step="1" value="1" />
-        <span id="expand-value">1 级</span>
-      </div>
       <div id="stars">
         <div class="shooting"></div>
         <div class="shooting"></div>
       </div>
     </div>
-    <aside id="panel">
-      <div id="sidebar-top">
-        <div class="brand">
-          <h1>The Echo Graph <span class="sub">回声图谱 · 世界文学影响</span></h1>
-          <span class="badge">演示数据</span>
-        </div>
-        <nav>
-          <input id="q" type="text" placeholder="搜索作家 / 作品…" autocomplete="off" />
-          <ul id="q-results"></ul>
-          <div class="path-box">
-            <input id="from" list="works" placeholder="起点作品" />
-            <span class="arrow">→</span>
-            <input id="to" list="works" placeholder="终点作品" />
-            <button id="btn-path">寻找路径</button>
-            <button id="btn-example" title="示例:伊利亚特 → 活着">示例</button>
-            <button id="btn-reset" class="ghost">全部图谱</button>
-          </div>
-          <datalist id="works"></datalist>
-        </nav>
+
+    <div id="sidebar-zone-left"></div>
+    <aside id="sidebar-left">
+      <div class="brand">
+        <h1>The Echo Graph <span class="sub">回声图谱 · 世界文学影响</span></h1>
+        <span class="badge">演示数据</span>
       </div>
+      <nav>
+        <input id="q" type="text" placeholder="搜索作家 / 作品…" autocomplete="off" />
+        <ul id="q-results"></ul>
+        <div class="path-box">
+          <input id="from" list="works" placeholder="起点作品" />
+          <span class="arrow">→</span>
+          <input id="to" list="works" placeholder="终点作品" />
+          <button id="btn-path">寻找路径</button>
+          <button id="btn-example" title="示例:伊利亚特 → 活着">示例</button>
+        </div>
+        <button id="btn-back-main" class="side-btn" style="display:none">返回全部图谱</button>
+        <div id="expand-bar" style="display:none">
+          <span class="expand-label">扩散范围</span>
+          <input type="range" id="expand-range" min="1" max="8" step="1" value="1" />
+          <span id="expand-value">1 级</span>
+        </div>
+        <datalist id="works"></datalist>
+      </nav>
+    </aside>
+
+    <div id="sidebar-zone-right"></div>
+    <aside id="panel">
       <div id="panel-content">
         <div id="panel-empty">
           <p>点击任意节点查看详情;</p>
@@ -51,6 +54,6 @@
 
   <script src="/static/vendor/three.min.js"></script>
   <script src="/static/vendor/CSS2DRenderer.js"></script>
-  <script type="module" src="/static/main.js"></script>
+  <script type="module" src="/static/main.js?v=5"></script>
 </body>
 </html>

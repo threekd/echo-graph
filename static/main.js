@@ -1,8 +1,8 @@
 /* 入口:初始化渲染器、绑定交互、加载数据 */
 
 import { el, esc } from "./util.js";
-import { initThree, setOnNodeClick } from "./renderer.js";
-import { loadGraph, wireEvents, handleHash, selectNode } from "./actions.js";
+import { initThree, setOnNodeClick, setOnNodeHover } from "./renderer.js";
+import { loadGraph, wireEvents, handleHash, selectNode, showNodeDetail } from "./actions.js";
 import { setOnSelect } from "./panels.js";
 
 function initStarfield() {
@@ -25,9 +25,34 @@ function initStarfield() {
   }
 }
 
+function initSidebar() {
+  function bind(zoneId, panelId) {
+    var zone = el(zoneId);
+    var panel = el(panelId);
+    if (!zone || !panel) return null;
+    zone.addEventListener("mouseenter", function () {
+      panel.classList.add("show");
+    });
+    panel.addEventListener("mouseleave", function (e) {
+      if (!panel.contains(e.relatedTarget)) {
+        panel.classList.remove("show");
+      }
+    });
+    return panel;
+  }
+  var leftPanel = bind("sidebar-zone-left", "sidebar-left");
+  var rightPanel = bind("sidebar-zone-right", "panel");
+  document.addEventListener("mouseleave", function () {
+    if (leftPanel) leftPanel.classList.remove("show");
+    if (rightPanel) rightPanel.classList.remove("show");
+  });
+}
+
 initThree();
 initStarfield();
+initSidebar();
 setOnNodeClick(selectNode);
+setOnNodeHover(showNodeDetail);
 setOnSelect(selectNode);
 wireEvents();
 loadGraph().catch(function (err) {

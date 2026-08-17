@@ -54,6 +54,23 @@ export function selectNode(id) {
   }
 }
 
+// 悬停节点:只显示右侧详情页,不切换 3D 视图
+export function showNodeDetail(id) {
+  var node = state.fullData.nodes.filter(function (n) { return n.id === id; })[0];
+  if (!node) return;
+  if (node.type === "work") {
+    fetch("/api/work/" + encodeURIComponent(id))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        renderWorkPanel(d);
+        el("panel").classList.add("show");
+      });
+  } else {
+    renderAuthorPanel(node);
+    el("panel").classList.add("show");
+  }
+}
+
 function renderAuthorView(author) {
   var nodes = [author];
   var edges = [];
@@ -147,7 +164,6 @@ function renderPath(result, f, t) {
 
 export function wireEvents() {
   el("btn-path").onclick = findPath;
-  el("btn-reset").onclick = function () { loadGraph(); showEmptyPanel(); };
   el("btn-back-main").onclick = function () { loadGraph(); };
   el("btn-example").onclick = function () {
     el("from").value = "伊利亚特 - 荷马";

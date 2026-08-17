@@ -16,11 +16,18 @@ var cameraState = { radius: 1500, theta: -Math.PI / 2 + 0.4, phi: Math.PI / 2 - 
 var center = new THREE.Vector3(0, 0, 0); // 相机注视点(平移时移动它)
 var lastInteraction = 0;
 var dragging = false, dragButton = 0, dragMoved = false, lastX = 0, lastY = 0;
+var hovering = false;          // 鼠标悬停在节点上时暂停自动旋转
+var lastHoveredNodeId = null;
 var glowTexture = null;
 var onNodeClick = null; // 由 main.js 注入(避免循环依赖)
+var onNodeHover = null; // 由 main.js 注入(悬停显示详情)
 
 export function setOnNodeClick(fn) {
   onNodeClick = fn;
+}
+
+export function setOnNodeHover(fn) {
+  onNodeHover = fn;
 }
 
 // =============================== 初始化 ===============================
@@ -528,6 +535,11 @@ function hoverPick(e) {
     nodeLabels[nid].element.classList.toggle("active", nid === id);
   });
   renderer.domElement.style.cursor = mesh ? "pointer" : "grab";
+  hovering = id != null;
+  if (id !== lastHoveredNodeId) {
+    lastHoveredNodeId = id;
+    if (id && onNodeHover) onNodeHover(id);
+  }
 }
 
 function clickPick(e) {
@@ -550,10 +562,10 @@ function onResize() {
 function animate() {
   requestAnimationFrame(animate);
   var now = Date.now();
-  if (now - lastInteraction > 3500) {
-    cameraState.theta += 0.0016;
-    applyCamera();
-  }
+    if (!hovering && now - lastInteraction > 1000) {
+      cameraState.theta += 0.0016;
+      applyCamera();
+    }
   var t = now * 0.001;
   Object.keys(nodeGroups).forEach(function (id) {
     var g = nodeGroups[id];

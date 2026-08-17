@@ -1,0 +1,1763 @@
+{
+  "meta": {
+    "name": "echo-graph demo seed",
+    "demo": true,
+    "note": "SYNTHETIC DEMO DATA - fabricated influence edges and quotes, not scholarly fact."
+  },
+  "authors": [
+    {
+      "id": "homer",
+      "name": "荷马",
+      "name_en": "Homer",
+      "birth": -800,
+      "death": -700,
+      "nationality": "古希腊",
+      "language": "古希腊语",
+      "era": "古希腊"
+    },
+    {
+      "id": "virgil",
+      "name": "维吉尔",
+      "name_en": "Virgil",
+      "birth": -70,
+      "death": -19,
+      "nationality": "古罗马",
+      "language": "拉丁语",
+      "era": "古罗马"
+    },
+    {
+      "id": "dante",
+      "name": "但丁",
+      "name_en": "Dante",
+      "birth": 1265,
+      "death": 1321,
+      "nationality": "意大利",
+      "language": "意大利语",
+      "era": "中世纪"
+    },
+    {
+      "id": "chaucer",
+      "name": "乔叟",
+      "name_en": "Chaucer",
+      "birth": 1343,
+      "death": 1400,
+      "nationality": "英国",
+      "language": "中古英语",
+      "era": "中世纪"
+    },
+    {
+      "id": "quyuan",
+      "name": "屈原",
+      "name_en": "Qu Yuan",
+      "birth": -340,
+      "death": -278,
+      "nationality": "中国",
+      "language": "古汉语",
+      "era": "战国"
+    },
+    {
+      "id": "dufu",
+      "name": "杜甫",
+      "name_en": "Du Fu",
+      "birth": 712,
+      "death": 770,
+      "nationality": "中国",
+      "language": "古汉语",
+      "era": "唐代"
+    },
+    {
+      "id": "libai",
+      "name": "李白",
+      "name_en": "Li Bai",
+      "birth": 701,
+      "death": 762,
+      "nationality": "中国",
+      "language": "古汉语",
+      "era": "唐代"
+    },
+    {
+      "id": "shakespeare",
+      "name": "莎士比亚",
+      "name_en": "Shakespeare",
+      "birth": 1564,
+      "death": 1616,
+      "nationality": "英国",
+      "language": "英语",
+      "era": "文艺复兴"
+    },
+    {
+      "id": "cervantes",
+      "name": "塞万提斯",
+      "name_en": "Cervantes",
+      "birth": 1547,
+      "death": 1616,
+      "nationality": "西班牙",
+      "language": "西班牙语",
+      "era": "文艺复兴"
+    },
+    {
+      "id": "shikibu",
+      "name": "紫式部",
+      "name_en": "Murasaki Shikibu",
+      "birth": 973,
+      "death": 1014,
+      "nationality": "日本",
+      "language": "古典日语",
+      "era": "平安时代"
+    },
+    {
+      "id": "caoxueqin",
+      "name": "曹雪芹",
+      "name_en": "Cao Xueqin",
+      "birth": 1715,
+      "death": 1763,
+      "nationality": "中国",
+      "language": "古汉语",
+      "era": "清代"
+    },
+    {
+      "id": "goethe",
+      "name": "歌德",
+      "name_en": "Goethe",
+      "birth": 1749,
+      "death": 1832,
+      "nationality": "德国",
+      "language": "德语",
+      "era": "启蒙与古典"
+    },
+    {
+      "id": "balzac",
+      "name": "巴尔扎克",
+      "name_en": "Balzac",
+      "birth": 1799,
+      "death": 1850,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "19世纪"
+    },
+    {
+      "id": "poe",
+      "name": "爱伦·坡",
+      "name_en": "Edgar Allan Poe",
+      "birth": 1809,
+      "death": 1849,
+      "nationality": "美国",
+      "language": "英语",
+      "era": "19世纪"
+    },
+    {
+      "id": "gogol",
+      "name": "果戈里",
+      "name_en": "Gogol",
+      "birth": 1809,
+      "death": 1852,
+      "nationality": "俄国",
+      "language": "俄语",
+      "era": "19世纪"
+    },
+    {
+      "id": "dickens",
+      "name": "狄更斯",
+      "name_en": "Dickens",
+      "birth": 1812,
+      "death": 1870,
+      "nationality": "英国",
+      "language": "英语",
+      "era": "19世纪"
+    },
+    {
+      "id": "dostoevsky",
+      "name": "陀思妥耶夫斯基",
+      "name_en": "Dostoevsky",
+      "birth": 1821,
+      "death": 1881,
+      "nationality": "俄国",
+      "language": "俄语",
+      "era": "19世纪"
+    },
+    {
+      "id": "flaubert",
+      "name": "福楼拜",
+      "name_en": "Flaubert",
+      "birth": 1821,
+      "death": 1880,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "19世纪"
+    },
+    {
+      "id": "baudelaire",
+      "name": "波德莱尔",
+      "name_en": "Baudelaire",
+      "birth": 1821,
+      "death": 1867,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "19世纪"
+    },
+    {
+      "id": "tolstoy",
+      "name": "托尔斯泰",
+      "name_en": "Tolstoy",
+      "birth": 1828,
+      "death": 1910,
+      "nationality": "俄国",
+      "language": "俄语",
+      "era": "19世纪"
+    },
+    {
+      "id": "ibsen",
+      "name": "易卜生",
+      "name_en": "Ibsen",
+      "birth": 1828,
+      "death": 1906,
+      "nationality": "挪威",
+      "language": "挪威语",
+      "era": "19世纪"
+    },
+    {
+      "id": "dickinson",
+      "name": "狄金森",
+      "name_en": "Dickinson",
+      "birth": 1830,
+      "death": 1886,
+      "nationality": "美国",
+      "language": "英语",
+      "era": "19世纪"
+    },
+    {
+      "id": "chekhov",
+      "name": "契诃夫",
+      "name_en": "Chekhov",
+      "birth": 1860,
+      "death": 1904,
+      "nationality": "俄国",
+      "language": "俄语",
+      "era": "19世纪末"
+    },
+    {
+      "id": "wilde",
+      "name": "王尔德",
+      "name_en": "Wilde",
+      "birth": 1854,
+      "death": 1900,
+      "nationality": "爱尔兰",
+      "language": "英语",
+      "era": "19世纪末"
+    },
+    {
+      "id": "tagore",
+      "name": "泰戈尔",
+      "name_en": "Tagore",
+      "birth": 1861,
+      "death": 1941,
+      "nationality": "印度",
+      "language": "孟加拉语",
+      "era": "20世纪初"
+    },
+    {
+      "id": "lu_xun",
+      "name": "鲁迅",
+      "name_en": "Lu Xun",
+      "birth": 1881,
+      "death": 1936,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "中国现代"
+    },
+    {
+      "id": "soseki",
+      "name": "夏目漱石",
+      "name_en": "Natsume Soseki",
+      "birth": 1867,
+      "death": 1916,
+      "nationality": "日本",
+      "language": "日语",
+      "era": "日本近代"
+    },
+    {
+      "id": "james",
+      "name": "亨利·詹姆斯",
+      "name_en": "Henry James",
+      "birth": 1843,
+      "death": 1916,
+      "nationality": "美国",
+      "language": "英语",
+      "era": "19-20世纪"
+    },
+    {
+      "id": "proust",
+      "name": "普鲁斯特",
+      "name_en": "Proust",
+      "birth": 1871,
+      "death": 1922,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "20世纪初"
+    },
+    {
+      "id": "joyce",
+      "name": "乔伊斯",
+      "name_en": "Joyce",
+      "birth": 1882,
+      "death": 1941,
+      "nationality": "爱尔兰",
+      "language": "英语",
+      "era": "20世纪初"
+    },
+    {
+      "id": "kafka",
+      "name": "卡夫卡",
+      "name_en": "Kafka",
+      "birth": 1883,
+      "death": 1924,
+      "nationality": "奥地利",
+      "language": "德语",
+      "era": "20世纪初"
+    },
+    {
+      "id": "woolf",
+      "name": "伍尔夫",
+      "name_en": "Woolf",
+      "birth": 1882,
+      "death": 1941,
+      "nationality": "英国",
+      "language": "英语",
+      "era": "20世纪初"
+    },
+    {
+      "id": "faulkner",
+      "name": "福克纳",
+      "name_en": "Faulkner",
+      "birth": 1897,
+      "death": 1962,
+      "nationality": "美国",
+      "language": "英语",
+      "era": "20世纪"
+    },
+    {
+      "id": "hemingway",
+      "name": "海明威",
+      "name_en": "Hemingway",
+      "birth": 1899,
+      "death": 1961,
+      "nationality": "美国",
+      "language": "英语",
+      "era": "20世纪"
+    },
+    {
+      "id": "borges",
+      "name": "博尔赫斯",
+      "name_en": "Borges",
+      "birth": 1899,
+      "death": 1986,
+      "nationality": "阿根廷",
+      "language": "西班牙语",
+      "era": "20世纪"
+    },
+    {
+      "id": "camus",
+      "name": "加缪",
+      "name_en": "Camus",
+      "birth": 1913,
+      "death": 1960,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "20世纪"
+    },
+    {
+      "id": "orwell",
+      "name": "奥威尔",
+      "name_en": "Orwell",
+      "birth": 1903,
+      "death": 1950,
+      "nationality": "英国",
+      "language": "英语",
+      "era": "20世纪"
+    },
+    {
+      "id": "nabokov",
+      "name": "纳博科夫",
+      "name_en": "Nabokov",
+      "birth": 1899,
+      "death": 1977,
+      "nationality": "俄裔美籍",
+      "language": "英语",
+      "era": "20世纪"
+    },
+    {
+      "id": "kawabata",
+      "name": "川端康成",
+      "name_en": "Kawabata",
+      "birth": 1899,
+      "death": 1972,
+      "nationality": "日本",
+      "language": "日语",
+      "era": "20世纪"
+    },
+    {
+      "id": "laoshe",
+      "name": "老舍",
+      "name_en": "Lao She",
+      "birth": 1899,
+      "death": 1966,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "中国现代"
+    },
+    {
+      "id": "zhangailing",
+      "name": "张爱玲",
+      "name_en": "Eileen Chang",
+      "birth": 1920,
+      "death": 1995,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "中国现代"
+    },
+    {
+      "id": "shencongwen",
+      "name": "沈从文",
+      "name_en": "Shen Congwen",
+      "birth": 1902,
+      "death": 1988,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "中国现代"
+    },
+    {
+      "id": "rulfo",
+      "name": "鲁尔福",
+      "name_en": "Rulfo",
+      "birth": 1917,
+      "death": 1986,
+      "nationality": "墨西哥",
+      "language": "西班牙语",
+      "era": "20世纪"
+    },
+    {
+      "id": "marquez",
+      "name": "马尔克斯",
+      "name_en": "Márquez",
+      "birth": 1927,
+      "death": 2014,
+      "nationality": "哥伦比亚",
+      "language": "西班牙语",
+      "era": "20世纪"
+    },
+    {
+      "id": "murakami",
+      "name": "村上春树",
+      "name_en": "Murakami",
+      "birth": 1949,
+      "death": null,
+      "nationality": "日本",
+      "language": "日语",
+      "era": "当代"
+    },
+    {
+      "id": "yuhua",
+      "name": "余华",
+      "name_en": "Yu Hua",
+      "birth": 1960,
+      "death": null,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "当代"
+    },
+    {
+      "id": "moyan",
+      "name": "莫言",
+      "name_en": "Mo Yan",
+      "birth": 1955,
+      "death": null,
+      "nationality": "中国",
+      "language": "中文",
+      "era": "当代"
+    },
+    {
+      "id": "eliot",
+      "name": "艾略特",
+      "name_en": "T. S. Eliot",
+      "birth": 1888,
+      "death": 1965,
+      "nationality": "英裔美籍",
+      "language": "英语",
+      "era": "20世纪"
+    },
+    {
+      "id": "hessen",
+      "name": "黑塞",
+      "name_en": "Hesse",
+      "birth": 1877,
+      "death": 1962,
+      "nationality": "德裔瑞士",
+      "language": "德语",
+      "era": "20世纪"
+    },
+    {
+      "id": "rimbaud",
+      "name": "兰波",
+      "name_en": "Rimbaud",
+      "birth": 1854,
+      "death": 1891,
+      "nationality": "法国",
+      "language": "法语",
+      "era": "19世纪"
+    }
+  ],
+  "works": [
+    {
+      "id": "iliad",
+      "title": "伊利亚特",
+      "title_en": "Iliad",
+      "year": -750,
+      "language": "古希腊语",
+      "genre": "史诗",
+      "author_id": "homer"
+    },
+    {
+      "id": "odyssey",
+      "title": "奥德赛",
+      "title_en": "Odyssey",
+      "year": -700,
+      "language": "古希腊语",
+      "genre": "史诗",
+      "author_id": "homer"
+    },
+    {
+      "id": "aeneid",
+      "title": "埃涅阿斯纪",
+      "title_en": "Aeneid",
+      "year": -19,
+      "language": "拉丁语",
+      "genre": "史诗",
+      "author_id": "virgil"
+    },
+    {
+      "id": "georgics",
+      "title": "农事诗",
+      "title_en": "Georgics",
+      "year": -29,
+      "language": "拉丁语",
+      "genre": "长诗",
+      "author_id": "virgil"
+    },
+    {
+      "id": "divine_comedy",
+      "title": "神曲",
+      "title_en": "The Divine Comedy",
+      "year": 1320,
+      "language": "意大利语",
+      "genre": "长诗",
+      "author_id": "dante"
+    },
+    {
+      "id": "vita_nuova",
+      "title": "新生",
+      "title_en": "La Vita Nuova",
+      "year": 1295,
+      "language": "意大利语",
+      "genre": "诗集",
+      "author_id": "dante"
+    },
+    {
+      "id": "canterbury_tales",
+      "title": "坎特伯雷故事集",
+      "title_en": "The Canterbury Tales",
+      "year": 1400,
+      "language": "中古英语",
+      "genre": "叙事诗",
+      "author_id": "chaucer"
+    },
+    {
+      "id": "troilus",
+      "title": "特洛伊罗斯与克瑞西达",
+      "title_en": "Troilus and Criseyde",
+      "year": 1385,
+      "language": "中古英语",
+      "genre": "叙事诗",
+      "author_id": "chaucer"
+    },
+    {
+      "id": "lisao",
+      "title": "离骚",
+      "title_en": "Li Sao",
+      "year": -300,
+      "language": "古汉语",
+      "genre": "楚辞",
+      "author_id": "quyuan"
+    },
+    {
+      "id": "jiu_ge",
+      "title": "九歌",
+      "title_en": "Nine Songs",
+      "year": -300,
+      "language": "古汉语",
+      "genre": "楚辞",
+      "author_id": "quyuan"
+    },
+    {
+      "id": "sanli_sanbie",
+      "title": "三吏三别",
+      "title_en": "Three Officials and Three Partings",
+      "year": 759,
+      "language": "古汉语",
+      "genre": "诗",
+      "author_id": "dufu"
+    },
+    {
+      "id": "qiuxing_bashou",
+      "title": "秋兴八首",
+      "title_en": "Eight Autumn Meditations",
+      "year": 766,
+      "language": "古汉语",
+      "genre": "诗",
+      "author_id": "dufu"
+    },
+    {
+      "id": "jiang_jin_jiu",
+      "title": "将进酒",
+      "title_en": "Invitation to Wine",
+      "year": 752,
+      "language": "古汉语",
+      "genre": "诗",
+      "author_id": "libai"
+    },
+    {
+      "id": "jing_ye_si",
+      "title": "静夜思",
+      "title_en": "Quiet Night Thought",
+      "year": 726,
+      "language": "古汉语",
+      "genre": "诗",
+      "author_id": "libai"
+    },
+    {
+      "id": "hamlet",
+      "title": "哈姆雷特",
+      "title_en": "Hamlet",
+      "year": 1603,
+      "language": "英语",
+      "genre": "戏剧",
+      "author_id": "shakespeare"
+    },
+    {
+      "id": "king_lear",
+      "title": "李尔王",
+      "title_en": "King Lear",
+      "year": 1606,
+      "language": "英语",
+      "genre": "戏剧",
+      "author_id": "shakespeare"
+    },
+    {
+      "id": "macbeth",
+      "title": "麦克白",
+      "title_en": "Macbeth",
+      "year": 1606,
+      "language": "英语",
+      "genre": "戏剧",
+      "author_id": "shakespeare"
+    },
+    {
+      "id": "don_quixote",
+      "title": "堂吉诃德",
+      "title_en": "Don Quixote",
+      "year": 1615,
+      "language": "西班牙语",
+      "genre": "小说",
+      "author_id": "cervantes"
+    },
+    {
+      "id": "exemplary_novels",
+      "title": "惩恶扬善故事集",
+      "title_en": "Novelas ejemplares",
+      "year": 1613,
+      "language": "西班牙语",
+      "genre": "短篇集",
+      "author_id": "cervantes"
+    },
+    {
+      "id": "genji",
+      "title": "源氏物语",
+      "title_en": "The Tale of Genji",
+      "year": 1010,
+      "language": "古典日语",
+      "genre": "物语",
+      "author_id": "shikibu"
+    },
+    {
+      "id": "shikibu_diary",
+      "title": "紫式部日记",
+      "title_en": "The Diary of Lady Murasaki",
+      "year": 1010,
+      "language": "古典日语",
+      "genre": "日记",
+      "author_id": "shikibu"
+    },
+    {
+      "id": "hongloumeng",
+      "title": "红楼梦",
+      "title_en": "Dream of the Red Chamber",
+      "year": 1791,
+      "language": "古汉语",
+      "genre": "小说",
+      "author_id": "caoxueqin"
+    },
+    {
+      "id": "faust",
+      "title": "浮士德",
+      "title_en": "Faust",
+      "year": 1831,
+      "language": "德语",
+      "genre": "诗剧",
+      "author_id": "goethe"
+    },
+    {
+      "id": "werther",
+      "title": "少年维特的烦恼",
+      "title_en": "The Sorrows of Young Werther",
+      "year": 1774,
+      "language": "德语",
+      "genre": "书信体小说",
+      "author_id": "goethe"
+    },
+    {
+      "id": "pere_goriot",
+      "title": "高老头",
+      "title_en": "Old Goriot",
+      "year": 1835,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "balzac"
+    },
+    {
+      "id": "comedie_humaine",
+      "title": "人间喜剧",
+      "title_en": "La Comédie Humaine",
+      "year": 1850,
+      "language": "法语",
+      "genre": "小说系列",
+      "author_id": "balzac"
+    },
+    {
+      "id": "raven",
+      "title": "乌鸦",
+      "title_en": "The Raven",
+      "year": 1845,
+      "language": "英语",
+      "genre": "诗",
+      "author_id": "poe"
+    },
+    {
+      "id": "rue_morgue",
+      "title": "莫格街凶杀案",
+      "title_en": "The Murders in the Rue Morgue",
+      "year": 1841,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "poe"
+    },
+    {
+      "id": "overcoat",
+      "title": "外套",
+      "title_en": "The Overcoat",
+      "year": 1842,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "gogol"
+    },
+    {
+      "id": "diary_madman",
+      "title": "狂人日记",
+      "title_en": "Diary of a Madman",
+      "year": 1835,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "gogol"
+    },
+    {
+      "id": "oliver_twist",
+      "title": "雾都孤儿",
+      "title_en": "Oliver Twist",
+      "year": 1838,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "dickens"
+    },
+    {
+      "id": "david_copperfield",
+      "title": "大卫·科波菲尔",
+      "title_en": "David Copperfield",
+      "year": 1850,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "dickens"
+    },
+    {
+      "id": "notes_underground",
+      "title": "地下室手记",
+      "title_en": "Notes from Underground",
+      "year": 1864,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "dostoevsky"
+    },
+    {
+      "id": "crime_punishment",
+      "title": "罪与罚",
+      "title_en": "Crime and Punishment",
+      "year": 1866,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "dostoevsky"
+    },
+    {
+      "id": "madame_bovary",
+      "title": "包法利夫人",
+      "title_en": "Madame Bovary",
+      "year": 1857,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "flaubert"
+    },
+    {
+      "id": "education_sentimentale",
+      "title": "情感教育",
+      "title_en": "Sentimental Education",
+      "year": 1869,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "flaubert"
+    },
+    {
+      "id": "fleurs_du_mal",
+      "title": "恶之花",
+      "title_en": "Les Fleurs du Mal",
+      "year": 1857,
+      "language": "法语",
+      "genre": "诗集",
+      "author_id": "baudelaire"
+    },
+    {
+      "id": "paris_spleen",
+      "title": "巴黎的忧郁",
+      "title_en": "Le Spleen de Paris",
+      "year": 1869,
+      "language": "法语",
+      "genre": "散文诗",
+      "author_id": "baudelaire"
+    },
+    {
+      "id": "war_peace",
+      "title": "战争与和平",
+      "title_en": "War and Peace",
+      "year": 1869,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "tolstoy"
+    },
+    {
+      "id": "anna_karenina",
+      "title": "安娜·卡列尼娜",
+      "title_en": "Anna Karenina",
+      "year": 1877,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "tolstoy"
+    },
+    {
+      "id": "doll_house",
+      "title": "玩偶之家",
+      "title_en": "A Doll's House",
+      "year": 1879,
+      "language": "挪威语",
+      "genre": "戏剧",
+      "author_id": "ibsen"
+    },
+    {
+      "id": "ghosts",
+      "title": "群鬼",
+      "title_en": "Ghosts",
+      "year": 1881,
+      "language": "挪威语",
+      "genre": "戏剧",
+      "author_id": "ibsen"
+    },
+    {
+      "id": "because_i_could_not_stop",
+      "title": "因为我不能停步等待死神",
+      "title_en": "Because I Could Not Stop for Death",
+      "year": 1890,
+      "language": "英语",
+      "genre": "诗",
+      "author_id": "dickinson"
+    },
+    {
+      "id": "hope_is_the_thing",
+      "title": "希望是长着羽毛的东西",
+      "title_en": "Hope is the Thing with Feathers",
+      "year": 1891,
+      "language": "英语",
+      "genre": "诗",
+      "author_id": "dickinson"
+    },
+    {
+      "id": "cherry_orchard",
+      "title": "樱桃园",
+      "title_en": "The Cherry Orchard",
+      "year": 1904,
+      "language": "俄语",
+      "genre": "戏剧",
+      "author_id": "chekhov"
+    },
+    {
+      "id": "ward_no6",
+      "title": "第六病室",
+      "title_en": "Ward No. 6",
+      "year": 1892,
+      "language": "俄语",
+      "genre": "小说",
+      "author_id": "chekhov"
+    },
+    {
+      "id": "dorian_gray",
+      "title": "道林·格雷的画像",
+      "title_en": "The Picture of Dorian Gray",
+      "year": 1890,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "wilde"
+    },
+    {
+      "id": "importance_earnest",
+      "title": "不可儿戏",
+      "title_en": "The Importance of Being Earnest",
+      "year": 1895,
+      "language": "英语",
+      "genre": "戏剧",
+      "author_id": "wilde"
+    },
+    {
+      "id": "gitanjali",
+      "title": "吉檀迦利",
+      "title_en": "Gitanjali",
+      "year": 1910,
+      "language": "孟加拉语",
+      "genre": "诗集",
+      "author_id": "tagore"
+    },
+    {
+      "id": "stray_birds",
+      "title": "飞鸟集",
+      "title_en": "Stray Birds",
+      "year": 1916,
+      "language": "孟加拉语",
+      "genre": "诗集",
+      "author_id": "tagore"
+    },
+    {
+      "id": "crazy_diary",
+      "title": "狂人日记",
+      "title_en": "Diary of a Madman",
+      "year": 1918,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "lu_xun"
+    },
+    {
+      "id": "ah_q",
+      "title": "阿Q正传",
+      "title_en": "The True Story of Ah Q",
+      "year": 1921,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "lu_xun"
+    },
+    {
+      "id": "kokoro",
+      "title": "心",
+      "title_en": "Kokoro",
+      "year": 1914,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "soseki"
+    },
+    {
+      "id": "botchan",
+      "title": "少爷",
+      "title_en": "Botchan",
+      "year": 1906,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "soseki"
+    },
+    {
+      "id": "portrait_lady",
+      "title": "一位女士的画像",
+      "title_en": "The Portrait of a Lady",
+      "year": 1881,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "james"
+    },
+    {
+      "id": "turn_screw",
+      "title": "螺丝在拧紧",
+      "title_en": "The Turn of the Screw",
+      "year": 1898,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "james"
+    },
+    {
+      "id": "recherche",
+      "title": "追忆似水年华",
+      "title_en": "In Search of Lost Time",
+      "year": 1913,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "proust"
+    },
+    {
+      "id": "swanns_way",
+      "title": "斯万之恋",
+      "title_en": "Swann's Way",
+      "year": 1913,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "proust"
+    },
+    {
+      "id": "ulysses",
+      "title": "尤利西斯",
+      "title_en": "Ulysses",
+      "year": 1922,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "joyce"
+    },
+    {
+      "id": "dubliners",
+      "title": "都柏林人",
+      "title_en": "Dubliners",
+      "year": 1914,
+      "language": "英语",
+      "genre": "短篇集",
+      "author_id": "joyce"
+    },
+    {
+      "id": "metamorphosis",
+      "title": "变形记",
+      "title_en": "The Metamorphosis",
+      "year": 1915,
+      "language": "德语",
+      "genre": "小说",
+      "author_id": "kafka"
+    },
+    {
+      "id": "trial",
+      "title": "审判",
+      "title_en": "The Trial",
+      "year": 1925,
+      "language": "德语",
+      "genre": "小说",
+      "author_id": "kafka"
+    },
+    {
+      "id": "mrs_dalloway",
+      "title": "达洛维夫人",
+      "title_en": "Mrs Dalloway",
+      "year": 1925,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "woolf"
+    },
+    {
+      "id": "to_lighthouse",
+      "title": "到灯塔去",
+      "title_en": "To the Lighthouse",
+      "year": 1927,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "woolf"
+    },
+    {
+      "id": "sound_fury",
+      "title": "喧哗与骚动",
+      "title_en": "The Sound and the Fury",
+      "year": 1929,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "faulkner"
+    },
+    {
+      "id": "absalom",
+      "title": "押沙龙,押沙龙!",
+      "title_en": "Absalom, Absalom!",
+      "year": 1936,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "faulkner"
+    },
+    {
+      "id": "old_man_sea",
+      "title": "老人与海",
+      "title_en": "The Old Man and the Sea",
+      "year": 1952,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "hemingway"
+    },
+    {
+      "id": "sun_also_rises",
+      "title": "太阳照常升起",
+      "title_en": "The Sun Also Rises",
+      "year": 1926,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "hemingway"
+    },
+    {
+      "id": "labyrinths",
+      "title": "小径分岔的花园",
+      "title_en": "The Garden of Forking Paths",
+      "year": 1941,
+      "language": "西班牙语",
+      "genre": "短篇",
+      "author_id": "borges"
+    },
+    {
+      "id": "ficciones",
+      "title": "虚构集",
+      "title_en": "Ficciones",
+      "year": 1944,
+      "language": "西班牙语",
+      "genre": "短篇集",
+      "author_id": "borges"
+    },
+    {
+      "id": "stranger",
+      "title": "局外人",
+      "title_en": "The Stranger",
+      "year": 1942,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "camus"
+    },
+    {
+      "id": "plague",
+      "title": "鼠疫",
+      "title_en": "The Plague",
+      "year": 1947,
+      "language": "法语",
+      "genre": "小说",
+      "author_id": "camus"
+    },
+    {
+      "id": "nineteen_eighty_four",
+      "title": "一九八四",
+      "title_en": "Nineteen Eighty-Four",
+      "year": 1949,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "orwell"
+    },
+    {
+      "id": "animal_farm",
+      "title": "动物农场",
+      "title_en": "Animal Farm",
+      "year": 1945,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "orwell"
+    },
+    {
+      "id": "lolita",
+      "title": "洛丽塔",
+      "title_en": "Lolita",
+      "year": 1955,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "nabokov"
+    },
+    {
+      "id": "pnin",
+      "title": "普宁",
+      "title_en": "Pnin",
+      "year": 1957,
+      "language": "英语",
+      "genre": "小说",
+      "author_id": "nabokov"
+    },
+    {
+      "id": "snow_country",
+      "title": "雪国",
+      "title_en": "Snow Country",
+      "year": 1935,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "kawabata"
+    },
+    {
+      "id": "thousand_cranes",
+      "title": "千只鹤",
+      "title_en": "Thousand Cranes",
+      "year": 1952,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "kawabata"
+    },
+    {
+      "id": "teahouse",
+      "title": "茶馆",
+      "title_en": "Teahouse",
+      "year": 1957,
+      "language": "中文",
+      "genre": "戏剧",
+      "author_id": "laoshe"
+    },
+    {
+      "id": "camel_xiangzi",
+      "title": "骆驼祥子",
+      "title_en": "Rickshaw Boy",
+      "year": 1936,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "laoshe"
+    },
+    {
+      "id": "qingcheng",
+      "title": "倾城之恋",
+      "title_en": "Love in a Fallen City",
+      "year": 1943,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "zhangailing"
+    },
+    {
+      "id": "golden_cangue",
+      "title": "金锁记",
+      "title_en": "The Golden Cangue",
+      "year": 1943,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "zhangailing"
+    },
+    {
+      "id": "biancheng",
+      "title": "边城",
+      "title_en": "Border Town",
+      "year": 1934,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "shencongwen"
+    },
+    {
+      "id": "changhe",
+      "title": "长河",
+      "title_en": "The Long River",
+      "year": 1943,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "shencongwen"
+    },
+    {
+      "id": "pedro_paramo",
+      "title": "佩德罗·巴拉莫",
+      "title_en": "Pedro Páramo",
+      "year": 1955,
+      "language": "西班牙语",
+      "genre": "小说",
+      "author_id": "rulfo"
+    },
+    {
+      "id": "burning_plain",
+      "title": "燃烧的平原",
+      "title_en": "The Burning Plain",
+      "year": 1953,
+      "language": "西班牙语",
+      "genre": "短篇集",
+      "author_id": "rulfo"
+    },
+    {
+      "id": "hundred_years",
+      "title": "百年孤独",
+      "title_en": "One Hundred Years of Solitude",
+      "year": 1967,
+      "language": "西班牙语",
+      "genre": "小说",
+      "author_id": "marquez"
+    },
+    {
+      "id": "love_cholera",
+      "title": "霍乱时期的爱情",
+      "title_en": "Love in the Time of Cholera",
+      "year": 1985,
+      "language": "西班牙语",
+      "genre": "小说",
+      "author_id": "marquez"
+    },
+    {
+      "id": "norwegian_wood",
+      "title": "挪威的森林",
+      "title_en": "Norwegian Wood",
+      "year": 1987,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "murakami"
+    },
+    {
+      "id": "kafka_shore",
+      "title": "海边的卡夫卡",
+      "title_en": "Kafka on the Shore",
+      "year": 2002,
+      "language": "日语",
+      "genre": "小说",
+      "author_id": "murakami"
+    },
+    {
+      "id": "living",
+      "title": "活着",
+      "title_en": "To Live",
+      "year": 1993,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "yuhua"
+    },
+    {
+      "id": "xuzhen",
+      "title": "许三观卖血记",
+      "title_en": "Chronicle of a Blood Merchant",
+      "year": 1995,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "yuhua"
+    },
+    {
+      "id": "red_sorghum",
+      "title": "红高粱家族",
+      "title_en": "Red Sorghum",
+      "year": 1986,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "moyan"
+    },
+    {
+      "id": "frog",
+      "title": "蛙",
+      "title_en": "Frog",
+      "year": 2009,
+      "language": "中文",
+      "genre": "小说",
+      "author_id": "moyan"
+    },
+    {
+      "id": "waste_land",
+      "title": "荒原",
+      "title_en": "The Waste Land",
+      "year": 1922,
+      "language": "英语",
+      "genre": "长诗",
+      "author_id": "eliot"
+    },
+    {
+      "id": "four_quartets",
+      "title": "四个四重奏",
+      "title_en": "Four Quartets",
+      "year": 1943,
+      "language": "英语",
+      "genre": "长诗",
+      "author_id": "eliot"
+    },
+    {
+      "id": "siddhartha",
+      "title": "悉达多",
+      "title_en": "Siddhartha",
+      "year": 1922,
+      "language": "德语",
+      "genre": "小说",
+      "author_id": "hessen"
+    },
+    {
+      "id": "steppenwolf",
+      "title": "荒原狼",
+      "title_en": "Steppenwolf",
+      "year": 1927,
+      "language": "德语",
+      "genre": "小说",
+      "author_id": "hessen"
+    },
+    {
+      "id": "season_in_hell",
+      "title": "地狱一季",
+      "title_en": "A Season in Hell",
+      "year": 1873,
+      "language": "法语",
+      "genre": "诗集",
+      "author_id": "rimbaud"
+    },
+    {
+      "id": "illuminations",
+      "title": "彩图集",
+      "title_en": "Illuminations",
+      "year": 1886,
+      "language": "法语",
+      "genre": "散文诗",
+      "author_id": "rimbaud"
+    }
+  ],
+  "edges": [
+    {
+      "source": "iliad",
+      "target": "aeneid",
+      "kind": "homage",
+      "confidence": 0.9,
+      "quote": "演示引文：维吉尔在史诗开篇呼应荷马的战争母题"
+    },
+    {
+      "source": "iliad",
+      "target": "war_peace",
+      "kind": "homage",
+      "confidence": 0.85,
+      "quote": "演示引文：托尔斯泰反复阅读荷马史诗"
+    },
+    {
+      "source": "aeneid",
+      "target": "divine_comedy",
+      "kind": "mentorship",
+      "confidence": 0.92,
+      "quote": "演示引文：但丁以维吉尔为地狱之旅的引路人"
+    },
+    {
+      "source": "divine_comedy",
+      "target": "faust",
+      "kind": "homage",
+      "confidence": 0.82,
+      "quote": "演示引文：浮士德的结构与神曲的朝圣之旅遥相呼应"
+    },
+    {
+      "source": "divine_comedy",
+      "target": "waste_land",
+      "kind": "homage",
+      "confidence": 0.78,
+      "quote": "演示引文：荒原中对神曲地狱篇的化用"
+    },
+    {
+      "source": "faust",
+      "target": "steppenwolf",
+      "kind": "homage",
+      "confidence": 0.8,
+      "quote": "演示引文：荒原狼中反复引用浮士德与歌德"
+    },
+    {
+      "source": "steppenwolf",
+      "target": "norwegian_wood",
+      "kind": "homage",
+      "confidence": 0.72,
+      "quote": "演示引文：村上春树借主人公之口谈论荒原狼"
+    },
+    {
+      "source": "hamlet",
+      "target": "faust",
+      "kind": "quote",
+      "confidence": 0.75,
+      "quote": "演示引文：浮士德独白与哈姆雷特的生死之问"
+    },
+    {
+      "source": "king_lear",
+      "target": "sound_fury",
+      "kind": "homage",
+      "confidence": 0.7,
+      "quote": "演示引文：福克纳笔下家族疯癫与李尔王呼应"
+    },
+    {
+      "source": "raven",
+      "target": "fleurs_du_mal",
+      "kind": "translation",
+      "confidence": 0.9,
+      "quote": "演示引文：波德莱尔翻译并评介爱伦·坡"
+    },
+    {
+      "source": "fleurs_du_mal",
+      "target": "season_in_hell",
+      "kind": "mentorship",
+      "confidence": 0.84,
+      "quote": "演示引文：兰波的诗学宣言回应恶之花"
+    },
+    {
+      "source": "fleurs_du_mal",
+      "target": "waste_land",
+      "kind": "homage",
+      "confidence": 0.76,
+      "quote": "演示引文：荒原的意象与恶之花相通"
+    },
+    {
+      "source": "overcoat",
+      "target": "notes_underground",
+      "kind": "mentorship",
+      "confidence": 0.88,
+      "quote": "演示引文：我们都来自果戈里的外套"
+    },
+    {
+      "source": "overcoat",
+      "target": "metamorphosis",
+      "kind": "homage",
+      "confidence": 0.74,
+      "quote": "演示引文：小人物异化为虫的荒诞承续"
+    },
+    {
+      "source": "notes_underground",
+      "target": "stranger",
+      "kind": "homage",
+      "confidence": 0.86,
+      "quote": "演示引文：局外人的疏离感可溯至地下室手记"
+    },
+    {
+      "source": "notes_underground",
+      "target": "crazy_diary",
+      "kind": "homage",
+      "confidence": 0.8,
+      "quote": "演示引文：狂人日记的独白体与地下室手记相近"
+    },
+    {
+      "source": "diary_madman",
+      "target": "crazy_diary",
+      "kind": "homage",
+      "confidence": 0.85,
+      "quote": "演示引文：鲁迅狂人日记与果戈里同名作品形成回声"
+    },
+    {
+      "source": "crime_punishment",
+      "target": "stranger",
+      "kind": "homage",
+      "confidence": 0.75,
+      "quote": "演示引文：加缪对罪与罚的伦理追问的回应"
+    },
+    {
+      "source": "crime_punishment",
+      "target": "trial",
+      "kind": "homage",
+      "confidence": 0.78,
+      "quote": "演示引文：卡夫卡笔下罪与罚的审判母题"
+    },
+    {
+      "source": "madame_bovary",
+      "target": "anna_karenina",
+      "kind": "mentorship",
+      "confidence": 0.8,
+      "quote": "演示引文：托尔斯泰借鉴福楼拜的客观叙述"
+    },
+    {
+      "source": "madame_bovary",
+      "target": "ulysses",
+      "kind": "mentorship",
+      "confidence": 0.77,
+      "quote": "演示引文：乔伊斯推崇包法利夫人的精确文体"
+    },
+    {
+      "source": "don_quixote",
+      "target": "david_copperfield",
+      "kind": "homage",
+      "confidence": 0.73,
+      "quote": "演示引文：狄更斯对堂吉诃德式人物的喜爱"
+    },
+    {
+      "source": "don_quixote",
+      "target": "old_man_sea",
+      "kind": "homage",
+      "confidence": 0.74,
+      "quote": "演示引文：老人与海的硬汉精神与堂吉诃德呼应"
+    },
+    {
+      "source": "don_quixote",
+      "target": "hundred_years",
+      "kind": "homage",
+      "confidence": 0.76,
+      "quote": "演示引文：百年孤独的戏谑与反讽有堂吉诃德影子"
+    },
+    {
+      "source": "lisao",
+      "target": "jiang_jin_jiu",
+      "kind": "homage",
+      "confidence": 0.82,
+      "quote": "演示引文：李白的浪漫想象承接屈骚传统"
+    },
+    {
+      "source": "jiu_ge",
+      "target": "qiuxing_bashou",
+      "kind": "homage",
+      "confidence": 0.7,
+      "quote": "演示引文：杜甫诗中的楚辞意象"
+    },
+    {
+      "source": "genji",
+      "target": "snow_country",
+      "kind": "homage",
+      "confidence": 0.75,
+      "quote": "演示引文：川端康成的物哀美学承自源氏物语"
+    },
+    {
+      "source": "hongloumeng",
+      "target": "qingcheng",
+      "kind": "homage",
+      "confidence": 0.78,
+      "quote": "演示引文：张爱玲受红楼梦世情笔法影响"
+    },
+    {
+      "source": "hongloumeng",
+      "target": "golden_cangue",
+      "kind": "homage",
+      "confidence": 0.72,
+      "quote": "演示引文：金锁记的家庭书写与红楼梦的对照"
+    },
+    {
+      "source": "gitanjali",
+      "target": "siddhartha",
+      "kind": "homage",
+      "confidence": 0.7,
+      "quote": "演示引文：黑塞的东方哲思与泰戈尔呼应"
+    },
+    {
+      "source": "doll_house",
+      "target": "cherry_orchard",
+      "kind": "mentorship",
+      "confidence": 0.71,
+      "quote": "演示引文：契诃夫戏剧延续易卜生的社会问题剧"
+    },
+    {
+      "source": "ward_no6",
+      "target": "ah_q",
+      "kind": "homage",
+      "confidence": 0.79,
+      "quote": "演示引文：鲁迅推崇并翻译契诃夫的作品"
+    },
+    {
+      "source": "dubliners",
+      "target": "mrs_dalloway",
+      "kind": "homage",
+      "confidence": 0.82,
+      "quote": "演示引文：伍尔夫对乔伊斯顿悟式叙事的回应"
+    },
+    {
+      "source": "ulysses",
+      "target": "sound_fury",
+      "kind": "mentorship",
+      "confidence": 0.83,
+      "quote": "演示引文：福克纳的意识流深受尤利西斯启发"
+    },
+    {
+      "source": "recherche",
+      "target": "mrs_dalloway",
+      "kind": "mentorship",
+      "confidence": 0.74,
+      "quote": "演示引文：伍尔夫阅读普鲁斯特后转向内心时间"
+    },
+    {
+      "source": "recherche",
+      "target": "sound_fury",
+      "kind": "homage",
+      "confidence": 0.72,
+      "quote": "演示引文：福克纳对时间记忆的处理与普鲁斯特相近"
+    },
+    {
+      "source": "sound_fury",
+      "target": "hundred_years",
+      "kind": "homage",
+      "confidence": 0.84,
+      "quote": "演示引文：马尔克斯反复阅读喧哗与骚动"
+    },
+    {
+      "source": "pedro_paramo",
+      "target": "hundred_years",
+      "kind": "mentorship",
+      "confidence": 0.87,
+      "quote": "演示引文：百年孤独开篇与佩德罗·巴拉莫的对话"
+    },
+    {
+      "source": "labyrinths",
+      "target": "hundred_years",
+      "kind": "homage",
+      "confidence": 0.72,
+      "quote": "演示引文：马尔克斯与博尔赫斯的时间迷宫"
+    },
+    {
+      "source": "ficciones",
+      "target": "kafka_shore",
+      "kind": "homage",
+      "confidence": 0.78,
+      "quote": "演示引文：海边的卡夫卡承袭博尔赫斯的迷宫叙事"
+    },
+    {
+      "source": "metamorphosis",
+      "target": "stranger",
+      "kind": "homage",
+      "confidence": 0.76,
+      "quote": "演示引文：加缪对卡夫卡荒诞的继承与转化"
+    },
+    {
+      "source": "trial",
+      "target": "kafka_shore",
+      "kind": "homage",
+      "confidence": 0.8,
+      "quote": "演示引文：海边的卡夫卡与审判的预言结构"
+    },
+    {
+      "source": "old_man_sea",
+      "target": "living",
+      "kind": "mentorship",
+      "confidence": 0.73,
+      "quote": "演示引文：余华推崇海明威的简洁文体"
+    },
+    {
+      "source": "war_peace",
+      "target": "living",
+      "kind": "mentorship",
+      "confidence": 0.75,
+      "quote": "演示引文：余华对托尔斯泰的宏大叙事的致敬"
+    },
+    {
+      "source": "hundred_years",
+      "target": "red_sorghum",
+      "kind": "homage",
+      "confidence": 0.8,
+      "quote": "演示引文：莫言受拉美魔幻现实主义影响"
+    },
+    {
+      "source": "portrait_lady",
+      "target": "mrs_dalloway",
+      "kind": "mentorship",
+      "confidence": 0.71,
+      "quote": "演示引文：伍尔夫对亨利·詹姆斯心理小说的承续"
+    },
+    {
+      "source": "cherry_orchard",
+      "target": "teahouse",
+      "kind": "homage",
+      "confidence": 0.74,
+      "quote": "演示引文：茶馆的群像结构与契诃夫戏剧相通"
+    },
+    {
+      "source": "ah_q",
+      "target": "teahouse",
+      "kind": "homage",
+      "confidence": 0.68,
+      "quote": "演示引文：老舍对中国国民性的讽刺接续鲁迅"
+    },
+    {
+      "source": "ward_no6",
+      "target": "crazy_diary",
+      "kind": "homage",
+      "confidence": 0.72,
+      "quote": "演示引文：鲁迅对第六病室式绝望的呼应"
+    },
+    {
+      "source": "odyssey",
+      "target": "ulysses",
+      "kind": "homage",
+      "confidence": 0.88,
+      "quote": "演示引文：尤利西斯以奥德赛为原型框架"
+    }
+  ]
+}

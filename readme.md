@@ -14,14 +14,8 @@ The Echo Graph — A Ripple Atlas of World Literature
 为文学研究者和爱好者提供一种全新的交互方式，用来探索：
 - 哪些作家影响了哪些作家？
 - 一部作品如何从母国传播到他国？
-- 思想在跨语言传播中发生了怎样的变形？
 - 是否存在被遗忘的重要“回声链”？
 
-**目标用户**
-- 比较文学研究者、翻译研究者
-- 数字人文、计算文学研究者
-- 高校师生、文学爱好者
-- 出版社、文学策展人
 
 **核心功能**
 1. **影响力图谱**：总体类似于一张立体星云图，以节点代表作家/作品，边代表影响关系（引用、致敬、回应等），支持点击展开、拖拽浏览。
@@ -45,3 +39,50 @@ The Echo Graph — A Ripple Atlas of World Literature
 - 人工策展 **50条高置信度影响链**，作为种子数据。
 - 搭建 Neo4j 图数据库，导入数据。
 - 开发一个简单前端页面，可视化种子图谱。
+
+---
+
+## 当前实现状态(演示版)
+
+已按实施路线搭建出可运行的 MVP 骨架：
+
+- **数据模型**：`Author`、`Work` 节点;`WROTE`(创作归属)与 `INFLUENCES`(影响,含 kind / confidence / quote 属性)关系。
+- **演示种子数据**：50 位作家、100 部作品、50 条影响关系,由 `scripts/generate_seed_data.py` 生成到 `data/seed.json`。
+- **Neo4j**：`scripts/import_data.py` 将种子数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据,演示不会中断。
+- **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,INFLUENCES);Neo4j 查询失败时自动回退 JSON 数据,演示不会中断。
+- **前端**：无构建单页(HTML + Three.js,3D 渲染)。主视图为**球状星云**——节点如星星(作家为蓝白星、作品为金星,带光晕并随机呼吸闪烁),影响关系为发光星轨;支持拖拽旋转、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
+
+### 运行方式
+
+```bash
+uv sync               # 安装依赖(已在 pyproject.toml)
+uv run python scripts/generate_seed_data.py   # 重新生成演示数据(可选)
+uv run python scripts/import_data.py          # 导入 Neo4j(可选)
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+浏览器打开 <http://127.0.0.1:8000/>。
+
+### 视图与深链
+
+| 视图 | 说明 | 深链示例 |
+|---|---|---|
+| 主图谱 | 全量球状星云 | `http://127.0.0.1:8000/` |
+| 影响链 | 两作品间的 3D 影响路径(螺旋排列) | `http://127.0.0.1:8000/#path=iliad,living` |
+| 涟漪 | 以某作品为中心的 3D 扩散球 | `http://127.0.0.1:8000/#ripple=hundred_years` |
+
+### API
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/graph` | 全量图谱(节点 + 边) |
+| `GET /api/search?q=` | 搜索作家 / 作品 |
+| `GET /api/work/{id}` | 作品详情 + 入边 / 出边(涟漪数据) |
+| `GET /api/path?from={workId}&to={workId}` | 有向最短影响链 |
+| `GET /api/stats` | 数据统计 |
+
+### 重要声明
+
+- 当前所有影响关系与"引文"均为**编造演示数据**,仅用于展示产品形态;作家/作品元信息大致符合文学史,但关系不可作为学术依据。正式版本需人工策展并附真实原文片段。
+- 前端暂不依赖 npm(当前机器 npm 工具链损坏),因此采用无构建的单页实现;后续迁移到 React + Vite 时需先修复 npm。
+- Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。

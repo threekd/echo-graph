@@ -396,7 +396,7 @@ button.ghost { color: var(--muted); }
   position: fixed;
   inset: 0;
   z-index: 70;
-  display: flex;
+  display: none; /* 默认隐藏,由 JS 在首次访问时显示,避免刷新闪烁 */
   align-items: center;
   justify-content: center;
   background: rgba(3, 5, 14, 0.72);

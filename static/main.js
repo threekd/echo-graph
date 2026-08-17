@@ -98,9 +98,9 @@ function initGuide() {
   var seen = false;
   try { seen = !!localStorage.getItem("echo_graph_guide_seen"); } catch (e) { /* ignore */ }
   if (seen || location.search.indexOf("skipguide") !== -1) {
-    guide.style.display = "none";
     return;
   }
+  guide.style.display = "flex"; // 首次访问才显示
   el("guide-close").addEventListener("click", function () {
     guide.style.display = "none";
     try { localStorage.setItem("echo_graph_guide_seen", "1"); } catch (e) { /* ignore */ }

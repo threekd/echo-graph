@@ -45,7 +45,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按上方规范实现——`Author` / `Work` 节点及属性(originalTitle、Title_CN、Title_EN、publicationYear、creationYear、language、summary 等);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`;回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性为 `evidence`(摘抄文本)与 `note`(备注)。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(含 `slug`、`genre` 等);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`confidence`(0–1)、`reviewStatus`(draft/reviewed/rejected)、`dataSource`(manual/auto/nlp)与时间戳。图谱中**同时显示作者与作品节点**。
 - **演示种子数据**：50 位作家、100 部作品、50 条 ECHO 关系,由 `scripts/generate_seed_data.py` 生成到 `data/seed.json`。
 - **Neo4j**：`scripts/import_data.py` 将种子数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据,演示不会中断。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据,演示不会中断。
@@ -56,9 +56,13 @@ The Echo Graph — A Ripple Atlas of World Literature
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
 uv run python scripts/generate_seed_data.py   # 重新生成演示数据(可选)
-uv run python scripts/import_data.py          # 导入 Neo4j(可选)
+uv run python scripts/import_data.py          # 导入 Neo4j(自动:有 data/real/*.csv 则导入真实数据,否则导入演示数据)
+uv run python scripts/import_data.py --source seed --wipe      # 强制用演示数据全量重建
+uv run python scripts/import_data.py --source real --version 1.0  # 导入 data/real/ 真实数据(幂等,可重复执行)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+真实数据模板见 `data/real/README.md`(authors.csv / works.csv / echoes.csv),导入前会自动校验(类型、枚举、交叉引用、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 

@@ -54,6 +54,7 @@ class JsonStore:
             nodes.append(
                 {
                     "id": a["id"],
+                    "slug": a["slug"],
                     "type": "author",
                     "label": a["Name_CN"],
                     "label_en": a["Name_EN"],
@@ -70,6 +71,7 @@ class JsonStore:
             nodes.append(
                 {
                     "id": w["id"],
+                    "slug": w["slug"],
                     "type": "work",
                     "label": w["Title_CN"],
                     "label_en": w["Title_EN"],
@@ -78,6 +80,7 @@ class JsonStore:
                     "publicationYear": w["publicationYear"],
                     "creationYear": w["creationYear"],
                     "language": w["language"],
+                    "genre": w["genre"],
                     "summary": w["summary"],
                     "author_id": w["author_id"],
                     "author": author["Name_CN"],
@@ -91,7 +94,12 @@ class JsonStore:
                     "target": e["target"],
                     "type": "echo",
                     "evidence": e["evidence"],
+                    "evidenceSource": e["evidenceSource"],
+                    "evidenceLang": e["evidenceLang"],
                     "note": e["note"],
+                    "confidence": e["confidence"],
+                    "reviewStatus": e["reviewStatus"],
+                    "dataSource": e["dataSource"],
                 }
             )
         for w in self.works.values():
@@ -160,7 +168,12 @@ class JsonStore:
                     "source": e["source"],
                     "target": e["target"],
                     "evidence": e["evidence"],
+                    "evidenceSource": e["evidenceSource"],
+                    "evidenceLang": e["evidenceLang"],
                     "note": e["note"],
+                    "confidence": e["confidence"],
+                    "reviewStatus": e["reviewStatus"],
+                    "dataSource": e["dataSource"],
                 }
             )
             nodes.append(cur)
@@ -178,6 +191,7 @@ class JsonStore:
         return {
             "work": {
                 "id": w["id"],
+                "slug": w["slug"],
                 "title": w["Title_CN"],
                 "title_en": w["Title_EN"],
                 "originalTitle": w["originalTitle"],
@@ -185,10 +199,12 @@ class JsonStore:
                 "publicationYear": w["publicationYear"],
                 "creationYear": w["creationYear"],
                 "language": w["language"],
+                "genre": w["genre"],
                 "summary": w["summary"],
             },
             "author": {
                 "id": author["id"],
+                "slug": author["slug"],
                 "name": author["Name_CN"],
                 "name_en": author["Name_EN"],
                 "originalName": author["originalName"],
@@ -204,7 +220,12 @@ class JsonStore:
                     "source_title": self.works[e["source"]]["Title_CN"],
                     "source_author": self.authors[self.works[e["source"]]["author_id"]]["Name_CN"],
                     "evidence": e["evidence"],
+                    "evidenceSource": e["evidenceSource"],
+                    "evidenceLang": e["evidenceLang"],
                     "note": e["note"],
+                    "confidence": e["confidence"],
+                    "reviewStatus": e["reviewStatus"],
+                    "dataSource": e["dataSource"],
                 }
                 for e in self.inc.get(work_id, [])
             ],
@@ -214,7 +235,12 @@ class JsonStore:
                     "target_title": self.works[e["target"]]["Title_CN"],
                     "target_author": self.authors[self.works[e["target"]]["author_id"]]["Name_CN"],
                     "evidence": e["evidence"],
+                    "evidenceSource": e["evidenceSource"],
+                    "evidenceLang": e["evidenceLang"],
                     "note": e["note"],
+                    "confidence": e["confidence"],
+                    "reviewStatus": e["reviewStatus"],
+                    "dataSource": e["dataSource"],
                 }
                 for e in self.out.get(work_id, [])
             ],
@@ -244,6 +270,7 @@ class JsonStore:
             nodes.append(
                 {
                     "id": w["id"],
+                    "slug": w["slug"],
                     "type": "work",
                     "label": w["Title_CN"],
                     "label_en": w["Title_EN"],
@@ -252,6 +279,7 @@ class JsonStore:
                     "publicationYear": w["publicationYear"],
                     "creationYear": w["creationYear"],
                     "language": w["language"],
+                    "genre": w["genre"],
                     "summary": w["summary"],
                     "author_id": w["author_id"],
                     "author": author["Name_CN"],
@@ -263,7 +291,12 @@ class JsonStore:
                 "target": e["target"],
                 "type": "echo",
                 "evidence": e["evidence"],
+                "evidenceSource": e["evidenceSource"],
+                "evidenceLang": e["evidenceLang"],
                 "note": e["note"],
+                "confidence": e["confidence"],
+                "reviewStatus": e["reviewStatus"],
+                "dataSource": e["dataSource"],
             }
             for e in self.edges
             if e["source"] in visited and e["target"] in visited
@@ -307,6 +340,7 @@ class Neo4jStore:
     def _node(self, props: dict, label: str) -> dict:
         return {
             "id": props.get("id"),
+            "slug": props.get("slug"),
             "type": "work",
             "label": props.get("Title_CN"),
             "label_en": props.get("Title_EN"),
@@ -315,6 +349,7 @@ class Neo4jStore:
             "publicationYear": props.get("publicationYear"),
             "creationYear": props.get("creationYear"),
             "language": props.get("language"),
+            "genre": props.get("genre"),
             "summary": props.get("summary"),
             "author_id": props.get("author_id"),
             "author": props.get("author_name", ""),
@@ -333,6 +368,7 @@ class Neo4jStore:
             nodes.append(
                 {
                     "id": p.get("id"),
+                    "slug": p.get("slug"),
                     "type": "author",
                     "label": p.get("Name_CN"),
                     "label_en": p.get("Name_EN"),
@@ -362,12 +398,18 @@ class Neo4jStore:
             """
             MATCH (w1:Work)-[r:ECHO]->(w2:Work)
             RETURN w1.id AS source, w2.id AS target,
-                   r.evidence AS evidence, r.note AS note
+                   r.evidence AS evidence, r.evidenceSource AS evidenceSource,
+                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.confidence AS confidence, r.reviewStatus AS reviewStatus,
+                   r.dataSource AS dataSource
             """
         )
         edges = [
             {"source": r["source"], "target": r["target"], "type": "echo",
-             "evidence": r["evidence"], "note": r["note"]}
+             "evidence": r["evidence"], "evidenceSource": r["evidenceSource"],
+             "evidenceLang": r["evidenceLang"], "note": r["note"],
+             "confidence": r["confidence"], "reviewStatus": r["reviewStatus"],
+             "dataSource": r["dataSource"]}
             for r in echo_rows
         ]
         authored_rows = self._query(
@@ -424,7 +466,9 @@ class Neo4jStore:
             "]->(b:Work {id:$to})) "
             "RETURN [x IN nodes(p) | x.id] AS node_ids, "
             "[rel IN relationships(p) | {source: startNode(rel).id, target: endNode(rel).id, "
-            "evidence: rel.evidence, note: rel.note}] AS rels LIMIT 1"
+            "evidence: rel.evidence, evidenceSource: rel.evidenceSource, "
+            "evidenceLang: rel.evidenceLang, note: rel.note, confidence: rel.confidence, "
+            "reviewStatus: rel.reviewStatus, dataSource: rel.dataSource}] AS rels LIMIT 1"
         )
         rows = self._query(cypher, {"from": from_id, "to": to_id})
         if not rows:
@@ -448,7 +492,10 @@ class Neo4jStore:
             MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
             MATCH (i)-[:AUTHORED_BY]->(ia:Author)
             RETURN i.id AS source, i.Title_CN AS source_title, ia.Name_CN AS source_author,
-                   r.evidence AS evidence, r.note AS note
+                   r.evidence AS evidence, r.evidenceSource AS evidenceSource,
+                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.confidence AS confidence, r.reviewStatus AS reviewStatus,
+                   r.dataSource AS dataSource
             """,
             {"id": work_id},
         )
@@ -457,13 +504,17 @@ class Neo4jStore:
             MATCH (w:Work {id:$id})-[r:ECHO]->(o:Work)
             MATCH (o)-[:AUTHORED_BY]->(oa:Author)
             RETURN o.id AS target, o.Title_CN AS target_title, oa.Name_CN AS target_author,
-                   r.evidence AS evidence, r.note AS note
+                   r.evidence AS evidence, r.evidenceSource AS evidenceSource,
+                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.confidence AS confidence, r.reviewStatus AS reviewStatus,
+                   r.dataSource AS dataSource
             """,
             {"id": work_id},
         )
         return {
             "work": {
                 "id": wp.get("id"),
+                "slug": wp.get("slug"),
                 "title": wp.get("Title_CN"),
                 "title_en": wp.get("Title_EN"),
                 "originalTitle": wp.get("originalTitle"),
@@ -471,10 +522,12 @@ class Neo4jStore:
                 "publicationYear": wp.get("publicationYear"),
                 "creationYear": wp.get("creationYear"),
                 "language": wp.get("language"),
+                "genre": wp.get("genre"),
                 "summary": wp.get("summary"),
             },
             "author": {
                 "id": ap.get("id"),
+                "slug": ap.get("slug"),
                 "name": ap.get("Name_CN"),
                 "name_en": ap.get("Name_EN"),
                 "originalName": ap.get("originalName"),
@@ -513,7 +566,10 @@ class Neo4jStore:
             "WITH collect(n.id) AS ids "
             "MATCH (a:Work)-[r:ECHO]->(b:Work) "
             "WHERE a.id IN ids AND b.id IN ids "
-            "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, r.note AS note",
+            "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, "
+            "r.evidenceSource AS evidenceSource, r.evidenceLang AS evidenceLang, "
+            "r.note AS note, r.confidence AS confidence, r.reviewStatus AS reviewStatus, "
+            "r.dataSource AS dataSource",
             {"id": work_id},
         )
         edges = [
@@ -522,7 +578,12 @@ class Neo4jStore:
                 "target": r["target"],
                 "type": "echo",
                 "evidence": r["evidence"],
+                "evidenceSource": r["evidenceSource"],
+                "evidenceLang": r["evidenceLang"],
                 "note": r["note"],
+                "confidence": r["confidence"],
+                "reviewStatus": r["reviewStatus"],
+                "dataSource": r["dataSource"],
             }
             for r in edge_rows
         ]

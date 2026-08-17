@@ -33,6 +33,10 @@ export function setOnNodeHover(fn) {
   onNodeHover = fn;
 }
 
+export function sceneNodeCount() {
+  return Object.keys(nodeGroups).length;
+}
+
 export function getCameraState() {
   return {
     theta: cameraState.theta,
@@ -375,12 +379,36 @@ function rippleLayout(data) {
 
   positions[centerId] = new THREE.Vector3(0, 0, 0);
   var R = 300;
-  workNodes.forEach(function (n, i) {
-    if (n.id === centerId) return;
-    var y = 1 - (i / Math.max(workNodes.length - 1, 1)) * 2;
-    var rr = Math.sqrt(Math.max(0, 1 - y * y));
-    var th = i * 2.399963;
-    positions[n.id] = new THREE.Vector3(R * rr * Math.cos(th), R * y, R * rr * Math.sin(th));
+  // 中点 phi 分布:避免节点落在极点,小数量时也不会排成一条线
+  var neighbors = workNodes.filter(function (n) { return n.id !== centerId; });
+  neighbors.forEach(function (n, i) {
+    var phi = Math.acos(1 - 2 * (i + 0.5) / Math.max(neighbors.length, 1));
+    var theta = i * 2.399963;
+    positions[n.id] = new THREE.Vector3(
+      R * Math.sin(phi) * Math.cos(theta),
+      R * Math.cos(phi),
+      R * Math.sin(phi) * Math.sin(theta)
+    );
+  });
+  // 作者星靠近其作品
+  data.edges.forEach(function (e) {
+    if (e.type !== "authored") return;
+    var wpos = positions[e.source];
+    if (wpos && !positions[e.target]) {
+      if (wpos.length() < 1) {
+        positions[e.target] = new THREE.Vector3(0, -110, 0);
+        return;
+      }
+      // 作者放到自己作品的外侧(半径略大于作品轨道),绝不会夹在两部作品之间
+      var dir = wpos.clone().normalize();
+      var perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+      if (perp.lengthSq() < 0.0001) perp.set(1, 0, 0);
+      perp.normalize();
+      positions[e.target] = dir
+        .multiplyScalar(345)
+        .add(perp.multiplyScalar(35))
+        .add(new THREE.Vector3(0, 25, 0));
+    }
   });
   return positions;
 }
@@ -529,6 +557,70 @@ export function renderView(kind, data, opts) {
   positions = layoutFor(kind, data);
   buildScene(data);
   finishView(kind, data, opts);
+}
+
+function authorPosFor(wpos) {
+  if (state.currentView === "author") return new THREE.Vector3(0, 0, 0);
+  var isRipple = state.currentView === "ripple";
+  if (isRipple) {
+    if (wpos.length() < 1) return new THREE.Vector3(0, -110, 0);
+    var dir = wpos.clone().normalize();
+    var perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+    if (perp.lengthSq() < 0.0001) perp.set(1, 0, 0);
+    perp.normalize();
+    return dir.multiplyScalar(345).add(perp.multiplyScalar(35)).add(new THREE.Vector3(0, 25, 0));
+  }
+  return wpos.clone().multiplyScalar(0.82);
+}
+
+// 即时增删作者节点(不重新跑布局),让"显示作家节点"勾选立即生效
+export function toggleAuthorsInView(hidden) {
+  if (state.currentView === "path") return; // 提及链保持纯作品视图
+  if (hidden) {
+    Object.keys(nodeGroups).forEach(function (id) {
+      var g = nodeGroups[id];
+      var node = g.userData.core.userData.node;
+      if (node.type !== "author") return;
+      scene.remove(g);
+      g.traverse(function (obj) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (obj.material.map) obj.material.map = null;
+          obj.material.dispose();
+        }
+      });
+      var label = nodeLabels[id];
+      if (label && label.element && label.element.parentNode) {
+        label.element.parentNode.removeChild(label.element);
+      }
+      delete nodeGroups[id];
+      delete nodeLabels[id];
+      delete positions[id];
+    });
+    edgeLines = edgeLines.filter(function (line) {
+      if (line.userData.edge.type !== "authored") return true;
+      scene.remove(line);
+      line.geometry.dispose();
+      line.material.dispose();
+      return false;
+    });
+  } else {
+    Object.keys(nodeGroups).forEach(function (id) {
+      var g = nodeGroups[id];
+      var node = g.userData.core.userData.node;
+      if (node.type !== "work") return;
+      var aid = node.author_id;
+      if (!aid || nodeGroups[aid]) return;
+      var author = state.fullData.nodes.filter(function (n) { return n.id === aid; })[0];
+      if (!author) return;
+      var wpos = positions[id];
+      if (!wpos) return;
+      var apos = authorPosFor(wpos);
+      createNodeGroup(author, apos);
+      positions[aid] = apos;
+      createEdgeLine({ source: id, target: aid, type: "authored" });
+    });
+  }
 }
 
 // =============================== 交互 ===============================

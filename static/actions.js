@@ -2,7 +2,7 @@
 
 import { el, esc } from "./util.js";
 import { state } from "./state.js";
-import { renderView, getCameraState, applyCameraState } from "./renderer.js";
+import { renderView, getCameraState, applyCameraState, toggleAuthorsInView } from "./renderer.js";
 import {
   showEmptyPanel,
   showPickError,
@@ -29,6 +29,9 @@ export function loadGraph() {
       buildWorkLookups();
       if (location.search.indexOf("hideislands") !== -1) {
         el("hide-islands").checked = true; // 测试/分享参数
+      }
+      if (location.search.indexOf("authors=0") !== -1) {
+        el("show-authors").checked = false; // 测试/分享参数
       }
       renderMain();
       showEmptyPanel();
@@ -57,6 +60,49 @@ function countWorks(authorId) {
 
 function isIslandsHidden() {
   return !!el("hide-islands") && el("hide-islands").checked;
+}
+
+function isAuthorsHidden() {
+  return !!el("show-authors") && !el("show-authors").checked;
+}
+
+function filterAuthors(data) {
+  if (!isAuthorsHidden()) return data;
+  var ids = {};
+  data.nodes.forEach(function (n) {
+    if (n.type !== "author") ids[n.id] = true;
+  });
+  var nodes = data.nodes.filter(function (n) { return n.type !== "author"; });
+  var edges = data.edges.filter(function (e) {
+    return ids[e.source] && ids[e.target];
+  });
+  return { nodes: nodes, edges: edges };
+}
+
+// 给作品子图补充作者节点与归属边(尊重"显示作家节点"开关)
+function addAuthorsTo(data) {
+  if (isAuthorsHidden()) return data;
+  var nodes = data.nodes.slice();
+  var edges = data.edges.slice();
+  var out = { nodes: nodes, edges: edges };
+  Object.keys(data).forEach(function (k) {
+    if (k !== "nodes" && k !== "edges") out[k] = data[k];
+  });
+  var have = {};
+  nodes.forEach(function (n) { have[n.id] = true; });
+  nodes.filter(function (n) { return n.type === "work"; }).forEach(function (w) {
+    var aid = w.author_id;
+    if (!aid) return;
+    edges.push({ source: w.id, target: aid, type: "authored" });
+    if (!have[aid]) {
+      var an = findNode(aid);
+      if (an) {
+        nodes.push(an);
+        have[aid] = true;
+      }
+    }
+  });
+  return out;
 }
 
 function filterIslands(data) {
@@ -103,6 +149,7 @@ function countIslands(data) {
 function renderMain(opts) {
   currentActionView = "main";
   var data = isIslandsHidden() ? filterIslands(state.fullData) : state.fullData;
+  data = filterAuthors(data);
   renderView("main", data, opts || { preserveCamera: true });
 }
 
@@ -182,7 +229,7 @@ function renderRipple(detail) {
     nodes.push(n);
   });
 
-  renderView("ripple", { nodes: nodes, edges: edges, centerId: center });
+  renderView("ripple", addAuthorsTo({ nodes: nodes, edges: edges, centerId: center }));
 }
 
 function expandRipple() {
@@ -191,9 +238,11 @@ function expandRipple() {
   fetch("/api/expansion/" + encodeURIComponent(rippleCenter) + "?hops=" + hops)
     .then(function (r) { return r.json(); })
     .then(function (data) {
+      data = addAuthorsTo(data);
       renderView("ripple", data, { preserveCamera: true }); // 拖动滑动条时保持当前视角
-      el("expand-value").textContent = hops + " 级 · " + data.nodes.length + " 本书";
-      showToast(hops + " 级扩散 · " + data.nodes.length + " 本书");
+      var works = data.nodes.filter(function (n) { return n.type === "work"; }).length;
+      el("expand-value").textContent = hops + " 级 · " + works + " 本书";
+      showToast(hops + " 级扩散 · " + works + " 本书");
       syncUrl(false);
     });
 }
@@ -308,6 +357,11 @@ export function wireEvents() {
     if (state.currentView === "main") renderMain();
     syncUrl(true);
   });
+  el("show-authors").addEventListener("change", function () {
+    showToast(isAuthorsHidden() ? "已隐藏作家节点" : "已显示作家节点");
+    toggleAuthorsInView(isAuthorsHidden()); // 即时增删,不重新布局
+    syncUrl(true);
+  });
   el("btn-share").onclick = shareLink;
   el("btn-export-png").onclick = exportPng;
   el("btn-export-data").onclick = exportData;
@@ -389,6 +443,7 @@ function buildUrlHash() {
   }
   var parts = ["v=" + v];
   if (isIslandsHidden()) parts.push("islands=1");
+  if (isAuthorsHidden()) parts.push("authors=0");
   return parts.join("&");
 }
 
@@ -423,6 +478,7 @@ export function handleHash() {
     else if (p.indexOf("ripple=") === 0) v = "ripple:" + p.slice(7) + ":1";
     else if (p.indexOf("author=") === 0) v = "author:" + p.slice(7);
     else if (p.indexOf("islands=") === 0) islands = p.slice(8) === "1";
+    else if (p.indexOf("authors=") === 0) el("show-authors").checked = p.slice(8) !== "0";
     else if (p.indexOf("cam=") === 0) cam = parseCam(p.slice(4));
   });
   el("hide-islands").checked = !!islands;

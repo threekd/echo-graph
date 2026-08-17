@@ -1,7 +1,13 @@
 /* 入口:初始化渲染器、绑定交互、加载数据 */
 
 import { el, esc } from "./util.js";
-import { initThree, setOnNodeClick, setOnNodeHover } from "./renderer.js";
+import {
+  initThree,
+  setOnNodeClick,
+  setOnNodeHover,
+  toggleAuthorsInView,
+  sceneNodeCount,
+} from "./renderer.js";
 import { loadGraph, wireEvents, handleHash, selectNode, showNodeDetail } from "./actions.js";
 import { setOnSelect } from "./panels.js";
 
@@ -114,4 +120,26 @@ loadGraph().catch(function (err) {
   el("graph").innerHTML = "<p style='padding:20px;color:#f87171'>加载图谱失败:" + esc(err.message) + "</p>";
 }).then(function () {
   handleHash();
+  // 测试参数:authortoggle=1 即时隐藏作者;=2 即时显示
+  var toggle = location.search.indexOf("authortoggle=1") !== -1 ? true
+    : (location.search.indexOf("authortoggle=2") !== -1 ? false : null);
+  var cycle = location.search.indexOf("authortoggle=3") !== -1;
+  if (toggle !== null) {
+    var iv = setInterval(function () {
+      if (sceneNodeCount() > 0) {
+        clearInterval(iv);
+        toggleAuthorsInView(toggle);
+      }
+    }, 50);
+  } else if (cycle) {
+    var iv2 = setInterval(function () {
+      if (sceneNodeCount() > 0) {
+        clearInterval(iv2);
+        toggleAuthorsInView(true);       // 先隐藏
+        setTimeout(function () {
+          toggleAuthorsInView(false);    // 再显示
+        }, 500);
+      }
+    }, 50);
+  }
 });

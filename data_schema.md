@@ -1,52 +1,85 @@
+# Echo Graph 数据结构规范
+
+- `schemaVersion`: `1.1`
+- 存储:Neo4j 图数据库(演示环境同时提供 JSON 兜底数据)
+- 所有 `createdAt` / `updatedAt` 均为 UTC ISO-8601 字符串
+
+## 通用约定
+
+- **主键与 URL 标识**:生产环境 `id` 使用 UUID;同时保留 `slug`(如 `orient_express`)作为 URL 友好标识,`slug` 全局唯一。演示阶段二者可相同(直接用 slug 充当 id)。
+- **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),作为对外展示字段。
+- **语言编码**:优先 ISO 639-1;无法表达时(如中古英语、古典日语)使用 ISO 639-3(`enm`、`ojp`)或自定义枚举,并在文档中登记。
+
 ## 节点类型与属性
 
 ### Work 作品节点
 
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| `id` | String / UUID | 唯一标识，主键 |
-| `language` | String | 作品语言（ISO 639-1） |
-| `originalTitle` | String | 原著标题 |
-| `Title_CN` | String | 中文版标题 |
-| `Title_EN` | String | 英文版标题 |
-| `publicationYear` | Integer | 出版年份，可空 |
-| `creationYear` | Integer | 创作年份，可空 |
-| `summary` | String | 内容简介 |
-| `createdAt` | DateTime | 创建时间 |
-| `updatedAt` | DateTime | 更新时间 |
-
+| 属性 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | String / UUID | 是 | 唯一标识,主键 |
+| `slug` | String | 是 | URL 友好标识,全局唯一 |
+| `language` | String | 是 | 作品语言(ISO 639-1,兜底 639-3) |
+| `originalTitle` | String | 是 | 原著标题 |
+| `Title_CN` | String | 是 | 中文版标题 |
+| `Title_EN` | String | 是 | 英文版标题 |
+| `publicationYear` | Integer | 否 | 出版年份 |
+| `creationYear` | Integer | 否 | 创作年份(与出版年至少填一个) |
+| `genre` | String | 否 | 体裁(小说 / 诗歌 / 戏剧 / 史诗 等) |
+| `summary` | String | 否 | 内容简介 |
+| `createdAt` | DateTime | 是 | 创建时间 |
+| `updatedAt` | DateTime | 是 | 更新时间 |
+| `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
 
 ### Author 作家节点
 
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| `id` | String / UUID | 唯一标识，主键 |
-| `nationality` | String | 国籍/族裔 |
-| `originalName` | String | 全名（必填） |
-| `Name_CN` | String | 中文名 |
-| `Name_EN` | String | 英文名 |
-| `birthYear` | Integer | 出生年份，可空 |
-| `deathYear` | Integer | 去世年份，可空 |
-| `primaryLanguage` | String | 主要写作语言（ISO 639-1） |
-| `bio` | String | 简介 |
-| `createdAt` | DateTime | 创建时间 |
-| `updatedAt` | DateTime | 更新时间 |
+| 属性 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | String / UUID | 是 | 唯一标识,主键 |
+| `slug` | String | 是 | URL 友好标识,全局唯一 |
+| `originalName` | String | 是 | 全名/原文名 |
+| `Name_CN` | String | 是 | 中文名 |
+| `Name_EN` | String | 是 | 英文名 |
+| `nationality` | String | 否 | 国籍/族裔 |
+| `birthYear` | Integer | 否 | 出生年份 |
+| `deathYear` | Integer | 否 | 去世年份 |
+| `primaryLanguage` | String | 是 | 主要写作语言(ISO 639-1,兜底 639-3) |
+| `bio` | String | 否 | 简介 |
+| `createdAt` | DateTime | 是 | 创建时间 |
+| `updatedAt` | DateTime | 是 | 更新时间 |
 
 ## 结构关系
 
-| 关系类型 | 方向 | 语义 |
-|---|---|---|
-| `AUTHORED_BY` | `(Work)-[:AUTHORED_BY]->(Author)` | 作品由作者写作 |
+| 关系类型 | 方向 | 基数 | 语义 |
+|---|---|---|---|
+| `AUTHORED_BY` | `(Work)-[:AUTHORED_BY]->(Author)` | N:N(允许合著) | 作品由作者写作 |
 
 ## 回声关系
 
-### EDGES
+关系类型:`(Work)-[:ECHO]->(Work)`
 
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| `source_work_id` | String | 当前作品 |
-| `target_work_id` | String | 被提及作品 |
-| `evidence` | String | 摘抄文本，即正文某片段出现另一本书的名称 |
-| `note` | String | 备注或补充说明 |
-| `confidence` | String | 置信度 |
-| `reviewStatus` | String | 草稿/已审核 |
+方向:source 这本书在正文中提及 target 这本书,方向 source → target。
+
+| 属性 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `source_work_id` | String | 是 | 当前作品(引用 Work.id) |
+| `target_work_id` | String | 是 | 被提及作品(引用 Work.id) |
+| `evidence` | String | 是 | 摘抄文本,即正文某片段出现另一本书的名称 |
+| `evidenceSource` | String | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
+| `evidenceLang` | String | 否 | 摘抄原文语言(ISO 639-1,兜底 639-3) |
+| `note` | String | 否 | 备注或补充说明 |
+| `confidence` | Number | 是 | 置信度,取值 0–1(如 0.85) |
+| `reviewStatus` | String | 是 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
+| `dataSource` | String | 是 | 数据来源,枚举:`manual`(人工策展)/ `auto`(自动提取)/ `nlp`(NLP 抽取),默认 `manual` |
+| `createdAt` | DateTime | 是 | 创建时间 |
+| `updatedAt` | DateTime | 是 | 更新时间 |
+
+## 约束与索引
+
+- 唯一约束:`Work.id`、`Work.slug`、`Author.id`、`Author.slug`
+- 全文索引:Neo4j 全文索引仅支持节点属性,建议对 `Work(Title_CN, Title_EN, originalTitle, summary)` 建 fulltext;`evidence` 属于关系属性,无法直接用 Neo4j fulltext,检索时用 `CONTAINS` 或后续拆分为独立 Evidence 节点
+- 建议查询:`(Work)-[:ECHO]` 两端均命中唯一约束,路径与扩散查询走变长路径
+
+## 说明
+
+- 演示数据中所有 `evidence` / `evidenceSource` 均为编造,`reviewStatus` 统一为 `draft`,正式使用前需人工策展并置为 `reviewed`。
+- 本规范为 1.1 版;数据结构演进时递增 `schemaVersion` 并保持向后兼容。

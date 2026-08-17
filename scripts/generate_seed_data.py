@@ -2,13 +2,14 @@
 
 Output: data/seed.json
 
-Data structure follows readme.md:
-- Author: id, nationality, originalName, Name_CN, Name_EN, birthYear,
+Data structure follows data_schema.md:
+- Author: id, slug, nationality, originalName, Name_CN, Name_EN, birthYear,
   deathYear, primaryLanguage (ISO 639-1), bio, createdAt, updatedAt
-- Work: id, language (ISO 639-1), originalTitle, Title_CN, Title_EN,
-  publicationYear, creationYear, summary, createdAt, updatedAt
+- Work: id, slug, language (ISO 639-1), originalTitle, Title_CN, Title_EN,
+  publicationYear, creationYear, genre, summary, createdAt, updatedAt
 - Relations: (Work)-[:AUTHORED_BY]->(Author), (Work)-[:ECHO]->(Work)
-  ECHO props: evidence (正文摘抄片段), note (备注)
+  ECHO props: evidence/evidenceSource/evidenceLang, note, confidence(0-1),
+  reviewStatus(draft/reviewed/rejected), dataSource(manual/auto/nlp), 时间戳
 
 IMPORTANT: All data is SYNTHETIC DEMO DATA. Author/work metadata roughly
 follows literary history, but every ECHO edge and its evidence text is
@@ -406,6 +407,34 @@ EDGES: list[tuple] = [
     ("and_then_none", "curtain", "演示摘抄：帷幕作为波洛谢幕之作与无人生还遥相呼应", "序言或注释中引用"),
 ]
 
+# 每作者的默认体裁(演示规则;个别作品用 GENRE_OVERRIDES 覆盖)
+GENRE_BY_AUTHOR: dict[str, str] = {
+    "homer": "史诗", "virgil": "史诗", "dante": "长诗", "chaucer": "叙事诗",
+    "quyuan": "楚辞", "dufu": "诗", "libai": "诗", "shakespeare": "戏剧",
+    "cervantes": "小说", "shikibu": "物语", "caoxueqin": "小说", "goethe": "诗剧",
+    "balzac": "小说", "poe": "诗", "gogol": "小说", "dickens": "小说",
+    "dostoevsky": "小说", "flaubert": "小说", "baudelaire": "诗集", "tolstoy": "小说",
+    "ibsen": "戏剧", "dickinson": "诗", "chekhov": "小说", "wilde": "小说",
+    "tagore": "诗集", "lu_xun": "小说", "soseki": "小说", "james": "小说",
+    "proust": "小说", "joyce": "小说", "kafka": "小说", "woolf": "小说",
+    "faulkner": "小说", "hemingway": "小说", "borges": "短篇", "camus": "小说",
+    "orwell": "小说", "nabokov": "小说", "kawabata": "小说", "laoshe": "戏剧",
+    "zhangailing": "小说", "shencongwen": "小说", "rulfo": "小说", "marquez": "小说",
+    "murakami": "小说", "yuhua": "小说", "moyan": "小说", "eliot": "长诗",
+    "hessen": "小说", "rimbaud": "诗集", "christie": "小说",
+}
+
+GENRE_OVERRIDES: dict[str, str] = {
+    "werther": "书信体小说",
+    "rue_morgue": "小说",
+    "cherry_orchard": "戏剧",
+    "importance_earnest": "戏剧",
+    "camel_xiangzi": "小说",
+    "shikibu_diary": "日记",
+    "vita_nuova": "诗集",
+    "illuminations": "散文诗",
+}
+
 
 def build() -> dict:
     assert len(AUTHORS) == 51, f"expected 51 authors, got {len(AUTHORS)}"
@@ -419,6 +448,7 @@ def build() -> dict:
         authors.append(
             {
                 "id": author_id,
+                "slug": author_id,
                 "nationality": nationality,
                 "originalName": original_name,
                 "Name_CN": name_cn,
@@ -435,12 +465,14 @@ def build() -> dict:
             works.append(
                 {
                     "id": work_id,
+                    "slug": work_id,
                     "language": language,
                     "originalTitle": original_title,
                     "Title_CN": title_cn,
                     "Title_EN": title_en,
                     "publicationYear": year if year >= 1700 else None,
                     "creationYear": year if year < 1700 else None,
+                    "genre": GENRE_OVERRIDES.get(work_id, GENRE_BY_AUTHOR[author_id]),
                     "summary": f"演示简介：{title_cn}（{original_title}）为{name_cn}所作，{year}年{'出版' if year >= 1700 else '创作'}。",
                     "createdAt": now,
                     "updatedAt": now,
@@ -449,8 +481,9 @@ def build() -> dict:
             )
 
     work_ids = {w["id"] for w in works}
+    work_by_id = {w["id"]: w for w in works}
     edges: list[dict] = []
-    for source, target, evidence, note in EDGES:
+    for idx, (source, target, evidence, note) in enumerate(EDGES):
         assert source in work_ids, f"unknown source work: {source}"
         assert target in work_ids, f"unknown target work: {target}"
         edges.append(
@@ -458,7 +491,14 @@ def build() -> dict:
                 "source": source,
                 "target": target,
                 "evidence": evidence,
+                "evidenceSource": "演示出处:待核对(演示数据)",
+                "evidenceLang": work_by_id[source]["language"],
                 "note": "演示备注：" + note,
+                "confidence": round(0.72 + (idx % 5) * 0.05, 2),
+                "reviewStatus": "draft",
+                "dataSource": "manual",
+                "createdAt": now,
+                "updatedAt": now,
             }
         )
 

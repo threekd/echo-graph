@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../store.jsx";
 
 const KINDS = [
@@ -161,14 +161,14 @@ export default function Admin() {
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
   const [token, setToken] = useState(() => {
-    try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch (e) { return ""; }
+    try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch { return ""; }
   });
 
-  const authFetch = (url, options = {}) => {
+  const authFetch = useCallback((url, options = {}) => {
     const headers = new Headers(options.headers || {});
     if (token) headers.set("Authorization", "Bearer " + token);
     return fetch(url, { ...options, headers });
-  };
+  }, [token]);
 
   const handleAuthError = (r) => {
     if (r.status === 401 || r.status === 403) {
@@ -178,7 +178,7 @@ export default function Admin() {
     return false;
   };
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     authFetch("/api/admin/data")
       .then((r) => {
@@ -191,9 +191,9 @@ export default function Admin() {
       })
       .then((d) => { if (d) { setData(d); setLoading(false); } })
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
-  };
+  }, [authFetch]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   if (!state.adminOpen) return null;
 
@@ -337,7 +337,6 @@ export default function Admin() {
   };
 
   const worksList = data ? data.works || [] : [];
-  const authorsList = data ? data.authors || [] : [];
   const worksById = {};
   worksList.forEach((w) => { worksById[w.id] = w; });
 
@@ -373,7 +372,7 @@ export default function Admin() {
             />
             <button
               onClick={() => {
-                try { sessionStorage.setItem("echo_graph_admin_token", token); } catch (e) { /* ignore */ }
+                try { sessionStorage.setItem("echo_graph_admin_token", token); } catch { /* ignore */ }
                 setStatus("令牌已保存");
                 load();
               }}

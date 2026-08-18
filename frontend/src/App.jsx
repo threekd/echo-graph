@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { AppProvider, useApp } from "./store.jsx";
 import GraphCanvas from "./components/GraphCanvas.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -8,7 +8,7 @@ import Guide from "./components/Guide.jsx";
 import Admin from "./components/Admin.jsx";
 import { loadGraphData, loadStats, workDetail } from "./lib/api.js";
 import {
-  renderMain, setStateRef, selectNode, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
+  renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
 } from "./lib/graph.js";
 import { setOnViewChange, setFullData } from "./lib/renderer.js";
@@ -26,7 +26,7 @@ function AppContent() {
 
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
   // cam / islands / authors 参数用于恢复分享链接;数据加载完成后再次应用,保证首载深链生效
-  const applyHash = (data) => {
+  const applyHash = useCallback((data) => {
     let st = data ? { fullData: data } : stateRef.current.state;
     if (!st.fullData || !st.fullData.nodes.length) return;
     if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
@@ -82,7 +82,7 @@ function AppContent() {
     } else if (v === "main" || cam || hideIslands || !showAuthors) {
       renderMain(cam ? { camera: cam } : {}, st.fullData, { hideIslands, showAuthors });
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     setStateRef(stateRef);
@@ -103,17 +103,15 @@ function AppContent() {
       .catch((err) => {
         dispatch({ type: "SET_TOAST", msg: "加载图谱失败: " + err.message });
       });
-  }, []);
+  }, [applyHash, dispatch]);
 
   // 左右侧边栏边缘感应:鼠标靠近屏幕边缘时滑出
   useEffect(() => {
-    let lastX = -1;
     const onMove = (e) => {
       const left = document.getElementById("sidebar-left");
       const right = document.getElementById("panel");
       if (left && e.clientX < 8) left.classList.add("show");
       if (right && e.clientX > window.innerWidth - 8) right.classList.add("show");
-      lastX = e.clientX;
     };
     window.addEventListener("mousemove", onMove);
     return () => window.removeEventListener("mousemove", onMove);
@@ -123,7 +121,7 @@ function AppContent() {
   useEffect(() => {
     window.addEventListener("hashchange", applyHash);
     return () => window.removeEventListener("hashchange", applyHash);
-  }, []);
+  }, [applyHash]);
 
   return (
     <div className="app-shell">

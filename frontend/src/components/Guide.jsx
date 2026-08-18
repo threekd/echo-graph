@@ -1,16 +1,15 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useApp } from "../store.jsx";
 
 export default function Guide() {
   const { state, dispatch } = useApp();
-  const seen = (() => {
-    try { return !!localStorage.getItem("echo_graph_guide_seen"); } catch (e) { return false; }
-  })();
   useEffect(() => {
+    let seen = false;
+    try { seen = !!localStorage.getItem("echo_graph_guide_seen"); } catch { seen = false; }
     if (!seen && location.search.indexOf("skipguide") === -1) {
       dispatch({ type: "SET_GUIDE", value: true });
     }
-  }, []);
+  }, [dispatch]);
   if (!state.guideVisible) return null;
   return (
     <div id="guide">
@@ -24,7 +23,7 @@ export default function Guide() {
         </ul>
         <button
           onClick={() => {
-            try { localStorage.setItem("echo_graph_guide_seen", "1"); } catch (e) { /* ignore */ }
+            try { localStorage.setItem("echo_graph_guide_seen", "1"); } catch { /* ignore */ }
             dispatch({ type: "SET_GUIDE", value: false });
           }}
         >

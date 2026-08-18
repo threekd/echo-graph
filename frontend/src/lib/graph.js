@@ -1,5 +1,5 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { renderView, getCameraState, applyCameraState, toggleAuthorsInView } from "./renderer.js";
+import { renderView, getCameraState } from "./renderer.js";
 import { workDetail, expansion, findPath } from "./api.js";
 
 let stateRef = null; // 由 App 注入 ref(始终指向最新 { state, dispatch })
@@ -161,10 +161,6 @@ function filterAuthorsWith(data, showAuthors) {
     nodes: data.nodes.filter((n) => n.type !== "author"),
     edges: data.edges.filter((e) => ids[e.source] && ids[e.target]),
   };
-}
-
-function filterAuthors(data) {
-  return filterAuthorsWith(data, getState().showAuthors);
 }
 
 export function renderMain(opts, dataOverride, overrides) {

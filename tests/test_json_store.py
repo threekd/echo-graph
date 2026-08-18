@@ -91,6 +91,32 @@ class JsonStorePathTest(unittest.TestCase):
         self.assertIsNone(self.store.path("w1", "nope", 5))
         self.assertIsNone(self.store.path("nope", "w1", 5))
 
+    def test_graph_shape_uses_shared_serialization(self) -> None:
+        g = self.store.graph()
+        self.assertEqual(len(g["nodes"]), 5)  # a1 + w1..w4
+        work_nodes = [n for n in g["nodes"] if n["type"] == "work"]
+        self.assertTrue(all(n["author_id"] == "a1" and n["author"] == "A" for n in work_nodes))
+        echo_edges = [e for e in g["edges"] if e["type"] == "echo"]
+        self.assertEqual(len(echo_edges), 3)
+        self.assertTrue(all(e["type"] == "echo" and "reviewStatus" in e for e in echo_edges))
+
+    def test_path_edges_shape(self) -> None:
+        r = self.store.path("w1", "w3", 2)
+        self.assertEqual(len(r["edges"]), 2)
+        self.assertTrue(all(e["type"] == "echo" and "evidence" in e for e in r["edges"]))
+
+    def test_work_detail_shape(self) -> None:
+        d = self.store.work_detail("w1")
+        self.assertEqual(d["work"]["id"], "w1")
+        self.assertEqual(len(d["authors"]), 1)
+        self.assertEqual(d["author"]["name"], "A")
+        self.assertEqual(d["mentioned_by"], [])
+        self.assertEqual(len(d["mentions"]), 1)
+        self.assertEqual(d["mentions"][0]["target"], "w2")
+        d4 = self.store.work_detail("w4")
+        self.assertEqual(len(d4["mentioned_by"]), 1)
+        self.assertEqual(d4["mentions"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

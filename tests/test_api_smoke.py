@@ -10,6 +10,7 @@ from pathlib import Path
 os.environ["ECHO_STORE"] = "json"  # 必须在导入 app.main 前设置,避免触网
 
 import app.main as main  # noqa: E402
+import app.db as db  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -53,6 +54,18 @@ class ApiSmokeTest(unittest.TestCase):
         g = main.store.graph()
         self.assertEqual(g["nodes"], [])
         self.assertEqual(g["edges"], [])
+
+    def test_resilient_store_exposes_name(self) -> None:
+        class FakePrimary:
+            name = "neo4j"
+
+            def stats(self) -> dict:
+                return {"store": "neo4j"}
+
+        r = db.ResilientStore(FakePrimary(), db.JsonStore())
+        self.assertEqual(r.name, "neo4j")
+        self.assertEqual(r.stats()["store"], "neo4j")
+        self.assertEqual(r.stats()["fallbacks"], 0)
 
 
 if __name__ == "__main__":

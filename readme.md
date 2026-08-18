@@ -71,6 +71,42 @@ cd frontend && pnpm lint                          # 前端 lint
 
 前端开发模式:`cd frontend && pnpm dev`(Vite 开发服务器 5173 端口,`/api` 代理到 8000)。
 
+### 部署到自己的 VPS(Ubuntu)
+
+架构:`nginx(80/443) → uvicorn(127.0.0.1:8000) → Neo4j Aura`,前端构建产物由 nginx 直接托管。
+
+`deploy/` 目录提供开箱模板:
+
+- `setup-vps.sh` — 一键初始化:装系统依赖、建应用用户、拉代码、由 uv 托管 Python 3.14、构建前端、配置 systemd + nginx + HTTPS
+- `deploy.sh` — 日常更新:拉代码 → 装依赖 → 构建前端 → 重启服务
+- `echo-graph.service` — systemd 单元模板
+- `nginx.conf` — nginx 站点模板(手动部署用)
+
+步骤:
+
+1. 把仓库推到 git 远端,修改 `deploy/setup-vps.sh` 顶部的 `REPO_URL`。
+2. VPS 上执行初始化(第二个参数是 certbot 邮箱,用于自动签发 HTTPS 证书):
+
+   ```bash
+   sudo bash deploy/setup-vps.sh <你的域名> <certbot邮箱>
+   ```
+
+3. 编辑 `/opt/echo-graph/.env`,填入 `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` / `ADMIN_TOKEN`。
+4. 启动并验证:
+
+   ```bash
+   sudo systemctl start echo-graph
+   curl https://<你的域名>/api/health
+   ```
+
+5. 之后每次更新代码:
+
+   ```bash
+   sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
+   ```
+
+注意事项:国内机房绑域名对外提供 80/443 服务需要 ICP 备案,不想备案可选香港/新加坡 VPS;Neo4j 继续用 Aura,不在 VPS 上自建图库;`data/real/*.csv` 是数据事实源,配合 git 即完成备份。
+
 > 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`;前端「数据管理」页顶部输入令牌并保存后即可操作。
 
 真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。

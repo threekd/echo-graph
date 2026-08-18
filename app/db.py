@@ -43,6 +43,102 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+# ---- 共享序列化(JsonStore / Neo4jStore 共用,保证两套后端输出一致) ----
+
+
+def _author_node(p: dict) -> dict:
+    """作者图谱节点。"""
+    return {
+        "id": p.get("id"),
+        "type": "author",
+        "label": p.get("Name_CN"),
+        "label_en": p.get("Name_EN"),
+        "originalName": p.get("originalName"),
+        "nationality": p.get("nationality"),
+        "birthYear": p.get("birthYear"),
+        "deathYear": p.get("deathYear"),
+    }
+
+
+def _work_node(p: dict) -> dict:
+    """作品图谱节点。调用方需在 p 中注入 author_id / author_name。"""
+    return {
+        "id": p.get("id"),
+        "type": "work",
+        "label": p.get("Title_CN"),
+        "label_en": p.get("Title_EN"),
+        "originalTitle": p.get("originalTitle"),
+        "year": p.get("publicationYear") or p.get("creationYear"),
+        "publicationYear": p.get("publicationYear"),
+        "creationYear": p.get("creationYear"),
+        "language": p.get("language"),
+        "genre": p.get("genre"),
+        "author_id": p.get("author_id"),
+        "author": p.get("author_name", ""),
+    }
+
+
+def _echo_edge(r: dict) -> dict:
+    """ECHO 提及关系(图谱 / 路径 / 涟漪详情共用)。"""
+    return {
+        "source": r.get("source"),
+        "target": r.get("target"),
+        "type": "echo",
+        "evidence": r.get("evidence"),
+        "evidenceSource": r.get("evidenceSource"),
+        "evidenceLang": r.get("evidenceLang"),
+        "note": r.get("note"),
+        "reviewStatus": r.get("reviewStatus"),
+    }
+
+
+def _authored_edge(source: str, target: Optional[str]) -> dict:
+    """作品归属边 (Work)-[:AUTHORED_BY]->(Author)。"""
+    return {"source": source, "target": target, "type": "authored"}
+
+
+def _work_payload(p: dict) -> dict:
+    """作品详情载荷。"""
+    return {
+        "id": p.get("id"),
+        "title": p.get("Title_CN"),
+        "title_en": p.get("Title_EN"),
+        "originalTitle": p.get("originalTitle"),
+        "year": p.get("publicationYear") or p.get("creationYear"),
+        "publicationYear": p.get("publicationYear"),
+        "creationYear": p.get("creationYear"),
+        "language": p.get("language"),
+        "genre": p.get("genre"),
+    }
+
+
+def _author_payload(a: dict) -> dict:
+    """作者详情载荷(work_detail 的 author / authors)。"""
+    return {
+        "id": a.get("id"),
+        "name": a.get("Name_CN", ""),
+        "name_en": a.get("Name_EN"),
+        "originalName": a.get("originalName"),
+        "birthYear": a.get("birthYear"),
+        "deathYear": a.get("deathYear"),
+        "nationality": a.get("nationality"),
+    }
+
+
+def _mention_row(prefix: str, e: dict, title: str, author: str) -> dict:
+    """涟漪详情中的单条提及记录(prefix 为 source 或 target)。"""
+    return {
+        prefix: e.get(prefix),
+        f"{prefix}_title": title,
+        f"{prefix}_author": author,
+        "evidence": e.get("evidence"),
+        "evidenceSource": e.get("evidenceSource"),
+        "evidenceLang": e.get("evidenceLang"),
+        "note": e.get("note"),
+        "reviewStatus": e.get("reviewStatus"),
+    }
+
+
 class JsonStore:
     """In-memory fallback store (bundled snapshot if present, otherwise empty)."""
 
@@ -70,51 +166,16 @@ class JsonStore:
     def graph(self) -> dict:
         nodes = []
         for a in self.authors.values():
-            nodes.append(
-                {
-                    "id": a["id"],
-                    "type": "author",
-                    "label": a["Name_CN"],
-                    "label_en": a["Name_EN"],
-                    "originalName": a["originalName"],
-                    "nationality": a["nationality"],
-                    "birthYear": a["birthYear"],
-                    "deathYear": a["deathYear"],
-                }
-            )
+            nodes.append(_author_node(a))
         for w in self.works.values():
-            nodes.append(
-                {
-                    "id": w["id"],
-                    "type": "work",
-                    "label": w["Title_CN"],
-                    "label_en": w["Title_EN"],
-                    "originalTitle": w["originalTitle"],
-                    "year": w["publicationYear"] or w["creationYear"],
-                    "publicationYear": w["publicationYear"],
-                    "creationYear": w["creationYear"],
-                    "language": w["language"],
-                    "genre": w["genre"],
-                    "author_id": w.get("author_id"),
-                    "author": self._author_name(w.get("author_id")),
-                }
-            )
+            props = dict(w)
+            props["author_name"] = self._author_name(w.get("author_id"))
+            nodes.append(_work_node(props))
         edges = []
         for e in self.edges:
-            edges.append(
-                {
-                    "source": e["source"],
-                    "target": e["target"],
-                    "type": "echo",
-                    "evidence": e["evidence"],
-                    "evidenceSource": e["evidenceSource"],
-                    "evidenceLang": e["evidenceLang"],
-                    "note": e["note"],
-                    "reviewStatus": e["reviewStatus"],
-                }
-            )
+            edges.append(_echo_edge(e))
         for w in self.works.values():
-            edges.append({"source": w["id"], "target": w["author_id"], "type": "authored"})
+            edges.append(_authored_edge(w["id"], w.get("author_id")))
         return {"nodes": nodes, "edges": edges}
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
@@ -174,17 +235,7 @@ class JsonStore:
         cur = node
         while prev[cur].get("edge") is not None:
             e = prev[cur]["edge"]
-            edges.append(
-                {
-                    "source": e["source"],
-                    "target": e["target"],
-                    "evidence": e["evidence"],
-                    "evidenceSource": e["evidenceSource"],
-                    "evidenceLang": e["evidenceLang"],
-                    "note": e["note"],
-                    "reviewStatus": e["reviewStatus"],
-                }
-            )
+            edges.append(_echo_edge(e))
             nodes.append(cur)
             cur = prev[cur]["prev"]
         nodes.append(cur)
@@ -196,52 +247,28 @@ class JsonStore:
         w = self.works.get(work_id)
         if not w:
             return None
-        author = self.authors.get(w.get("author_id")) or {}
+        author = self.authors.get(w.get("author_id"))
+        authors = [_author_payload(author)] if author else []
         return {
-            "work": {
-                "id": w["id"],
-                "title": w["Title_CN"],
-                "title_en": w["Title_EN"],
-                "originalTitle": w["originalTitle"],
-                "year": w["publicationYear"] or w["creationYear"],
-                "publicationYear": w["publicationYear"],
-                "creationYear": w["creationYear"],
-                "language": w["language"],
-                "genre": w["genre"],
-            },
-            "author": {
-                "id": author.get("id"),
-                "name": author.get("Name_CN", ""),
-                "name_en": author.get("Name_EN"),
-                "originalName": author.get("originalName"),
-                "birthYear": author.get("birthYear"),
-                "deathYear": author.get("deathYear"),
-                "nationality": author.get("nationality"),
-            },
+            "work": _work_payload(w),
+            "author": authors[0] if authors else None,
+            "authors": authors,
             "mentioned_by": [
-                {
-                    "source": e["source"],
-                    "source_title": self._work_title(e["source"]),
-                    "source_author": self._author_name(self.works.get(e["source"], {}).get("author_id")),
-                    "evidence": e["evidence"],
-                    "evidenceSource": e["evidenceSource"],
-                    "evidenceLang": e["evidenceLang"],
-                    "note": e["note"],
-                    "reviewStatus": e["reviewStatus"],
-                }
+                _mention_row(
+                    "source",
+                    e,
+                    self._work_title(e["source"]),
+                    self._author_name(self.works.get(e["source"], {}).get("author_id")),
+                )
                 for e in self.inc.get(work_id, [])
             ],
             "mentions": [
-                {
-                    "target": e["target"],
-                    "target_title": self._work_title(e["target"]),
-                    "target_author": self._author_name(self.works.get(e["target"], {}).get("author_id")),
-                    "evidence": e["evidence"],
-                    "evidenceSource": e["evidenceSource"],
-                    "evidenceLang": e["evidenceLang"],
-                    "note": e["note"],
-                    "reviewStatus": e["reviewStatus"],
-                }
+                _mention_row(
+                    "target",
+                    e,
+                    self._work_title(e["target"]),
+                    self._author_name(self.works.get(e["target"], {}).get("author_id")),
+                )
                 for e in self.out.get(work_id, [])
             ],
         }
@@ -266,36 +293,10 @@ class JsonStore:
         nodes = []
         for wid in visited:
             w = self.works[wid]
-            nodes.append(
-                {
-                    "id": w["id"],
-                    "type": "work",
-                    "label": w["Title_CN"],
-                    "label_en": w["Title_EN"],
-                    "originalTitle": w["originalTitle"],
-                    "year": w["publicationYear"] or w["creationYear"],
-                    "publicationYear": w["publicationYear"],
-                    "creationYear": w["creationYear"],
-                    "language": w["language"],
-                    "genre": w["genre"],
-                    "author_id": w.get("author_id"),
-                    "author": self._author_name(w.get("author_id")),
-                }
-            )
-        edges = [
-            {
-                "source": e["source"],
-                "target": e["target"],
-                "type": "echo",
-                "evidence": e["evidence"],
-                "evidenceSource": e["evidenceSource"],
-                "evidenceLang": e["evidenceLang"],
-                "note": e["note"],
-                "reviewStatus": e["reviewStatus"],
-            }
-            for e in self.edges
-            if e["source"] in visited and e["target"] in visited
-        ]
+            props = dict(w)
+            props["author_name"] = self._author_name(w.get("author_id"))
+            nodes.append(_work_node(props))
+        edges = [_echo_edge(e) for e in self.edges if e["source"] in visited and e["target"] in visited]
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
 
     def stats(self) -> dict:
@@ -338,22 +339,6 @@ class Neo4jStore:
             result = session.run(cypher, params or {})
             return [dict(r) for r in result]
 
-    def _node(self, props: dict, label: str) -> dict:
-        return {
-            "id": props.get("id"),
-            "type": "work",
-            "label": props.get("Title_CN"),
-            "label_en": props.get("Title_EN"),
-            "originalTitle": props.get("originalTitle"),
-            "year": props.get("publicationYear") or props.get("creationYear"),
-            "publicationYear": props.get("publicationYear"),
-            "creationYear": props.get("creationYear"),
-            "language": props.get("language"),
-            "genre": props.get("genre"),
-            "author_id": props.get("author_id"),
-            "author": props.get("author_name", ""),
-        }
-
     def graph(self) -> dict:
         author_rows = self._query(
             """
@@ -364,19 +349,7 @@ class Neo4jStore:
         )
         nodes = []
         for row in author_rows:
-            p = row["props"]
-            nodes.append(
-                {
-                    "id": p.get("id"),
-                    "type": "author",
-                    "label": p.get("Name_CN"),
-                    "label_en": p.get("Name_EN"),
-                    "originalName": p.get("originalName"),
-                    "nationality": p.get("nationality"),
-                    "birthYear": p.get("birthYear"),
-                    "deathYear": p.get("deathYear"),
-                }
-            )
+            nodes.append(_author_node(row["props"]))
 
         node_rows = self._query(
             """
@@ -395,7 +368,7 @@ class Neo4jStore:
             ids = [i for i in (row["author_ids"] or []) if i]
             row["props"]["author_name"] = "、".join(names)
             row["props"]["author_id"] = ids[0] if ids else None
-        nodes.extend(self._node(row["props"], "work") for row in node_rows)
+        nodes.extend(_work_node(row["props"]) for row in node_rows)
 
         echo_rows = self._query(
             """
@@ -407,13 +380,7 @@ class Neo4jStore:
                    r.reviewStatus AS reviewStatus
             """
         )
-        edges = [
-            {"source": r["source"], "target": r["target"], "type": "echo",
-             "evidence": r["evidence"], "evidenceSource": r["evidenceSource"],
-             "evidenceLang": r["evidenceLang"], "note": r["note"],
-             "reviewStatus": r["reviewStatus"]}
-            for r in echo_rows
-        ]
+        edges = [_echo_edge(r) for r in echo_rows]
         authored_rows = self._query(
             """
             MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)
@@ -421,10 +388,7 @@ class Neo4jStore:
             RETURN w.id AS source, a.id AS target
             """
         )
-        edges += [
-            {"source": r["source"], "target": r["target"], "type": "authored"}
-            for r in authored_rows
-        ]
+        edges += [_authored_edge(r["source"], r["target"]) for r in authored_rows]
         return {"nodes": nodes, "edges": edges}
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
@@ -480,7 +444,7 @@ class Neo4jStore:
         if not rows:
             return None
         row = rows[0]
-        return {"nodes": row["node_ids"], "edges": row["rels"]}
+        return {"nodes": row["node_ids"], "edges": [_echo_edge(r) for r in row["rels"]]}
 
     def work_detail(self, work_id: str) -> Optional[dict]:
         rows = self._query(
@@ -497,20 +461,7 @@ class Neo4jStore:
             return None
         wp = rows[0]["w"]
         author_rows = [dict(a) for a in (rows[0]["author_nodes"] or []) if a]
-        ap = author_rows[0] if author_rows else {}
-
-        def author_payload(a: dict) -> dict:
-            return {
-                "id": a.get("id"),
-                "name": a.get("Name_CN", ""),
-                "name_en": a.get("Name_EN"),
-                "originalName": a.get("originalName"),
-                "birthYear": a.get("birthYear"),
-                "deathYear": a.get("deathYear"),
-                "nationality": a.get("nationality"),
-            }
-
-        authors = [author_payload(a) for a in author_rows]
+        authors = [_author_payload(a) for a in author_rows]
         inc = self._query(
             """
             MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
@@ -536,17 +487,7 @@ class Neo4jStore:
             {"id": work_id},
         )
         return {
-            "work": {
-                "id": wp.get("id"),
-                "title": wp.get("Title_CN"),
-                "title_en": wp.get("Title_EN"),
-                "originalTitle": wp.get("originalTitle"),
-                "year": wp.get("publicationYear") or wp.get("creationYear"),
-                "publicationYear": wp.get("publicationYear"),
-                "creationYear": wp.get("creationYear"),
-                "language": wp.get("language"),
-                "genre": wp.get("genre"),
-            },
+            "work": _work_payload(wp),
             "author": authors[0] if authors else None,
             "authors": authors,
             "mentioned_by": [dict(r) for r in inc],
@@ -574,7 +515,7 @@ class Neo4jStore:
             auth_ids = [i for i in (row["author_ids"] or []) if i]
             props["author_name"] = "、".join(names)
             props["author_id"] = auth_ids[0] if auth_ids else None
-            nodes.append(self._node(props, "work"))
+            nodes.append(_work_node(props))
             ids.append(props["id"])
         edge_rows = self._query(
             f"MATCH (c:Work {{id:$id}}) "
@@ -588,19 +529,7 @@ class Neo4jStore:
             "r.note AS note, r.reviewStatus AS reviewStatus",
             {"id": work_id},
         )
-        edges = [
-            {
-                "source": r["source"],
-                "target": r["target"],
-                "type": "echo",
-                "evidence": r["evidence"],
-                "evidenceSource": r["evidenceSource"],
-                "evidenceLang": r["evidenceLang"],
-                "note": r["note"],
-                "reviewStatus": r["reviewStatus"],
-            }
-            for r in edge_rows
-        ]
+        edges = [_echo_edge(r) for r in edge_rows]
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
 
     def stats(self) -> dict:
@@ -629,6 +558,11 @@ class ResilientStore:
         self.fallback = fallback
         self._last_warn_at = 0.0
         self._fallbacks = 0
+
+    @property
+    def name(self) -> str:
+        """对外暴露底层存储名称(needed by /api/health 与 stats)。"""
+        return getattr(self.primary, "name", "resilient")
 
     def _call(self, name: str, *args: Any, **kwargs: Any) -> Any:
         try:

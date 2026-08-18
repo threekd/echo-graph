@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { initThree, setOnNodeClick, setOnNodeHover, disposeThree } from "../lib/renderer.js";
 import { selectNode, showNodeDetail } from "../lib/graph.js";
 

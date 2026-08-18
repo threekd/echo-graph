@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { search } from "../lib/api.js";
 import {
@@ -28,7 +28,7 @@ export default function Sidebar() {
         .catch(() => { setQResults([]); dispatch({ type: "SET_TOAST", msg: "搜索失败" }); });
     }, 200);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, dispatch]);
 
   const doPath = () => {
     const fid = lookups.current.workLookup[from.trim()];

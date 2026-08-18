@@ -1,12 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { selectNode } from "../lib/graph.js";
-
-function esc(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
 
 function AuthorPanel({ author, fullData }) {
   const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
@@ -107,21 +101,21 @@ export default function Panel() {
   const panel = state.panel;
   const hideTimer = useRef(null);
 
-  const cancelHide = () => {
+  const cancelHide = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-  };
+  }, []);
 
-  const scheduleHide = () => {
+  const scheduleHide = useCallback(() => {
     cancelHide();
     hideTimer.current = setTimeout(() => {
       const el = document.getElementById("panel");
       // 3 秒后鼠标仍不在面板上时才隐藏
       if (el && !el.matches(":hover")) el.classList.remove("show");
     }, 3000);
-  };
+  }, [cancelHide]);
 
   // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
   useEffect(() => {
@@ -143,7 +137,7 @@ export default function Panel() {
       document.documentElement.removeEventListener("mouseleave", onLeave);
       cancelHide();
     };
-  }, []);
+  }, [cancelHide, scheduleHide]);
 
   useEffect(() => {
     const el = document.getElementById("panel");
@@ -151,7 +145,7 @@ export default function Panel() {
       el.classList.add("show");
       scheduleHide(); // 展示时启动倒计时,鼠标移入面板会取消
     }
-  }, [panel]);
+  }, [panel, scheduleHide]);
   let content = null;
   if (panel.type === "empty") {
     content = (

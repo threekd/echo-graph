@@ -352,7 +352,7 @@ function forceLayoutChunked(ids, edges, callback) {
       };
       worker.postMessage({ ids: ids, edges: edges });
       return;
-    } catch (e) { /* Worker 不可用,走主线程回退 */ }
+    } catch { /* Worker 不可用,走主线程回退 */ }
   }
   forceLayoutMainThread(ids, edges, callback);
 }
@@ -871,7 +871,7 @@ export function disposeThree() {
     animFrameId = null;
   }
   window.removeEventListener("resize", onResize);
-  boundCleanups.forEach(function (fn) { try { fn(); } catch (e) { /* ignore */ } });
+  boundCleanups.forEach(function (fn) { try { fn(); } catch { /* ignore */ } });
   boundCleanups = [];
   clearScene();
   if (scene && backgroundStars) {

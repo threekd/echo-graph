@@ -21,6 +21,7 @@ var lastHoveredNodeId = null;
 var activePointers = {};       // 触摸多点支持
 var pinchDist = 0;
 var viewToken = 0;             // 防止异步布局的旧回调覆盖新视图
+var hiddenLabelIds = {};       // 主图谱中默认隐藏标签的孤岛作品
 var glowTexture = null;
 var onNodeClick = null; // 由 main.js 注入(避免循环依赖)
 var onNodeHover = null; // 由 main.js 注入(悬停显示详情)
@@ -194,6 +195,10 @@ function createNodeGroup(n, pos) {
   div.textContent = n.label;
   var label = new THREE.CSS2DObject(div);
   label.position.set(0, r + 12, 0);
+  if (hiddenLabelIds[n.id]) {
+    label.visible = false;           // 孤岛作品默认不显示文字(CSS2DRenderer 会强制改写 style.display,须用 visible)
+    label.userData = { hiddenByDefault: true };
+  }
   group.add(label);
 
   scene.add(group);
@@ -543,6 +548,7 @@ function buildScene(data) {
 export function renderView(kind, data, opts) {
   var token = ++viewToken;
   state.viewData = data;
+  hiddenLabelIds = kind === "main" ? isolatedWorkIds(data) : {};
   clearScene();
   if (kind === "main") {
     // 分帧布局:大数据量时不阻塞主线程
@@ -557,6 +563,20 @@ export function renderView(kind, data, opts) {
   positions = layoutFor(kind, data);
   buildScene(data);
   finishView(kind, data, opts);
+}
+
+function isolatedWorkIds(data) {
+  var deg = {};
+  data.edges.forEach(function (e) {
+    if (e.type !== "echo") return;
+    deg[e.source] = (deg[e.source] || 0) + 1;
+    deg[e.target] = (deg[e.target] || 0) + 1;
+  });
+  var ids = {};
+  data.nodes.forEach(function (n) {
+    if (n.type === "work" && !deg[n.id]) ids[n.id] = true;
+  });
+  return ids;
 }
 
 function authorPosFor(wpos) {
@@ -732,7 +752,12 @@ function hoverPick(e) {
   var mesh = pickMesh(e);
   var id = mesh && mesh.userData.node ? mesh.userData.node.id : null;
   Object.keys(nodeLabels).forEach(function (nid) {
-    nodeLabels[nid].element.classList.toggle("active", nid === id);
+    var label = nodeLabels[nid];
+    var elm = label.element;
+    elm.classList.toggle("active", nid === id);
+    if (label.userData && label.userData.hiddenByDefault) {
+      label.visible = nid === id;    // 悬停时临时显示孤岛标签
+    }
   });
   renderer.domElement.style.cursor = mesh ? "pointer" : "grab";
   hovering = id != null;

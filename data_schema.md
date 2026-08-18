@@ -6,7 +6,7 @@
 
 ## 通用约定
 
-- **主键与 URL 标识**:生产环境 `id` 使用 UUID;同时保留 `slug`(如 `orient_express`)作为 URL 友好标识,`slug` 全局唯一。演示阶段二者可相同(直接用 slug 充当 id)。
+- **主键与 URL 标识**:`id` 使用 UUID(建议 UUID v7,时间有序),同时也是 URL 使用的标识;新增作者/作品时由后端自动生成。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),作为对外展示字段。
 - **语言编码**:优先 ISO 639-1;无法表达时(如中古英语、古典日语)使用 ISO 639-3(`enm`、`ojp`)或自定义枚举,并在文档中登记。
 
@@ -17,7 +17,6 @@
 | 属性 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `id` | UUID | 是 | 唯一标识,主键 |
-| `slug` | String | 是 | URL 友好标识,全局唯一 |
 | `language` | String | 是 | 作品语言(ISO 639-1,兜底 639-3) |
 | `originalTitle` | String | 是 | 原著标题 |
 | `Title_CN` | String | 是 | 中文版标题 |
@@ -36,7 +35,6 @@
 | 属性 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `id` | UUID | 是 | 唯一标识,主键 |
-| `slug` | String | 是 | URL 友好标识,全局唯一 |
 | `originalName` | String | 是 | 全名/原文名 |
 | `Name_CN` | String | 是 | 中文名 |
 | `Name_EN` | String | 否 | 英文名 |
@@ -76,7 +74,7 @@
 
 ## 约束与索引
 
-- 唯一约束:`Work.id`、`Work.slug`、`Author.id`、`Author.slug`
+- 唯一约束:`Work.id`、`Author.id`
 - 全文索引:Neo4j 全文索引仅支持节点属性,建议对 `Work(Title_CN, Title_EN, originalTitle, summary)` 建 fulltext;`evidence` 属于关系属性,无法直接用 Neo4j fulltext,检索时用 `CONTAINS` 或后续拆分为独立 Evidence 节点
 - 建议查询:`(Work)-[:ECHO]` 两端均命中唯一约束,路径与扩散查询走变长路径
 

@@ -52,7 +52,6 @@ class JsonStore:
             nodes.append(
                 {
                     "id": a["id"],
-                    "slug": a["slug"],
                     "type": "author",
                     "label": a["Name_CN"],
                     "label_en": a["Name_EN"],
@@ -69,7 +68,6 @@ class JsonStore:
             nodes.append(
                 {
                     "id": w["id"],
-                    "slug": w["slug"],
                     "type": "work",
                     "label": w["Title_CN"],
                     "label_en": w["Title_EN"],
@@ -189,7 +187,6 @@ class JsonStore:
         return {
             "work": {
                 "id": w["id"],
-                "slug": w["slug"],
                 "title": w["Title_CN"],
                 "title_en": w["Title_EN"],
                 "originalTitle": w["originalTitle"],
@@ -202,7 +199,6 @@ class JsonStore:
             },
             "author": {
                 "id": author["id"],
-                "slug": author["slug"],
                 "name": author["Name_CN"],
                 "name_en": author["Name_EN"],
                 "originalName": author["originalName"],
@@ -268,7 +264,6 @@ class JsonStore:
             nodes.append(
                 {
                     "id": w["id"],
-                    "slug": w["slug"],
                     "type": "work",
                     "label": w["Title_CN"],
                     "label_en": w["Title_EN"],
@@ -338,7 +333,6 @@ class Neo4jStore:
     def _node(self, props: dict, label: str) -> dict:
         return {
             "id": props.get("id"),
-            "slug": props.get("slug"),
             "type": "work",
             "label": props.get("Title_CN"),
             "label_en": props.get("Title_EN"),
@@ -366,7 +360,6 @@ class Neo4jStore:
             nodes.append(
                 {
                     "id": p.get("id"),
-                    "slug": p.get("slug"),
                     "type": "author",
                     "label": p.get("Name_CN"),
                     "label_en": p.get("Name_EN"),
@@ -512,7 +505,6 @@ class Neo4jStore:
         return {
             "work": {
                 "id": wp.get("id"),
-                "slug": wp.get("slug"),
                 "title": wp.get("Title_CN"),
                 "title_en": wp.get("Title_EN"),
                 "originalTitle": wp.get("originalTitle"),
@@ -525,7 +517,6 @@ class Neo4jStore:
             },
             "author": {
                 "id": ap.get("id"),
-                "slug": ap.get("slug"),
                 "name": ap.get("Name_CN"),
                 "name_en": ap.get("Name_EN"),
                 "originalName": ap.get("originalName"),

@@ -45,7 +45,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(含 `slug`、`genre` 等);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **真实数据**：来自 `data/real/data_echo-graph.xlsx`(sheet:Author / Work / Echo),当前 7 位作者、67 部作品、3 条提及关系,已全量导入 Neo4j;示例数据已删除。
 - **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
@@ -55,12 +55,13 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
-uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 data/real/data_echo-graph.xlsx 或 csv)
+uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 md / xlsx / csv)
+uv run python scripts/import_data.py --source csv --wipe --version 1.1  # 从 data/real/*.csv 导入(推荐)
 uv run python scripts/import_data.py --source xlsx --wipe --version 1.0  # 真实数据全量重建(删除示例数据)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-真实数据以 `data/real/data_echo-graph.xlsx`(sheet:Author / Work / Echo)为准,字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id/slug),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
+真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 

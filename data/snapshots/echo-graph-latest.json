@@ -1,8 +1,8 @@
 {
   "meta": {
     "name": "echo-graph snapshot",
-    "datasetVersion": "real-1.0",
-    "exportedAt": "2026-08-18T08:50:45+00:00"
+    "datasetVersion": "1.1",
+    "exportedAt": "2026-08-18T11:36:15+00:00"
   },
   "authors": [
     {
@@ -13,8 +13,7 @@
       "birthYear": 1913,
       "deathYear": 1960,
       "id": "01a013e6-e885-766b-b9db-315d518adeeb",
-      "slug": "albert-camus",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Лев Николаевич Толстой",
@@ -24,19 +23,17 @@
       "birthYear": 1828,
       "deathYear": 1910,
       "id": "01a013e6-e885-766b-b9db-315e52f41b7d",
-      "slug": "01a013e6-e885-766b-b9db-315e52f41b7d",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Gabriel José García Márquez",
-      "createdAt": "2026-08-18T08:50:43+00:00",
+      "createdAt": "2026-08-18T11:36:13+00:00",
       "nationality": "哥伦比亚",
       "Name_CN": "加西亚·马尔克斯",
       "birthYear": 1927,
       "deathYear": 2014,
       "id": "01a013e6-e886-7360-b888-ca613085ca88",
-      "slug": "gabriel-jose-garcia-marquez",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Robert Maynard Pirsig",
@@ -46,8 +43,7 @@
       "birthYear": 1928,
       "deathYear": 2017,
       "id": "01a013e6-e886-7360-b888-ca62b7350948",
-      "slug": "robert-maynard-pirsig",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Henry David Thoreau",
@@ -57,8 +53,7 @@
       "birthYear": 1817,
       "deathYear": 1862,
       "id": "01a013eb-4662-71a2-8d30-d688ece9a063",
-      "slug": "henry-david-thoreau",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Frederick Sontag Craig Northrop",
@@ -68,8 +63,7 @@
       "birthYear": 1893,
       "deathYear": 1992,
       "id": "01a013f1-1c6e-7269-a405-f3520bca2da8",
-      "slug": "frederick-sontag-craig-northrop",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "originalName": "Anonymous",
@@ -77,8 +71,17 @@
       "nationality": "无",
       "Name_CN": "佚名",
       "id": "01a013f1-1c6e-7269-a405-f353134bd626",
-      "slug": "anonymous",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
+    },
+    {
+      "originalName": "Jean Giono",
+      "createdAt": "2026-08-18T11:36:13+00:00",
+      "nationality": "法国",
+      "Name_CN": "让·吉奥诺",
+      "birthYear": 1895,
+      "deathYear": 1970,
+      "id": "01a0148e-25d9-766e-b274-b2639519ac50",
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     }
   ],
   "works": [
@@ -93,8 +96,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce355a36268",
-      "slug": "betwixt-and-between",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -106,8 +108,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce48f19b60d",
-      "slug": "nuptials",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -120,8 +121,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce5cc3de32c",
-      "slug": "the-stranger",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -133,8 +133,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce68afa9460",
-      "slug": "the-myth-of-sisyphus",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -147,8 +146,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce723d10e4d",
-      "slug": "the-plague",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -160,8 +158,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce8b8f13c2f",
-      "slug": "the-rebel",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -173,8 +170,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bce968ab6045",
-      "slug": "summer",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -187,8 +183,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bcead27e01ac",
-      "slug": "the-fall",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -200,8 +195,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bcebbb7abaeb",
-      "slug": "exile-and-the-kingdom",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -213,8 +207,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bcec0c82ea62",
-      "slug": "algerian-chronicles",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -226,8 +219,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bced04669101",
-      "slug": "a-happy-death",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -240,8 +232,7 @@
       "Author": "Albert Camus",
       "language": "fr",
       "id": "01a013e8-907e-77f3-83c6-bcee862678bb",
-      "slug": "the-first-man",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -253,8 +244,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcef2f7317f7",
-      "slug": "childhood",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -266,8 +256,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf02bbc66a0",
-      "slug": "boyhood",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -279,8 +268,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf139e15680",
-      "slug": "sevastopol-sketches",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -292,8 +280,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf27f09316d",
-      "slug": "a-landowners-morning",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -305,8 +292,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf3f16b5389",
-      "slug": "two-hussars",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -318,8 +304,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf4f7be441b",
-      "slug": "youth",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -331,8 +316,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf5d424dfe1",
-      "slug": "family-happiness",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -344,8 +328,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf63be341ba",
-      "slug": "polikushka",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -357,8 +340,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907e-77f3-83c6-bcf71dbf5474",
-      "slug": "the-cossacks",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -370,8 +352,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d5361417b26c",
-      "slug": "war-and-peace",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -383,8 +364,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d537e6d9016c",
-      "slug": "a-prisoner-of-the-caucasus",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -396,8 +376,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d538a2a9bf38",
-      "slug": "anna-karenina",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -409,8 +388,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53912342a3b",
-      "slug": "a-confession",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -423,8 +401,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53acedc036c",
-      "slug": "what-i-believe",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -436,8 +413,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53b474cab98",
-      "slug": "the-death-of-ivan-ilyich",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -449,8 +425,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53cab1ab2f1",
-      "slug": "how-much-land-does-a-man-need",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -462,8 +437,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53dfeb89a36",
-      "slug": "the-power-of-darkness",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -476,8 +450,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53efb349dff",
-      "slug": "kholstomer",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -489,8 +462,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d53f144300e5",
-      "slug": "the-kreutzer-sonata",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -502,8 +474,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54042135f84",
-      "slug": "the-fruits-of-enlightenment",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -515,8 +486,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54175d977ed",
-      "slug": "the-kingdom-of-god-is-within-you",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -528,8 +498,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d542f37726aa",
-      "slug": "master-and-man",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -541,8 +510,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d5434f433ddf",
-      "slug": "what-is-art",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -554,8 +522,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54492ece4c7",
-      "slug": "father-sergius",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -567,8 +534,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d5456f988eae",
-      "slug": "resurrection",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -581,8 +547,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54684c56f5f",
-      "slug": "the-living-corpse",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -594,8 +559,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d5479ab720ab",
-      "slug": "after-the-ball",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -607,8 +571,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d548922dabb3",
-      "slug": "the-forged-coupon",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -620,8 +583,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54975416fdf",
-      "slug": "the-devil",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -633,8 +595,7 @@
       "Author": "Лев Николаевич Толстой",
       "language": "ru",
       "id": "01a013e8-907f-7396-b9b5-d54a1dfa0194",
-      "slug": "hadji-murat",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -646,8 +607,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d54b41f04d91",
-      "slug": "leaf-storm",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -659,8 +619,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d54cc75e9104",
-      "slug": "no-one-writes-to-the-colonel",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -672,8 +631,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d54d29794b4d",
-      "slug": "in-evil-hour",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -685,8 +643,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d54e5d6fb693",
-      "slug": "big-mamas-funeral",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -698,8 +655,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d54f87c9321b",
-      "slug": "one-hundred-years-of-solitude",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -711,8 +667,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d550c685147d",
-      "slug": "the-story-of-a-shipwrecked-sailor",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -725,8 +680,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d551c713b1ca",
-      "slug": "the-incredible-and-sad-tale-of-innocent-erendira-and-her-heartless-grandmother",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -738,8 +692,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d5523844d6d9",
-      "slug": "eyes-of-a-blue-dog",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -751,8 +704,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d553588c16c0",
-      "slug": "the-autumn-of-the-patriarch",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -764,8 +716,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d554c574329a",
-      "slug": "chronicle-of-a-death-foretold",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -777,8 +728,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55570947895",
-      "slug": "the-fragrance-of-guava",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -790,8 +740,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d556f0037816",
-      "slug": "love-in-the-time-of-cholera",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -803,8 +752,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d557ab578254",
-      "slug": "clandestine-in-chile",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -816,8 +764,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d558519c18e4",
-      "slug": "the-general-in-his-labyrinth",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -830,8 +777,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d559b9c04323",
-      "slug": "strange-pilgrims",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -844,8 +790,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55a465787b8",
-      "slug": "of-love-and-other-demons",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -857,8 +802,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55b812c7729",
-      "slug": "news-of-a-kidnapping",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -870,8 +814,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55c985ef231",
-      "slug": "living-to-tell-the-tale",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -883,8 +826,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55dc1a17584",
-      "slug": "memories-of-my-melancholy-whores",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -896,8 +838,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55e0caab537",
-      "slug": "im-not-here-to-give-a-speech",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T06:35:02.746000",
@@ -910,8 +851,7 @@
       "Author": "Gabriel José García Márquez",
       "language": "es",
       "id": "01a013e8-907f-7396-b9b5-d55fd47c768e",
-      "slug": "until-august",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T08:50:43+00:00",
@@ -923,8 +863,7 @@
       "Author": "Robert Maynard Pirsig",
       "language": "en",
       "id": "01a013e8-907f-7396-b9b5-d56024e84548",
-      "slug": "zen-and-the-art-of-motorcycle-maintenance",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T08:50:43+00:00",
@@ -936,8 +875,7 @@
       "Author": "Henry David Thoreau",
       "language": "en",
       "id": "01a013eb-4664-715c-a68f-acb1ce46e342",
-      "slug": "walden",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T08:50:43+00:00",
@@ -949,8 +887,7 @@
       "Author": "Frederick Sontag Craig Northrop",
       "language": "en",
       "id": "01a013f1-545e-7562-bc38-7692ef32b09c",
-      "slug": "the-meeting-of-east-and-west",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "createdAt": "2026-08-18T08:50:43+00:00",
@@ -961,8 +898,7 @@
       "Author": "Anonymous",
       "language": "ar",
       "id": "01a013f1-545e-7562-bc38-7693325b8d93",
-      "slug": "one-thousand-and-one-nights",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     }
   ],
   "edges": [
@@ -974,7 +910,7 @@
       "evidenceLang": "en",
       "evidenceSource": "chapter4",
       "reviewStatus": "draft",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "source": "01a013e8-907f-7396-b9b5-d56024e84548",
@@ -984,7 +920,7 @@
       "evidenceLang": "en",
       "evidenceSource": "chapter11",
       "reviewStatus": "draft",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     },
     {
       "source": "01a013eb-4664-715c-a68f-acb1ce46e342",
@@ -994,7 +930,7 @@
       "evidenceLang": "en",
       "evidenceSource": "章节：居所和生活的目标",
       "reviewStatus": "draft",
-      "updatedAt": "2026-08-18T08:50:43+00:00"
+      "updatedAt": "2026-08-18T11:36:13+00:00"
     }
   ]
 }

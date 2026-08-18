@@ -76,7 +76,10 @@ function filterAuthors(data) {
   var edges = data.edges.filter(function (e) {
     return ids[e.source] && ids[e.target];
   });
-  return { nodes: nodes, edges: edges };
+  return {
+    nodes: data.nodes.filter(function (n) { return !!ids[n.id]; }),
+    edges: edges,
+  };
 }
 
 // 给作品子图补充作者节点与归属边(尊重"显示作家节点"开关)
@@ -146,9 +149,49 @@ function countIslands(data) {
   }).length;
 }
 
+// 默认规则(与"隐藏孤岛星"勾选框无关):
+// 隐藏"孤岛星"——没有任何 ECHO 提及关系、且名下作品不超过 1 部的作者,连同其作品与归属边;
+// 有提及关系的作品(哪怕作者名下仅此一部)保留。
+function filterSingleWorkAuthors(data) {
+  var workCount = {};
+  var deg = {};
+  data.nodes.forEach(function (n) {
+    if (n.type !== "work" || !n.author_id) return;
+    workCount[n.author_id] = (workCount[n.author_id] || 0) + 1;
+  });
+  data.edges.forEach(function (e) {
+    if (e.type !== "echo") return;
+    deg[e.source] = (deg[e.source] || 0) + 1;
+    deg[e.target] = (deg[e.target] || 0) + 1;
+  });
+  var hidden = {};
+  data.nodes.forEach(function (n) {
+    if (n.type !== "author") return;
+    var total = workCount[n.id] || 0;
+    var hasEcho = data.nodes.some(function (w) {
+      return w.type === "work" && w.author_id === n.id && (deg[w.id] || 0) > 0;
+    });
+    if (!hasEcho && total <= 1) hidden[n.id] = true;
+  });
+  var ids = {};
+  data.nodes.forEach(function (n) {
+    if (n.type === "author") {
+      if (!hidden[n.id]) ids[n.id] = true;
+    } else if (n.type === "work") {
+      if (!hidden[n.author_id]) ids[n.id] = true;
+    }
+  });
+  var nodes = data.nodes.filter(function (n) { return !!ids[n.id]; });
+  var edges = data.edges.filter(function (e) {
+    return ids[e.source] && ids[e.target];
+  });
+  return { nodes: nodes, edges: edges };
+}
+
 function renderMain(opts) {
   currentActionView = "main";
-  var data = isIslandsHidden() ? filterIslands(state.fullData) : state.fullData;
+  var data = filterSingleWorkAuthors(state.fullData);
+  if (isIslandsHidden()) data = filterIslands(data);
   data = filterAuthors(data);
   renderView("main", data, opts || { preserveCamera: true });
 }

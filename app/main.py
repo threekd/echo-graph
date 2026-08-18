@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.admin import router as admin_router
 from app.db import get_store
 
 logging.basicConfig(level=logging.INFO)
@@ -72,7 +73,17 @@ def path(
     return result
 
 
-app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    """静态文件总是重新校验,避免浏览器缓存旧版 JS/CSS 模块。"""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=ROOT / "static"), name="static")
+app.include_router(admin_router)
 
 
 if __name__ == "__main__":

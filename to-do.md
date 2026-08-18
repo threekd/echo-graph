@@ -8,10 +8,10 @@
 - [x] 评估 readme.md 方案可行性并输出结论(技术栈可行,主要风险在数据策展)
 - [x] 数据模型按 `data_schema.md`(schemaVersion 1.1)规范:`Author` / `Work` 节点及属性
   - Work:`id`、`language`(ISO 639-1)、`originalTitle`、`Title_CN`、`Title_EN`、`publicationYear`、`creationYear`、`summary`、时间戳
-  - 补充:`slug`(URL 标识)、`genre`(体裁)、可选 `deletedAt`;`Author` 同含 `slug`
+  - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
 - [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
 - [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`reviewStatus` 与时间戳
-- [x] 真实数据接入:`data_echo-graph.xlsx`(7 位作者 / 67 部作品 / 3 条提及)已全量导入 Neo4j;示例数据(seed.json、演示快照、生成脚本)已删除
+- [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源(7 位作者 / 67 部作品 / 3 条提及),已全量导入 Neo4j;兼容 xlsx 导入;示例数据(seed.json、演示快照、生成脚本、md 表格)已删除
 - [x] 提供新增/修改数据的标准流程(`data_echo-graph.xlsx` → `import_data.py`)
 - [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
 - ⬜ 逐条审核真实关系并置 `reviewed`,扩充数据量与出处精确性
@@ -26,8 +26,9 @@
   - `GET /api/expansion/{workId}?hops=N` N 级扩散子图
   - `GET /api/stats` 数据统计
 - [x] Neo4j Aura 数据导入与约束(index)
-- [x] 导入管线重构:`data_echo-graph.xlsx` / `data/real/*.csv` 双源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id·slug),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
-- [x] 真实数据接入:`data_echo-graph.xlsx`(Author/Work/Echo)直接导入;对齐 schema 1.1(Work 增 `Title_Other`/`Author`、genre 枚举,移除 summary/confidence 等);slug 自动生成;Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导;已用真实数据全量重建 Neo4j(7 作者 / 67 作品 / 3 提及)
+- [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
+- [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
+- [x] 真实数据接入:`data/real/*.csv`(7 作者 / 67 作品 / 3 提及)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 

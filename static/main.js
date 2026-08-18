@@ -8,6 +8,7 @@ import {
   toggleAuthorsInView,
   sceneNodeCount,
 } from "./renderer.js";
+import { open as openAdmin } from "./admin.js";
 import { loadGraph, wireEvents, handleHash, selectNode, showNodeDetail } from "./actions.js";
 import { setOnSelect } from "./panels.js";
 
@@ -141,5 +142,8 @@ loadGraph().catch(function (err) {
         }, 500);
       }
     }, 50);
+  }
+  if (location.search.indexOf("admin=1") !== -1) {
+    openAdmin();
   }
 });

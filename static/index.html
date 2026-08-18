@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>The Echo Graph · 回声图谱</title>
-  <link rel="stylesheet" href="/static/style.css?v=24" />
+  <link rel="stylesheet" href="/static/style.css?v=34" />
 </head>
 <body>
   <main>
@@ -52,6 +52,7 @@
           <button id="btn-export-png" title="导出当前视图为 PNG 图片">导出图片</button>
           <button id="btn-export-data" title="导出全量图谱数据为 JSON">导出数据</button>
         </div>
+        <button id="btn-admin" class="side-btn">数据管理</button>
       </nav>
       <div class="sidebar-bottom">
         <label class="opt" title="显示/隐藏作家节点">
@@ -92,8 +93,44 @@
     </div>
   </div>
 
+  <div id="admin-overlay" style="display:none">
+    <div class="admin-shell">
+      <div class="admin-head">
+        <h2>数据管理</h2>
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-kind="authors">作者 <span class="cnt"></span></button>
+          <button class="admin-tab" data-kind="works">作品 <span class="cnt"></span></button>
+          <button class="admin-tab" data-kind="edges">提及 <span class="cnt"></span></button>
+        </div>
+        <div class="admin-actions">
+          <input id="admin-search" placeholder="搜索…" />
+          <button id="admin-add">＋ 新增</button>
+          <button id="admin-import">导入到 Neo4j</button>
+          <button id="admin-export-json">导出 JSON</button>
+          <button id="admin-export-csv">导出 CSV</button>
+          <button id="admin-close">关闭</button>
+        </div>
+      </div>
+      <div id="admin-status"></div>
+      <div class="admin-body">
+        <table id="admin-table"></table>
+      </div>
+    </div>
+    <div id="admin-modal" style="display:none">
+      <div class="admin-modal-card">
+        <h3 id="admin-modal-title"></h3>
+        <div id="admin-form"></div>
+        <div id="admin-form-errors"></div>
+        <div class="admin-modal-actions">
+          <button id="admin-form-save">保存</button>
+          <button id="admin-form-cancel">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/vendor/three.min.js"></script>
   <script src="/static/vendor/CSS2DRenderer.js"></script>
-  <script type="module" src="/static/main.js?v=24"></script>
+  <script type="module" src="/static/main.js?v=34"></script>
 </body>
 </html>

@@ -46,7 +46,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **真实数据**：来自 `data/real/data_echo-graph.xlsx`(sheet:Author / Work / Echo),当前 7 位作者、67 部作品、3 条提及关系,已全量导入 Neo4j;示例数据已删除。
+- **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,当前 8 位作者、67 部作品、3 条提及关系,已全量导入 Neo4j;示例数据已删除。
 - **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
 - **前端**：无构建单页(HTML + Three.js,3D 渲染),已按原生 ES module 拆分(util / state / renderer / panels / actions / main,无打包器)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
@@ -55,9 +55,8 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
-uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 md / xlsx / csv)
+uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 csv)
 uv run python scripts/import_data.py --source csv --wipe --version 1.1  # 从 data/real/*.csv 导入(推荐)
-uv run python scripts/import_data.py --source xlsx --wipe --version 1.0  # 真实数据全量重建(删除示例数据)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -70,13 +69,13 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 视图 | 说明 | 深链示例 |
 |---|---|---|
 | 主图谱 | 全量球状星云 | `http://127.0.0.1:8000/#v=main` |
-| 提及链 | 两作品间的 3D 提及路径(螺旋排列) | `http://127.0.0.1:8000/#v=path:iliad,living` |
-| 涟漪 | 以某作品为中心的 3D 扩散球(N 级扩散) | `http://127.0.0.1:8000/#v=ripple:hundred_years:2` |
-| 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:christie` |
+| 提及链 | 两作品间的 3D 提及路径(螺旋排列) | `http://127.0.0.1:8000/#v=path:{fromWorkId},{toWorkId}` |
+| 涟漪 | 以某作品为中心的 3D 扩散球(N 级扩散) | `http://127.0.0.1:8000/#v=ripple:{workId}:2` |
+| 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:{authorId}` |
 
-URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,由"分享链接"生成)。旧格式 `#path=` / `#ripple=` / `#author=` 仍兼容。
+URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,由"分享链接"生成)。旧格式 `#path=` / `#ripple=` / `#author=` 仍兼容,标识均为 UUID。
 
-左侧栏提供"分享链接 / 导出图片 / 导出数据":分享链接复制含相机位置的完整 URL;导出图片为当前视图 PNG;导出数据为全量图谱 JSON。
+左侧栏提供"分享链接 / 导出图片":分享链接复制含相机位置的完整 URL;导出图片为当前视图 PNG(含节点文字标签)。
 
 ### API
 
@@ -86,10 +85,11 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`cam=theta,phi,radius,c
 | `GET /api/search?q=` | 搜索作家 / 作品 |
 | `GET /api/work/{id}` | 作品详情 + 谁提及它 / 它提及谁(涟漪数据) |
 | `GET /api/path?from={workId}&to={workId}` | 有向最短提及链 |
+| `GET /api/expansion/{workId}?hops=N` | N 级涟漪扩散子图 |
 | `GET /api/stats` | 数据统计 |
 
 ### 重要声明
 
-- 当前数据为**真实策展数据**(7 位作者 / 67 部作品 / 3 条提及),摘抄与出处来自 `data_echo-graph.xlsx`;关系目前均为 `draft` 状态,正式发布前需逐条人工审核并置为 `reviewed`。
+- 当前数据为**真实策展数据**(8 位作者 / 67 部作品 / 3 条提及),摘抄与出处来自 `data/real/edges.csv`;关系目前均为 `draft` 状态,正式发布前需逐条人工审核并置为 `reviewed`。
 - 前端目前采用无构建的单页实现(暂不依赖 npm);npm 已可用(12.0.2),后续可平滑迁移到 React + Vite。
 - Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。

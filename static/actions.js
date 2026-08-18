@@ -385,11 +385,6 @@ export function wireEvents() {
     loadGraph().then(function () { syncUrl(true); });
   };
   el("btn-swap").onclick = swapPath;
-  el("btn-example").onclick = function () {
-    el("from").value = "伊利亚特 - 荷马";
-    el("to").value = "活着 - 余华";
-    findPath();
-  };
   el("expand-range").addEventListener("input", expandRipple);
   el("hide-islands").addEventListener("change", function () {
     if (isIslandsHidden()) {
@@ -407,7 +402,6 @@ export function wireEvents() {
   });
   el("btn-share").onclick = shareLink;
   el("btn-export-png").onclick = exportPng;
-  el("btn-export-data").onclick = exportData;
   setupPathAutocomplete("from", "from-results");
   setupPathAutocomplete("to", "to-results");
 
@@ -603,24 +597,39 @@ function shareLink() {
 function exportPng() {
   var canvas = document.querySelector("#graph canvas");
   if (!canvas) return;
+  var cssRect = canvas.getBoundingClientRect();
+  var labels = Array.prototype.slice.call(document.querySelectorAll(".nodelabel"))
+    .filter(function (elm) { return getComputedStyle(elm).display !== "none"; })
+    .map(function (elm) {
+      var rect = elm.getBoundingClientRect();
+      return {
+        text: elm.textContent,
+        x: rect.left - cssRect.left + rect.width / 2,
+        y: rect.top - cssRect.top + rect.height / 2,
+        fontSize: parseFloat(getComputedStyle(elm).fontSize) || 11,
+      };
+    });
+  var scale = 2; // 放大导出,文字更清晰
+  var out = document.createElement("canvas");
+  out.width = cssRect.width * scale;
+  out.height = cssRect.height * scale;
+  var ctx = out.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.drawImage(canvas, 0, 0, cssRect.width, cssRect.height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  labels.forEach(function (lab) {
+    ctx.font = lab.fontSize + "px sans-serif";
+    ctx.shadowColor = "rgba(0,0,0,0.95)";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "#dbe9ff";
+    ctx.fillText(lab.text, lab.x, lab.y);
+  });
   var a = document.createElement("a");
-  a.href = canvas.toDataURL("image/png");
+  a.href = out.toDataURL("image/png");
   a.download = "echo-graph-" + Date.now() + ".png";
   document.body.appendChild(a);
   a.click();
   a.remove();
   showToast("已导出当前视图 PNG");
-}
-
-function exportData() {
-  var blob = new Blob([JSON.stringify(state.fullData, null, 2)], { type: "application/json" });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href = url;
-  a.download = "echo-graph-data.json";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  showToast("已导出图谱数据 JSON");
 }

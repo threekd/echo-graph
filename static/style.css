@@ -35,6 +35,15 @@ main { height: 100%; position: relative; min-height: 0; }
 
 .side-btn {
   width: 100%;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(10, 14, 34, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 0 16px rgba(80, 120, 255, 0.15);
+  font-size: 13px;
+  color: var(--ink);
 }
 .side-btn:hover {
   border-color: rgba(138, 184, 255, 0.8);
@@ -297,9 +306,12 @@ nav input:focus {
 }
 #q { width: 100%; }
 .field { position: relative; }
-.path-box { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.path-field { position: relative; flex: 1 1 120px; min-width: 0; }
+.path-box { display: flex; align-items: stretch; gap: 8px; }
+.path-fields { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.path-field { position: relative; flex: 0 0 auto; min-width: 0; }
 .path-field input { width: 100%; }
+#btn-swap { align-self: center; width: 32px; flex: none; }
+#btn-path { flex: none; align-self: stretch; white-space: nowrap; }
 #from-results, #to-results {
   position: absolute;
   top: calc(100% + 6px);

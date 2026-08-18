@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>The Echo Graph · 回声图谱</title>
-  <link rel="stylesheet" href="/static/style.css?v=34" />
+  <link rel="stylesheet" href="/static/style.css?v=35" />
 </head>
 <body>
   <main>
@@ -18,8 +18,8 @@
     <div id="sidebar-zone-left"><span class="zone-icon">◀</span></div>
     <aside id="sidebar-left">
       <div class="brand">
-        <h1>The Echo Graph <span class="sub">回声图谱 · 世界文学影响</span></h1>
-        <span class="badge">真实数据</span>
+        <h1>The Echo Graph</h1>
+        <span class="badge">回声图谱</span>
       </div>
       <nav>
         <div id="view-status">视图:全图谱</div>
@@ -28,18 +28,18 @@
           <ul id="q-results"></ul>
         </div>
         <div class="path-box">
-          <div class="path-field">
-            <input id="from" list="works" placeholder="起点作品" />
-            <ul id="from-results" class="path-results"></ul>
-          </div>
-          <button id="btn-swap" title="交换起终点">⇄</button>
-          <span class="arrow">→</span>
-          <div class="path-field">
-            <input id="to" list="works" placeholder="终点作品" />
-            <ul id="to-results" class="path-results"></ul>
+          <div class="path-fields">
+            <div class="path-field">
+              <input id="from" list="works" placeholder="起点作品" />
+              <ul id="from-results" class="path-results"></ul>
+            </div>
+            <button id="btn-swap" title="交换起终点">⇅</button>
+            <div class="path-field">
+              <input id="to" list="works" placeholder="终点作品" />
+              <ul id="to-results" class="path-results"></ul>
+            </div>
           </div>
           <button id="btn-path">寻找路径</button>
-          <button id="btn-example" title="示例:伊利亚特 → 活着">示例</button>
         </div>
         <button id="btn-back-main" class="side-btn" style="display:none">返回全部图谱</button>
         <div id="expand-bar" style="display:none">
@@ -50,9 +50,7 @@
         <div class="tool-row">
           <button id="btn-share" title="复制当前视图(含相机位置)的分享链接">分享链接</button>
           <button id="btn-export-png" title="导出当前视图为 PNG 图片">导出图片</button>
-          <button id="btn-export-data" title="导出全量图谱数据为 JSON">导出数据</button>
         </div>
-        <button id="btn-admin" class="side-btn">数据管理</button>
       </nav>
       <div class="sidebar-bottom">
         <label class="opt" title="显示/隐藏作家节点">
@@ -63,6 +61,7 @@
           <input type="checkbox" id="hide-islands" />
           <span>隐藏孤岛星</span>
         </label>
+        <button id="btn-admin" class="side-btn">数据管理</button>
       </div>
     </aside>
 

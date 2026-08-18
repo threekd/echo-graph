@@ -11,8 +11,8 @@
   - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
 - [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
 - [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`reviewStatus` 与时间戳
-- [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源(7 位作者 / 67 部作品 / 3 条提及),已全量导入 Neo4j;兼容 xlsx 导入;示例数据(seed.json、演示快照、生成脚本、md 表格)已删除
-- [x] 提供新增/修改数据的标准流程(`data_echo-graph.xlsx` → `import_data.py`)
+- [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源(8 位作者 / 67 部作品 / 3 条提及),已全量导入 Neo4j;示例数据(seed.json、演示快照、生成脚本、md 表格、旧 xlsx)已删除
+- [x] 提供新增/修改数据的标准流程(CSV → `import_data.py` 或数据管理页)
 - [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
 - ⬜ 逐条审核真实关系并置 `reviewed`,扩充数据量与出处精确性
 
@@ -28,7 +28,7 @@
 - [x] Neo4j Aura 数据导入与约束(index)
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
-- [x] 真实数据接入:`data/real/*.csv`(7 作者 / 67 作品 / 3 提及)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
+- [x] 真实数据接入:`data/real/*.csv`(8 作者 / 67 作品 / 3 提及)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 
@@ -61,7 +61,8 @@
 
 - [x] 左右悬浮侧边栏:鼠标移到屏幕边缘感应带(◀/▶)滑出,移出侧栏区域收回
 - [x] 左侧功能栏:品牌标题、搜索、路径输入(边输入边联想 + ⇄ 交换按钮)、返回全部图谱、扩散范围滑动条
-- [x] "隐藏孤岛星"开关:默认不勾选;勾选后隐藏无任何提及关系的作品,以及名下无可见作品的作者;固定在左侧栏底部;设置跨视图保持;附测试参数 `?hideislands=1`
+- [x] "隐藏孤岛星"开关:默认不勾选;勾选后隐藏无任何提及关系的作品;固定在左侧栏底部;设置跨视图保持;附测试参数 `?hideislands=1`
+- [x] 默认过滤:名下作品不超过 1 部的作者(连同其作品)默认隐藏,仅当作品有提及关系时保留;与"隐藏孤岛星"勾选框逻辑相互独立
 - [x] 右侧栏:仅显示节点详情 / 提及链结果
 - [x] 移除页面底部图例与说明;顶部内容迁入侧边栏
 - [x] 视图状态指示条(视图:全图谱 / 涟漪 ·《X》 / 作者 · X / 提及链)
@@ -76,7 +77,8 @@
 - [x] 主图谱力导向布局分帧计算,避免大数据量卡顿(含视图令牌防止异步覆盖)
 - [x] 静态资源版本号防缓存(v=12)
 - [x] README 随进度同步维护
-- [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤、相机位置写入 URL(`#v=ripple:workId:hops&islands=1&cam=...`);浏览器前进/后退可导航;左侧栏提供"分享链接 / 导出图片 / 导出数据"
+- [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤、相机位置写入 URL(`#v=ripple:workId:hops&islands=1&cam=...`);浏览器前进/后退可导航;左侧栏提供"分享链接 / 导出图片"(PNG 含节点文字标签)
+- [x] 移除"导出数据"按钮与"示例"按钮;"数据管理"入口移至侧边栏底部;路径输入区改为上下等宽下拉框 + 切换按钮 + 右侧"寻找路径"
 - ⬜ React + Vite 迁移(建议功能形态稳定后进行;npm 已可用)
 - ⬜ 可选:路径结果展示位置确认(当前在右侧栏)
 

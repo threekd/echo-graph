@@ -1,4 +1,4 @@
-"""数据导入核心:加载(xlsx/csv)→ 校验 → 写入 Neo4j → 快照。
+"""数据导入核心:加载 CSV → 校验 → 写入 Neo4j → 快照。
 
 数据管理 API 与 scripts/import_data.py 共用本模块。
 """
@@ -21,7 +21,6 @@ from app.data_store import load_rows, REAL_DIR
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
-XLSX_PATH = REAL_DIR / "data_echo-graph.xlsx"
 SNAPSHOT_DIR = ROOT / "data" / "snapshots"
 CHUNK = 500
 
@@ -35,31 +34,6 @@ def _clean_row(raw: dict) -> dict:
             v = v.isoformat()
         out[k] = v
     return out
-
-
-def load_xlsx() -> tuple[list[dict], list[dict], list[dict]]:
-    import openpyxl
-
-    wb = openpyxl.load_workbook(XLSX_PATH, data_only=True)
-
-    def sheet_rows(name: str) -> list[dict]:
-        ws = wb[name]
-        rows = [r for r in ws.iter_rows(values_only=True) if any(v is not None for v in r)]
-        header = [str(c) if c is not None else "" for c in rows[0]]
-        return [
-            _clean_row({header[i]: (v if i < len(header) else None) for i, v in enumerate(r)})
-            for r in rows[1:]
-        ]
-
-    authors = sheet_rows("Author")
-    works = sheet_rows("Work")
-    echoes = sheet_rows("Echo")
-    keep = {
-        "source_work_id", "target_work_id", "evidence", "evidenceSource",
-        "evidenceLang", "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
-    }
-    echoes = [{k: v for k, v in e.items() if k in keep} for e in echoes]
-    return authors, works, echoes
 
 
 def _chunks(rows: list, size: int = CHUNK):
@@ -206,7 +180,7 @@ def run_import(
     version: str = "1.0",
     no_snapshot: bool = False,
 ) -> dict:
-    """加载(CSV 或 xlsx)→ 校验 → 写入 Neo4j → 快照。返回统计。"""
+    """加载 CSV → 校验 → 写入 Neo4j → 快照。返回统计。"""
     uri = os.getenv("NEO4J_URI")
     username = os.getenv("NEO4J_USERNAME")
     password = os.getenv("NEO4J_PASSWORD")
@@ -214,12 +188,7 @@ def run_import(
     if not (uri and username and password):
         raise RuntimeError("NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD missing in .env")
 
-    if source == "xlsx":
-        if not XLSX_PATH.exists():
-            raise FileNotFoundError(f"未找到 {XLSX_PATH}")
-        authors, works, echoes = load_xlsx()
-    else:
-        authors, works, echoes = load_rows()
+    authors, works, echoes = load_rows()
 
     # 软删除的行保留在 CSV 存档,但不进入图谱
     authors = [a for a in authors if not a.get("deletedAt")]

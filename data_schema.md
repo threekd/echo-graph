@@ -1,4 +1,4 @@
-# Echo Graph 数据结构规范
+﻿# Echo Graph 数据结构规范
 
 - `schemaVersion`: `1.1`
 - 存储:Neo4j 图数据库(演示环境同时提供 JSON 兜底数据)
@@ -16,16 +16,17 @@
 
 | 属性 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `id` | String / UUID | 是 | 唯一标识,主键 |
+| `id` | UUID | 是 | 唯一标识,主键 |
 | `slug` | String | 是 | URL 友好标识,全局唯一 |
 | `language` | String | 是 | 作品语言(ISO 639-1,兜底 639-3) |
 | `originalTitle` | String | 是 | 原著标题 |
 | `Title_CN` | String | 是 | 中文版标题 |
-| `Title_EN` | String | 是 | 英文版标题 |
+| `Title_EN` | String | 否 | 英文版标题 |
+| `Title_Other` | String | 否 | 其他可能的标题 |
+| `Author` | String | 否 | 作者，（多人用逗号","隔开） |
 | `publicationYear` | Integer | 否 | 出版年份 |
-| `creationYear` | Integer | 否 | 创作年份(与出版年至少填一个) |
-| `genre` | String | 否 | 体裁(小说 / 诗歌 / 戏剧 / 史诗 等) |
-| `summary` | String | 否 | 内容简介 |
+| `creationYear` | Integer | 否 | 创作年份 |
+| `genre` | String | 否 | 体裁，枚举:(Fiction / Non-fiction/ Poetry / Drama) |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
@@ -34,18 +35,17 @@
 
 | 属性 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `id` | String / UUID | 是 | 唯一标识,主键 |
+| `id` | UUID | 是 | 唯一标识,主键 |
 | `slug` | String | 是 | URL 友好标识,全局唯一 |
 | `originalName` | String | 是 | 全名/原文名 |
 | `Name_CN` | String | 是 | 中文名 |
-| `Name_EN` | String | 是 | 英文名 |
+| `Name_EN` | String | 否 | 英文名 |
 | `nationality` | String | 否 | 国籍/族裔 |
 | `birthYear` | Integer | 否 | 出生年份 |
 | `deathYear` | Integer | 否 | 去世年份 |
-| `primaryLanguage` | String | 是 | 主要写作语言(ISO 639-1,兜底 639-3) |
-| `bio` | String | 否 | 简介 |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
+| `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
 
 ## 结构关系
 
@@ -67,11 +67,11 @@
 | `evidenceSource` | String | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `evidenceLang` | String | 否 | 摘抄原文语言(ISO 639-1,兜底 639-3) |
 | `note` | String | 否 | 备注或补充说明 |
-| `confidence` | Number | 是 | 置信度,取值 0–1(如 0.85) |
 | `reviewStatus` | String | 是 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
-| `dataSource` | String | 是 | 数据来源,枚举:`manual`(人工策展)/ `auto`(自动提取)/ `nlp`(NLP 抽取),默认 `manual` |
+| `dataSource` | String | 是 | 数据来源,枚举:`manual`(手动提交)/ `auto`(自动提取),默认 `manual` |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
+| `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
 
 ## 约束与索引
 

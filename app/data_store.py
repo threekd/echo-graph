@@ -15,15 +15,15 @@ VERSIONS_DIR = ROOT / "data" / "versions"
 
 AUTHOR_HEADER = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
-    "birthYear", "deathYear", "createdAt", "updatedAt", "deletedAt",
+    "birthYear", "deathYear", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
 WORK_HEADER = [
     "id", "language", "originalTitle", "Title_CN", "Title_EN",
-    "Title_Other", "Author", "publicationYear", "creationYear", "genre",
+    "Title_Other", "Author", "publicationYear", "creationYear", "genre", "reviewStatus",
     "createdAt", "updatedAt", "deletedAt",
 ]
 EDGE_HEADER = [
-    "source_work_id", "target_work_id", "evidence", "evidenceSource",
+    "id", "source_work_id", "target_work_id", "evidence", "evidenceSource",
     "evidenceLang", "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
 

@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { search } from "../lib/api.js";
 import {
-  renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced,
+  renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced, syncUrl, getShareHash,
 } from "../lib/graph.js";
-import { getCameraState, toggleAuthorsInView } from "../lib/renderer.js";
+import { toggleAuthorsInView } from "../lib/renderer.js";
 
 export default function Sidebar() {
   const { state, dispatch } = useApp();
@@ -52,11 +52,7 @@ export default function Sidebar() {
   };
 
   const shareLink = () => {
-    const cam = getCameraState();
-    const parts = ["v=main&cam=" + [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz].map((x) => +x.toFixed(3)).join(",")];
-    if (state.hideIslands) parts.push("islands=1");
-    if (!state.showAuthors) parts.push("authors=0");
-    const hash = parts.join("&");
+    const hash = getShareHash();
     navigator.clipboard.writeText(location.origin + location.pathname + "#" + hash)
       .then(() => dispatch({ type: "SET_TOAST", msg: "分享链接已复制" }))
       .catch(() => dispatch({ type: "SET_TOAST", msg: "复制失败" }));
@@ -138,8 +134,10 @@ export default function Sidebar() {
             <input
               type="checkbox" id="show-authors" checked={state.showAuthors}
               onChange={(e) => {
-                dispatch({ type: "SET_SHOW_AUTHORS", value: e.target.checked });
-                toggleAuthorsInView(!e.target.checked);
+                const value = e.target.checked;
+                dispatch({ type: "SET_SHOW_AUTHORS", value });
+                toggleAuthorsInView(!value);
+                syncUrl({ view: state.currentView, hideIslands: state.hideIslands, showAuthors: value });
               }}
             />
             <span>显示作家节点</span>

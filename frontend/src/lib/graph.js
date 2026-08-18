@@ -20,6 +20,67 @@ function findNode(id) {
   return getState().fullData.nodes.filter((n) => n.id === id)[0];
 }
 
+// 佚名(Anonymous)不是真实作者:隐藏其作者节点,让每部佚名作品独立显示,
+// 避免共享的"佚名"星把互不相关的作品连成中枢。数据层保持不变。
+function isAnonymousAuthor(n) {
+  return !!n && n.type === "author" && (n.originalName === "Anonymous" || n.label === "佚名");
+}
+
+// ---- URL 状态同步:视图/过滤/扩散级数自动写入 hash,浏览器前进/后退可导航 ----
+// 相机位置不随拖动写入(避免历史记录刷屏),由分享链接(getShareHash)携带最新相机。
+let lastWrittenHash = null;
+
+function buildHash(opts, includeCam) {
+  const st = getState();
+  const cam = getCameraState();
+  const view = (opts && opts.view) || st.currentView;
+  const parts = [];
+  if (view === "ripple") {
+    const id = (opts && opts.id) || st.rippleCenter;
+    const hops = (opts && opts.hops) || st.expandHops || 1;
+    if (id) parts.push("v=ripple:" + id + ":" + hops);
+    else parts.push("v=main");
+  } else if (view === "author") {
+    const id = (opts && opts.id) || st.currentAuthorId;
+    if (id) parts.push("v=author:" + id);
+    else parts.push("v=main");
+  } else if (view === "path") {
+    const from = (opts && opts.from) || st.pathFromId;
+    const to = (opts && opts.to) || st.pathToId;
+    if (from && to) parts.push("v=path:" + from + "," + to);
+    else parts.push("v=main");
+  } else {
+    parts.push("v=main");
+  }
+  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : st.hideIslands;
+  const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
+  if (hideIslands) parts.push("islands=1");
+  if (!showAuthors) parts.push("authors=0");
+  if (includeCam && cam) {
+    parts.push("cam=" + [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz].map((x) => +x.toFixed(3)).join(","));
+  }
+  return parts.join("&");
+}
+
+// 分享链接:当前视图 + 最新相机位置 + 过滤状态
+export function getShareHash() {
+  return buildHash({}, true);
+}
+
+// 将当前视图/过滤状态写入 URL(不含相机)
+export function syncUrl(opts) {
+  const hash = buildHash(opts || {}, false);
+  if (location.hash.replace(/^#/, "") !== hash) {
+    lastWrittenHash = "#" + hash;
+    location.hash = hash;
+  }
+}
+
+// 供 App 判断 hashchange 是否由自身写入(避免重复渲染/相机被重置)
+export function isSelfWrittenHash() {
+  return location.hash === lastWrittenHash;
+}
+
 // 默认规则:隐藏名下作品不超过 1 部、且无提及关系的孤岛作者(连同作品)
 export function filterSingleWorkAuthors(data) {
   const workCount = {};
@@ -43,7 +104,7 @@ export function filterSingleWorkAuthors(data) {
   const ids = {};
   data.nodes.forEach((n) => {
     if (n.type === "author") {
-      if (!hidden[n.id]) ids[n.id] = true;
+      if (!hidden[n.id] && !isAnonymousAuthor(n)) ids[n.id] = true;
     } else if (n.type === "work") {
       if (!hidden[n.author_id]) ids[n.id] = true;
     }
@@ -69,6 +130,7 @@ export function filterIslands(data) {
   });
   data.nodes.forEach((a) => {
     if (a.type !== "author") return;
+    if (isAnonymousAuthor(a)) return; // 佚名节点不显示
     visibleAuthor[a.id] = data.nodes.some((w) => w.type === "work" && w.author_id === a.id && visibleWork[w.id]);
   });
   const nodes = data.nodes.filter((n) => (n.type === "work" ? !!visibleWork[n.id] : !!visibleAuthor[n.id]));
@@ -107,6 +169,7 @@ export function renderMain(opts, dataOverride, overrides) {
   dispatch({ type: "SET_VIEW", view: "main" });
   dispatch({ type: "SET_VIEW_DATA", data });
   renderView("main", data, opts || {});
+  syncUrl({ view: "main", hideIslands, showAuthors });
 }
 
 function addAuthorsTo(data) {
@@ -123,19 +186,21 @@ function addAuthorsTo(data) {
   nodes.filter((n) => n.type === "work").forEach((w) => {
     const aid = w.author_id;
     if (!aid) return;
+    const an = findNode(aid);
+    if (an && isAnonymousAuthor(an)) return; // 佚名节点不加入涟漪/扩散子图
     edges.push({ source: w.id, target: aid, type: "authored" });
     if (!have[aid]) {
-      const an = findNode(aid);
       if (an) { nodes.push(an); have[aid] = true; }
     }
   });
   return out;
 }
 
-export function renderRipple(detail) {
+export function renderRipple(detail, hops) {
   const center = detail.work.id;
+  const expandHops = Math.max(1, parseInt(hops, 10) || 1);
   dispatch({ type: "SET_RIPPLE_CENTER", id: center });
-  dispatch({ type: "SET_EXPAND", value: 1 });
+  dispatch({ type: "SET_EXPAND", value: expandHops });
   dispatch({ type: "SET_VIEW", view: "ripple" });
   const ids = { [center]: true };
   const nodes = [];
@@ -155,6 +220,10 @@ export function renderRipple(detail) {
   const data = addAuthorsTo({ nodes, edges, centerId: center });
   dispatch({ type: "SET_VIEW_DATA", data });
   renderView("ripple", data, {});
+  syncUrl({
+    view: "ripple", id: center, hops: expandHops,
+    hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
+  });
 }
 
 export function expandRippleDebounced(hops) {
@@ -166,10 +235,18 @@ export function expandRippleDebounced(hops) {
       renderView("ripple", data, { preserveCamera: true });
       const works = data.nodes.filter((n) => n.type === "work").length;
       dispatch({ type: "SET_TOAST", msg: hops + " 级扩散 · " + works + " 本书" });
+      syncUrl({
+        view: "ripple", id: data.centerId, hops,
+        hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
+      });
     });
 }
 
 export function renderAuthorView(author) {
+  if (isAnonymousAuthor(author)) {
+    dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
+    return;
+  }
   dispatch({ type: "SET_AUTHOR", id: author.id });
   dispatch({ type: "SET_VIEW", view: "author" });
   const nodes = [author];
@@ -180,6 +257,10 @@ export function renderAuthorView(author) {
   });
   dispatch({ type: "SET_VIEW_DATA", data: { nodes, edges } });
   renderView("author", { nodes, edges }, {});
+  syncUrl({
+    view: "author", id: author.id,
+    hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
+  });
 }
 
 export function renderPath(fromId, toId) {
@@ -193,6 +274,10 @@ export function renderPath(fromId, toId) {
     dispatch({ type: "SET_VIEW", view: "path" });
     dispatch({ type: "SET_VIEW_DATA", data: { nodes, edges, pathOrder: result.nodes } });
     renderView("path", { nodes, edges, pathOrder: result.nodes }, {});
+    syncUrl({
+      view: "path", from: fromId, to: toId,
+      hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
+    });
     return result;
   });
 }
@@ -200,6 +285,10 @@ export function renderPath(fromId, toId) {
 export function selectNode(id) {
   const node = findNode(id);
   if (!node) return;
+  if (isAnonymousAuthor(node)) {
+    dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
+    return;
+  }
   if (node.type === "work") {
     workDetail(id).then((d) => {
       renderRipple(d);

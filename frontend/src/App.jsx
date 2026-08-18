@@ -9,6 +9,7 @@ import Admin from "./components/Admin.jsx";
 import { loadGraphData, workDetail } from "./lib/api.js";
 import {
   renderMain, setStateRef, selectNode, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
+  isSelfWrittenHash,
 } from "./lib/graph.js";
 import { setOnViewChange } from "./lib/renderer.js";
 
@@ -28,6 +29,7 @@ function AppContent() {
   const applyHash = (data) => {
     const st = data ? { fullData: data } : stateRef.current.state;
     if (!st.fullData || !st.fullData.nodes.length) return;
+    if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
     const h = location.hash.replace(/^#/, "");
     if (!h) return;
     const parts = {};
@@ -47,9 +49,8 @@ function AppContent() {
       if (node) {
         if (node.type === "work") {
           workDetail(id).then((d) => {
-            renderRipple(d);
+            renderRipple(d, hops);
             dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-            dispatch({ type: "SET_EXPAND", value: hops });
             if (hops > 1) expandRippleDebounced(hops);
           });
         } else {

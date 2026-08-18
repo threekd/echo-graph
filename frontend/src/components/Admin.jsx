@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useApp } from "../store.jsx";
 
 const KINDS = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
-  { key: "edges", label: "提及" },
+  { key: "edges", label: "涟漪" },
 ];
 
 const COLS = {
@@ -12,14 +12,14 @@ const COLS = {
     { key: "Name_CN", label: "中文名" },
     { key: "originalName", label: "原文名" },
     { key: "nationality", label: "国籍" },
-    { key: "deletedAt", label: "删除时间" },
+    { key: "reviewStatus", label: "审核状态" },
   ],
   works: [
     { key: "Title_CN", label: "中文名" },
     { key: "originalTitle", label: "原著标题" },
     { key: "Author", label: "作者" },
     { key: "publicationYear", label: "年份" },
-    { key: "deletedAt", label: "删除时间" },
+    { key: "reviewStatus", label: "审核状态" },
   ],
   edges: [
     { key: "source_work_id", label: "源作品" },
@@ -38,6 +38,7 @@ const FIELDS = {
     { key: "nationality", label: "国籍" },
     { key: "birthYear", label: "出生年份", type: "number" },
     { key: "deathYear", label: "去世年份", type: "number" },
+    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   works: [
     { key: "language", label: "语言(ISO 639-1)", required: true, type: "select", options: ["ar", "de", "el", "en", "es", "fr", "it", "ja", "la", "no", "pt", "ru", "zh", "bn"] },
@@ -49,6 +50,7 @@ const FIELDS = {
     { key: "publicationYear", label: "出版年份", type: "number" },
     { key: "creationYear", label: "创作年份", type: "number" },
     { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
+    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   edges: [
     { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
@@ -62,12 +64,90 @@ const FIELDS = {
 };
 
 function workLabel(w) {
-  return (w.originalTitle || "") + " - " + (w.Title_CN || "");
+  return w ? (w.Title_CN || "") + " - " + (w.originalTitle || "") : "";
 }
 
 // 提及(边)没有独立 id,用 source:target 作为复合标识
 function edgeKey(r) {
   return (r.source_work_id || "") + ":" + (r.target_work_id || "");
+}
+
+// 作品选择器:输入筛选,只能点选/回车选择已存在条目(不接收自由输入)
+function WorkPicker({ value, onChange, worksList, placeholder }) {
+  const [query, setQuery] = useState(() => {
+    const w = worksList.find((x) => x.id === value);
+    return w ? workLabel(w) : "";
+  });
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastValue.current) {
+      lastValue.current = value;
+      const w = worksList.find((x) => x.id === value);
+      if (w) setQuery(workLabel(w));
+    }
+  }, [value, worksList]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? worksList.filter((w) =>
+        [w.Title_CN, w.originalTitle, w.Title_EN, w.Author].filter(Boolean).join(" ").toLowerCase().includes(q)
+      )
+    : worksList;
+
+  const pick = (w) => {
+    onChange(w.id);
+    setQuery(workLabel(w));
+    setOpen(false);
+  };
+
+  return (
+    <div className="work-picker" ref={wrapRef}>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          if (value) onChange(""); // 手动编辑即取消已选,必须重新选择已存在条目
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          const w = worksList.find((x) => x.id === value);
+          setQuery(w ? workLabel(w) : "");
+          setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter" && open && filtered.length) {
+            e.preventDefault();
+            pick(filtered[0]);
+          }
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <ul className="work-picker-results" style={{ display: "block" }}>
+          {filtered.slice(0, 80).map((w) => (
+            <li
+              key={w.id}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 先于 blur 触发,避免失焦清空
+                pick(w);
+              }}
+            >
+              {workLabel(w)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && q && filtered.length === 0 && (
+        <div className="work-picker-warn">没有匹配的作品,只能选择已存在条目</div>
+      )}
+    </div>
+  );
 }
 
 export default function Admin() {
@@ -131,7 +211,7 @@ export default function Admin() {
   };
 
   const openAdd = () => {
-    setForm({});
+    setForm({ reviewStatus: "draft" }); // 新增默认草稿(表单中不展示该字段)
     setFormError("");
     setModal({ mode: "add", row: {} });
   };
@@ -235,6 +315,8 @@ export default function Admin() {
 
   const worksList = data ? data.works || [] : [];
   const authorsList = data ? data.authors || [] : [];
+  const worksById = {};
+  worksList.forEach((w) => { worksById[w.id] = w; });
 
   return (
     <div id="admin-overlay">
@@ -294,7 +376,14 @@ export default function Admin() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id || edgeKey(r)} className={r.deletedAt ? "deleted" : ""}>
-                    {cols.map((c) => <td key={c.key}>{String(r[c.key] ?? "")}</td>)}
+                    {cols.map((c) => {
+                      let val = r[c.key] ?? "";
+                      if (kind === "edges" && (c.key === "source_work_id" || c.key === "target_work_id")) {
+                        const w = worksById[r[c.key]];
+                        val = w ? workLabel(w) : String(val);
+                      }
+                      return <td key={c.key}>{String(val)}</td>;
+                    })}
                     <td>
                       {r.deletedAt
                         ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
@@ -319,19 +408,17 @@ export default function Admin() {
             <h3>{modal.mode === "edit" ? "编辑" : "新增"} {KINDS.find((k) => k.key === kind).label}</h3>
             <div id="admin-form">
               {FIELDS[kind].map((f) => {
+                if (modal.mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
                 if (f.type === "workPicker") {
                   return (
                     <label key={f.key}>
                       <span>{f.label}</span>
-                      <select
+                      <WorkPicker
                         value={form[f.key] || ""}
-                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                      >
-                        <option value="">请选择…</option>
-                        {worksList.map((w) => (
-                          <option key={w.id} value={w.id}>{workLabel(w)}</option>
-                        ))}
-                      </select>
+                        onChange={(v) => setForm({ ...form, [f.key]: v })}
+                        worksList={worksList}
+                        placeholder="输入筛选并选择…"
+                      />
                     </label>
                   );
                 }

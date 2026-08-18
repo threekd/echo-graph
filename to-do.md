@@ -11,6 +11,9 @@
   - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
 - [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
 - [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`reviewStatus` 与时间戳
+- [x] 涟漪关系(边)增加 `id`(UUID v7):`edges.csv` 新增 `id` 列并回填存量 3 条;管理页新增/编辑/删除按 `id` 定位,与作者/作品一致
+- [x] 作者/作品增加 `reviewStatus` 审核状态(默认 `draft`),管理页作者/作品表格列由「删除时间」改为「审核状态」,编辑表单同步支持
+- [x] 图谱隐藏佚名(Anonymous)作者节点:每部佚名作品独立显示,不再经共享的"佚名"星连成中枢(数据层不变,搜索/详情保留)
 - [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源(8 位作者 / 67 部作品 / 3 条提及),已全量导入 Neo4j;示例数据(seed.json、演示快照、生成脚本、md 表格、旧 xlsx)已删除
 - [x] 提供新增/修改数据的标准流程(CSV → `import_data.py` 或数据管理页)
 - [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
@@ -84,7 +87,7 @@
 - [x] 移除"导出数据"按钮与"示例"按钮;"数据管理"入口移至侧边栏底部;路径输入区改为上下等宽下拉框 + 切换按钮 + 右侧"寻找路径"
 - [x] React + Vite 迁移:前端重构为 React 18 + Vite 5(`frontend/`),FastAPI 托管构建产物;核心功能(图谱渲染/搜索/路径/涟漪/作者视图/深链/管理页)已验证
 - [x] 数据管理功能的权限设置:管理接口统一 Bearer Token 鉴权(`ADMIN_TOKEN`,前端管理页输入令牌后可用)
-- [x] 恢复 URL 深链:React 版支持 `cam=` / `islands=` / `authors=` 参数与首载深链,分享链接可恢复相机位置;路径输入恢复作品联想下拉
+- [x] 恢复 URL 状态化:视图/扩散级数/孤岛过滤/作者开关自动写入 hash,浏览器前进/后退可导航;支持 `cam=` / `islands=` / `authors=` 参数与首载深链,分享链接携带当前视图与最新相机位置;路径输入恢复作品联想下拉
 - [x] 清理旧版 `static/` 页面与前端死代码(`lib/actions.js` / `admin.js` / `panels.js`、重复 vendor 副本),前端单一维护源
 - ⬜ 部署到GitHub
 

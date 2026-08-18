@@ -21,6 +21,7 @@ class AuthorRow(BaseModel):
     nationality: Optional[str] = None
     birthYear: Optional[int] = None
     deathYear: Optional[int] = None
+    reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
     deletedAt: Optional[str] = None
@@ -60,6 +61,7 @@ class WorkRow(BaseModel):
     publicationYear: Optional[int] = None
     creationYear: Optional[int] = None
     genre: Optional[Literal["Fiction", "Non-fiction", "Poetry", "Drama"]] = None
+    reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
     deletedAt: Optional[str] = None
@@ -79,6 +81,7 @@ class WorkRow(BaseModel):
 class EchoRow(BaseModel):
     model_config = {"extra": "ignore"}
 
+    id: str = Field(min_length=1)
     source_work_id: str = Field(min_length=1)
     target_work_id: str = Field(min_length=1)
     evidence: str = Field(min_length=1)
@@ -89,6 +92,17 @@ class EchoRow(BaseModel):
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
     deletedAt: Optional[str] = None
+
+    @field_validator("id")
+    @classmethod
+    def _id_ok(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("id 不能为空")
+        try:
+            uuid.UUID(v)
+        except ValueError as exc:
+            raise ValueError(f"id 需为 UUID 格式,got {v!r}") from exc
+        return v
 
     @model_validator(mode="after")
     def _no_self(self) -> "EchoRow":
@@ -133,6 +147,7 @@ def parse_rows(
 
     dup([a.id for a in author_models], "作者 id")
     dup([w.id for w in work_models], "作品 id")
+    dup([e.id for e in echo_models], "涟漪 id")
 
     work_authors: dict[str, list[str]] = {}
     for w in work_models:

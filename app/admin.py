@@ -73,19 +73,12 @@ def _new_uuid() -> str:
 
 
 def _edge_pair(row: dict) -> Optional[tuple[str, str]]:
-    """边的复合标识:source_work_id + ':' + target_work_id(边没有独立 id 字段)。"""
+    """边的配对标识:source_work_id + target_work_id,用于查重(同一对作品只允许一条涟漪)。"""
     s = row.get("source_work_id")
     t = row.get("target_work_id")
     if s and t:
         return (str(s), str(t))
     return None
-
-
-def _split_edge_id(item_id: str) -> tuple[str, str]:
-    parts = item_id.split(":", 1)
-    if len(parts) != 2:
-        raise HTTPException(status_code=400, detail=f"无效的提及标识:{item_id}")
-    return parts[0], parts[1]
 
 
 @router.get("/data")
@@ -125,14 +118,16 @@ def create(kind: Kind, row: dict) -> dict:
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
-    if kind in ("authors", "works") and not row.get("id"):
-        row["id"] = _new_uuid()  # 新增作者/作品自动生成 UUID v7
+    if kind in ("authors", "works", "edges") and not row.get("id"):
+        row["id"] = _new_uuid()  # 新增作者/作品/涟漪自动生成 UUID v7
+    if not row.get("reviewStatus"):
+        row["reviewStatus"] = "draft"  # 新增默认草稿(前端新增表单不展示该字段)
+    if any(r.get("id") == row.get("id") for r in rows):
+        raise HTTPException(status_code=400, detail=f"id 已存在:{row.get('id')}")
     if kind == "edges":
         pair = _edge_pair(row)
         if pair and any(_edge_pair(r) == pair for r in rows):
-            raise HTTPException(status_code=400, detail=f"提及关系已存在:{pair[0]} -> {pair[1]}")
-    elif any(r.get("id") == row.get("id") for r in rows):
-        raise HTTPException(status_code=400, detail=f"id 已存在:{row.get('id')}")
+            raise HTTPException(status_code=400, detail=f"涟漪关系已存在:{pair[0]} -> {pair[1]}")
     rows.append(row)
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
@@ -145,25 +140,16 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
+    if not any(r.get("id") == item_id for r in rows):
+        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+    row["id"] = item_id
     if kind == "edges":
-        s0, t0 = _split_edge_id(item_id)
-        idx = next(
-            (i for i, r in enumerate(rows) if r.get("source_work_id") == s0 and r.get("target_work_id") == t0),
-            None,
-        )
-        if idx is None:
-            raise HTTPException(status_code=404, detail=f"未找到提及 {item_id}")
-        if not row.get("source_work_id") or not row.get("target_work_id"):
-            raise HTTPException(status_code=400, detail="source_work_id / target_work_id 不能为空")
-        pair = (str(row["source_work_id"]), str(row["target_work_id"]))
-        if any(i != idx and _edge_pair(r) == pair for i, r in enumerate(rows)):
-            raise HTTPException(status_code=400, detail=f"提及关系已存在:{pair[0]} -> {pair[1]}")
-        rows[idx] = row
-    else:
-        if not any(r.get("id") == item_id for r in rows):
-            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-        row["id"] = item_id
-        cand[kind] = [row if r.get("id") == item_id else r for r in rows]
+        pair = _edge_pair(row)
+        if pair and any(
+            r.get("id") != item_id and _edge_pair(r) == pair for r in rows
+        ):
+            raise HTTPException(status_code=400, detail=f"涟漪关系已存在:{pair[0]} -> {pair[1]}")
+    cand[kind] = [row if r.get("id") == item_id else r for r in rows]
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
@@ -176,17 +162,10 @@ def delete(kind: Kind, item_id: str) -> dict:
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
     found = False
-    if kind == "edges":
-        s0, t0 = _split_edge_id(item_id)
-        for r in rows:
-            if r.get("source_work_id") == s0 and r.get("target_work_id") == t0:
-                r["deletedAt"] = _now()
-                found = True
-    else:
-        for r in rows:
-            if r.get("id") == item_id:
-                r["deletedAt"] = _now()
-                found = True
+    for r in rows:
+        if r.get("id") == item_id:
+            r["deletedAt"] = _now()
+            found = True
     if not found:
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
     _validate(cand["authors"], cand["works"], cand["edges"])

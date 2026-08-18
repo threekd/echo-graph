@@ -46,7 +46,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource` / `evidenceLang`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,当前 8 位作者、67 部作品、3 条提及关系,已全量导入 Neo4j;示例数据已删除。
+- **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,已全量导入 Neo4j;示例数据已删除。
 - **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
 - **前端**：React 18 + Vite 5(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js 3D 渲染引擎保持命令式模块(react 壳层持有生命周期)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
@@ -59,6 +59,14 @@ cd frontend && pnpm install && pnpm build   # 构建 React 前端(产物进入 f
 uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 csv)
 uv run python scripts/import_data.py --source csv --wipe --version 1.1  # 从 data/real/*.csv 导入(推荐)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+质量检查(可选,已在 CI 中自动执行):
+
+```bash
+uv run python -m unittest discover -s tests -v   # 后端测试(无需额外依赖)
+uvx ruff check .                                  # 后端 lint
+cd frontend && pnpm lint                          # 前端 lint
 ```
 
 前端开发模式:`cd frontend && pnpm dev`(Vite 开发服务器 5173 端口,`/api` 代理到 8000)。
@@ -95,6 +103,6 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作�
 
 ### 重要声明
 
-- 当前数据为**真实策展数据**(8 位作者 / 67 部作品 / 3 条提及),摘抄与出处来自 `data/real/edges.csv`;关系目前均为 `draft` 状态,正式发布前需逐条人工审核并置为 `reviewed`。
+- 当前数据为**真实策展数据**,以 `data/real/*.csv` 为准;摘抄与出处来自 `data/real/edges.csv`;审核状态按行记录(`draft` / `reviewed`),正式发布前需逐条人工审核并置为 `reviewed`。
 - 前端已迁移到 React + Vite;旧版无构建静态页已移除,前端以 `frontend/dist` 构建产物为唯一维护源(由 FastAPI 托管)。
-- Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。
+- Neo4j 实例中另有存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。

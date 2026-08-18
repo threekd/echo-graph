@@ -1,6 +1,6 @@
 [project]
 name = "echo-graph"
-version = "0.1.0"
+version = "0.4.0"
 description = "Echo Graph — 世界文学影响图谱(回声图谱)"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -11,3 +11,11 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "uvicorn[standard]>=0.52.3",
 ]
+
+[tool.ruff]
+line-length = 110
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

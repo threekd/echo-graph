@@ -76,10 +76,10 @@
 ## 约束与索引
 
 - 唯一约束:`Work.id`、`Author.id`
-- 全文索引:Neo4j 全文索引仅支持节点属性,建议对 `Work(Title_CN, Title_EN, originalTitle, summary)` 建 fulltext;`evidence` 属于关系属性,无法直接用 Neo4j fulltext,检索时用 `CONTAINS` 或后续拆分为独立 Evidence 节点
+- 全文索引:Neo4j 全文索引仅支持节点属性,建议对 `Work(Title_CN, Title_EN, originalTitle)` 建 fulltext;`evidence` 属于关系属性,无法直接用 Neo4j fulltext,检索时用 `CONTAINS` 或后续拆分为独立 Evidence 节点
 - 建议查询:`(Work)-[:ECHO]` 两端均命中唯一约束,路径与扩散查询走变长路径
 
 ## 说明
 
-- 演示数据中所有 `evidence` / `evidenceSource` 均为编造,`reviewStatus` 统一为 `draft`,正式使用前需人工策展并置为 `reviewed`。
+- 早期演示数据曾为编造;现以 `data/real/*.csv` 真实策展数据为准,`evidence` 摘抄来自公开译本,审核状态按行记录,正式发布前需逐条人工审核并置为 `reviewed`。
 - 本规范为 1.1 版;数据结构演进时递增 `schemaVersion` 并保持向后兼容。

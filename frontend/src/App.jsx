@@ -6,12 +6,12 @@ import Panel from "./components/Panel.jsx";
 import Toast from "./components/Toast.jsx";
 import Guide from "./components/Guide.jsx";
 import Admin from "./components/Admin.jsx";
-import { loadGraphData, workDetail } from "./lib/api.js";
+import { loadGraphData, loadStats, workDetail } from "./lib/api.js";
 import {
   renderMain, setStateRef, selectNode, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
 } from "./lib/graph.js";
-import { setOnViewChange } from "./lib/renderer.js";
+import { setOnViewChange, setFullData } from "./lib/renderer.js";
 
 function parseCam(s) {
   const parts = String(s || "").split(",").map((x) => parseFloat(x));
@@ -67,7 +67,7 @@ function AppContent() {
             renderRipple(d, hops);
             dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
             if (hops > 1) expandRippleDebounced(hops);
-          });
+          }).catch(() => dispatch({ type: "SET_TOAST", msg: "加载作品详情失败" }));
         } else {
           renderAuthorView(node);
         }
@@ -89,9 +89,11 @@ function AppContent() {
     setOnViewChange(({ kind }) => {
       dispatch({ type: "SET_VIEW", view: kind });
     });
-    loadGraphData()
-      .then((data) => {
+    Promise.all([loadGraphData(), loadStats()])
+      .then(([data, stats]) => {
+        setFullData(data);
         dispatch({ type: "SET_DATA", data });
+        dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);
         } else {

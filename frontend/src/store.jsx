@@ -10,6 +10,7 @@ export const initialState = {
   currentAuthorId: null,
   pathFromId: null,
   pathToId: null,
+  storeName: "",
   hideIslands: false,
   showAuthors: true,
   expandHops: 1,
@@ -33,6 +34,8 @@ export function appReducer(state, action) {
       return { ...state, currentAuthorId: action.id };
     case "SET_PATH":
       return { ...state, pathFromId: action.from, pathToId: action.to };
+    case "SET_STORE":
+      return { ...state, storeName: action.name };
     case "SET_HIDE_ISLANDS":
       return { ...state, hideIslands: action.value };
     case "SET_SHOW_AUTHORS":
@@ -47,10 +50,6 @@ export function appReducer(state, action) {
       return { ...state, adminOpen: action.open };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
-    case "NODE_CLICK":
-      return state;
-    case "NODE_HOVER":
-      return state;
     default:
       return state;
   }

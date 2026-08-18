@@ -25,17 +25,6 @@ SNAPSHOT_DIR = ROOT / "data" / "snapshots"
 CHUNK = 500
 
 
-def _clean_row(raw: dict) -> dict:
-    out: dict = {}
-    for k, v in raw.items():
-        if isinstance(v, str):
-            v = v.strip() or None
-        elif isinstance(v, (dt.datetime, dt.date)):
-            v = v.isoformat()
-        out[k] = v
-    return out
-
-
 def _chunks(rows: list, size: int = CHUNK):
     for i in range(0, len(rows), size):
         yield rows[i : i + size]

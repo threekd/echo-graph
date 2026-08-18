@@ -14,7 +14,7 @@ export default function Sidebar() {
   const [to, setTo] = useState("");
   const [expandText, setExpandText] = useState("1 级");
   const expandTimer = useRef(null);
-  const lookups = useRef({ workLookup: {}, workById: {} });
+  const lookups = useRef({ workLookup: {}, workById: {}, options: [] });
 
   useEffect(() => {
     lookups.current = buildWorkLookups();
@@ -23,7 +23,9 @@ export default function Sidebar() {
   useEffect(() => {
     if (!q.trim()) { setQResults([]); return; }
     const t = setTimeout(() => {
-      search(q.trim()).then((r) => setQResults(r.hits || []));
+      search(q.trim())
+        .then((r) => setQResults(r.hits || []))
+        .catch(() => { setQResults([]); dispatch({ type: "SET_TOAST", msg: "搜索失败" }); });
     }, 200);
     return () => clearTimeout(t);
   }, [q]);
@@ -36,6 +38,7 @@ export default function Sidebar() {
       return;
     }
     renderPath(fid, tid).then((result) => {
+      if (result === undefined) return; // 网络错误已由 renderPath 提示
       if (!result) {
         dispatch({ type: "SET_TOAST", msg: "未找到提及链" });
         return;
@@ -75,6 +78,9 @@ export default function Sidebar() {
         <div className="brand">
           <h1>The Echo Graph</h1>
           <span className="badge">回声图谱</span>
+          <div className="store-badge">
+            数据源:{state.storeName === "neo4j" ? "Neo4j" : state.storeName === "json" ? "JSON 兜底" : "加载中…"}
+          </div>
         </div>
         <nav>
           <div id="view-status">视图:{viewLabel(state.currentView)}</div>
@@ -99,11 +105,9 @@ export default function Sidebar() {
           </div>
           <div className="path-box">
             <datalist id="works-list">
-              {state.fullData.nodes
-                .filter((n) => n.type === "work")
-                .map((w) => (
-                  <option key={w.id} value={w.label + " - " + (w.author || "")} />
-                ))}
+              {lookups.current.options.map((o) => (
+                <option key={o.id} value={o.value} />
+              ))}
             </datalist>
             <div className="path-fields">
               <div className="path-field">

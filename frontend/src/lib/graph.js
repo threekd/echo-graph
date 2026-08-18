@@ -16,6 +16,10 @@ function dispatch(a) {
   if (stateRef && stateRef.current) stateRef.current.dispatch(a);
 }
 
+function failToast(err) {
+  dispatch({ type: "SET_TOAST", msg: "请求失败:" + (err && err.message ? " " + err.message : "") });
+}
+
 function findNode(id) {
   return getState().fullData.nodes.filter((n) => n.id === id)[0];
 }
@@ -85,6 +89,7 @@ export function isSelfWrittenHash() {
 export function filterSingleWorkAuthors(data) {
   const workCount = {};
   const deg = {};
+  const authorHasEcho = {};
   data.nodes.forEach((n) => {
     if (n.type !== "work" || !n.author_id) return;
     workCount[n.author_id] = (workCount[n.author_id] || 0) + 1;
@@ -94,12 +99,16 @@ export function filterSingleWorkAuthors(data) {
     deg[e.source] = (deg[e.source] || 0) + 1;
     deg[e.target] = (deg[e.target] || 0) + 1;
   });
+  data.nodes.forEach((n) => {
+    if (n.type === "work" && n.author_id && (deg[n.id] || 0) > 0) {
+      authorHasEcho[n.author_id] = true;
+    }
+  });
   const hidden = {};
   data.nodes.forEach((n) => {
     if (n.type !== "author") return;
     const total = workCount[n.id] || 0;
-    const hasEcho = data.nodes.some((w) => w.type === "work" && w.author_id === n.id && (deg[w.id] || 0) > 0);
-    if (!hasEcho && total <= 1) hidden[n.id] = true;
+    if (!authorHasEcho[n.id] && total <= 1) hidden[n.id] = true;
   });
   const ids = {};
   data.nodes.forEach((n) => {
@@ -245,7 +254,7 @@ export function reRenderRipple() {
   workDetail(st.rippleCenter).then((d) => {
     renderRipple(d, hops, { preserveCamera: true });
     if (hops > 1) expandRippleDebounced(hops);
-  });
+  }).catch(failToast);
 }
 
 export function expandRippleDebounced(hops) {
@@ -261,7 +270,8 @@ export function expandRippleDebounced(hops) {
         view: "ripple", id: data.centerId, hops,
         hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
       });
-    });
+    })
+    .catch(failToast);
 }
 
 export function renderAuthorView(author) {
@@ -301,6 +311,9 @@ export function renderPath(fromId, toId) {
       hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
     });
     return result;
+  }).catch((err) => {
+    failToast(err);
+    return undefined; // 网络错误与"未找到链"区分开,调用方通过 undefined 判断
   });
 }
 
@@ -315,7 +328,7 @@ export function selectNode(id) {
     workDetail(id).then((d) => {
       renderRipple(d);
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-    });
+    }).catch(failToast);
   } else {
     renderAuthorView(node);
     dispatch({ type: "SET_PANEL", panel: { type: "author", author: node } });
@@ -328,7 +341,7 @@ export function showNodeDetail(id) {
   if (node.type === "work") {
     workDetail(id).then((d) => {
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-    });
+    }).catch(failToast);
   } else {
     dispatch({ type: "SET_PANEL", panel: { type: "author", author: node } });
   }
@@ -338,9 +351,20 @@ export function buildWorkLookups() {
   const st = getState();
   const workLookup = {};
   const workById = {};
-  st.fullData.nodes.filter((n) => n.type === "work").forEach((w) => {
-    workLookup[w.label + " - " + (w.author || "")] = w.id;
-    workById[w.id] = w;
+  const options = [];
+  const works = st.fullData.nodes.filter((n) => n.type === "work");
+  const baseCount = {};
+  works.forEach((w) => {
+    const k = w.label + " - " + (w.author || "");
+    baseCount[k] = (baseCount[k] || 0) + 1;
   });
-  return { workLookup, workById };
+  works.forEach((w) => {
+    const base = w.label + " - " + (w.author || "");
+    // 同名同作者的作品用年份消歧,避免查找键互相覆盖
+    const key = baseCount[base] > 1 ? base + (w.year ? " (" + w.year + ")" : " (?)") : base;
+    workLookup[key] = w.id;
+    workById[w.id] = w;
+    options.push({ id: w.id, value: key });
+  });
+  return { workLookup, workById, options };
 }

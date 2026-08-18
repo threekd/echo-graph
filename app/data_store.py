@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,7 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 REAL_DIR = ROOT / "data" / "real"
 VERSIONS_DIR = ROOT / "data" / "versions"
+KEEP_SNAPSHOTS = 20  # 每个 prefix 保留的最近快照份数
 
 AUTHOR_HEADER = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -84,4 +86,15 @@ def snapshot(prefix: str = "admin") -> Optional[str]:
     for f in files:
         if f.exists():
             (target / f.name).write_bytes(f.read_bytes())
+    _prune_snapshots(prefix)
     return str(target)
+
+
+def _prune_snapshots(prefix: str) -> None:
+    """按目录名(时间戳)排序,每个 prefix 只保留最近 KEEP_SNAPSHOTS 份。"""
+    dirs = sorted(
+        (d for d in VERSIONS_DIR.iterdir() if d.is_dir() and d.name.endswith(f"-{prefix}")),
+        key=lambda d: d.name,
+    )
+    for old in dirs[:-KEEP_SNAPSHOTS]:
+        shutil.rmtree(old, ignore_errors=True)

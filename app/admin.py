@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hmac
 import io
 import json
 import os
@@ -31,7 +32,9 @@ def require_admin_token(
     token = os.getenv("ADMIN_TOKEN", "")
     if not token:
         raise HTTPException(status_code=503, detail="ADMIN_TOKEN 未配置,管理接口已禁用")
-    if credentials is None or credentials.credentials != token:
+    if credentials is None or not hmac.compare_digest(
+        credentials.credentials.encode("utf-8"), token.encode("utf-8")
+    ):
         raise HTTPException(
             status_code=401,
             detail="无效的管理令牌",

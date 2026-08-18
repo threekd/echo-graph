@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { initThree, setOnNodeClick, setOnNodeHover } from "../lib/renderer.js";
+import { initThree, setOnNodeClick, setOnNodeHover, disposeThree } from "../lib/renderer.js";
 import { selectNode, showNodeDetail } from "../lib/graph.js";
 
 export default function GraphCanvas() {
@@ -30,6 +30,10 @@ export default function GraphCanvas() {
     initThree(containerRef.current);
     setOnNodeClick(selectNode);
     setOnNodeHover(showNodeDetail);
+    return () => {
+      disposeThree();
+      if (starsWrap.parentNode) starsWrap.parentNode.removeChild(starsWrap);
+    };
   }, []);
 
   return <div id="graph" ref={containerRef}></div>;

@@ -282,6 +282,29 @@ export default function Admin() {
       .catch((e) => setStatus("导出失败: " + e.message));
   };
 
+  const exportCsv = () => {
+    authFetch("/api/admin/export/csv/" + kind)
+      .then((r) => {
+        if (!r.ok) {
+          handleAuthError(r);
+          return null;
+        }
+        return r.blob();
+      })
+      .then((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = kind + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => setStatus("导出失败: " + e.message));
+  };
+
   const saveForm = () => {
     // 前端必填校验
     const fields = FIELDS[kind];
@@ -360,6 +383,7 @@ export default function Admin() {
             <button onClick={openAdd}>＋ 新增</button>
             <button onClick={doImport}>导入到 Neo4j</button>
             <button onClick={exportJson}>导出 JSON</button>
+            <button onClick={exportCsv}>导出 CSV</button>
             <button id="admin-close" onClick={() => dispatch({ type: "SET_ADMIN", open: false })}>关闭</button>
           </div>
         </div>

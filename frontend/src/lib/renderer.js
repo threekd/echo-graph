@@ -1,7 +1,6 @@
 /* Three.js 3D 渲染:场景、节点/边、布局、相机交互、动画 */
 
 import { el, MENTION_COLOR } from "./util.js";
-import { state } from "./state.js";
 
 // ---- Three.js state ----
 var scene, camera, renderer, labelRenderer, raycaster, mouse;
@@ -23,6 +22,11 @@ var pinchDist = 0;
 var viewToken = 0;             // 防止异步布局的旧回调覆盖新视图
 var hiddenLabelIds = {};       // 主图谱中默认隐藏标签的孤岛作品
 var glowTexture = null;
+var backgroundStars = null;
+var currentView = "main";      // 当前视图:main / ripple / path / author
+var fullData = { nodes: [], edges: [] }; // 全量数据(加载完成后由 App 注入)
+var animFrameId = null;
+var boundCleanups = [];        // dispose 时统一移除的监听
 var onNodeClick = null; // 由 main.js 注入(避免循环依赖)
 var onNodeHover = null; // 由 main.js 注入(悬停显示详情)
 var onViewChange = null; // 由 React 注入(视图状态变化回调)
@@ -38,6 +42,11 @@ export function setOnNodeClick(fn) {
 
 export function setOnNodeHover(fn) {
   onNodeHover = fn;
+}
+
+// App 在数据加载完成后注入全量数据,供"显示作家节点"恢复等场景使用
+export function setFullData(data) {
+  fullData = data || { nodes: [], edges: [] };
 }
 
 export function sceneNodeCount() {
@@ -144,6 +153,7 @@ function addBackgroundStars() {
   });
   var stars = new THREE.Points(geo, mat);
   stars.frustumCulled = false;
+  backgroundStars = stars;
   scene.add(stars);
 }
 
@@ -318,6 +328,36 @@ function layoutFor(kind, data) {
 }
 
 function forceLayoutChunked(ids, edges, callback) {
+  // 优先用 Worker 异步计算;不可用时回退到主线程分帧计算
+  if (typeof Worker !== "undefined") {
+    try {
+      var worker = new Worker(new URL("./layout.worker.js", import.meta.url), { type: "module" });
+      var done = false;
+      worker.onmessage = function (ev) {
+        worker.terminate();
+        if (done) return;
+        done = true;
+        var pos = {};
+        Object.keys(ev.data.positions || {}).forEach(function (id) {
+          var p = ev.data.positions[id];
+          pos[id] = new THREE.Vector3(p[0], p[1], p[2]);
+        });
+        callback(pos);
+      };
+      worker.onerror = function () {
+        worker.terminate();
+        if (done) return;
+        done = true;
+        forceLayoutMainThread(ids, edges, callback);
+      };
+      worker.postMessage({ ids: ids, edges: edges });
+      return;
+    } catch (e) { /* Worker 不可用,走主线程回退 */ }
+  }
+  forceLayoutMainThread(ids, edges, callback);
+}
+
+function forceLayoutMainThread(ids, edges, callback) {
   var positions = {};
   ids.forEach(function (id) {
     var u = Math.random() * 2 - 1;
@@ -556,7 +596,7 @@ function finishView(kind, data, opts) {
   }
   if (!opts.camera) applyCamera();
   lastInteraction = Date.now();
-  state.currentView = kind;
+  currentView = kind;
   if (onViewChange) onViewChange({ kind: kind, label: viewLabel(kind, data) });
 }
 
@@ -577,7 +617,6 @@ function buildScene(data) {
 
 export function renderView(kind, data, opts) {
   var token = ++viewToken;
-  state.viewData = data;
   hiddenLabelIds = kind === "main" ? isolatedWorkIds(data) : {};
   if (kind === "ripple") {
     // 额外作品默认不显示标签,悬停时再显示
@@ -614,8 +653,8 @@ function isolatedWorkIds(data) {
 }
 
 function authorPosFor(wpos) {
-  if (state.currentView === "author") return new THREE.Vector3(0, 0, 0);
-  var isRipple = state.currentView === "ripple";
+  if (currentView === "author") return new THREE.Vector3(0, 0, 0);
+  var isRipple = currentView === "ripple";
   if (isRipple) {
     if (wpos.length() < 1) return new THREE.Vector3(0, -110, 0);
     var dir = wpos.clone().normalize();
@@ -629,7 +668,7 @@ function authorPosFor(wpos) {
 
 // 即时增删作者节点(不重新跑布局),让"显示作家节点"勾选立即生效
 export function toggleAuthorsInView(hidden) {
-  if (state.currentView === "path") return; // 提及链保持纯作品视图
+  if (currentView === "path") return; // 提及链保持纯作品视图
   if (hidden) {
     Object.keys(nodeGroups).forEach(function (id) {
       var g = nodeGroups[id];
@@ -665,7 +704,7 @@ export function toggleAuthorsInView(hidden) {
       if (node.type !== "work") return;
       var aid = node.author_id;
       if (!aid || nodeGroups[aid]) return;
-      var author = state.fullData.nodes.filter(function (n) { return n.id === aid; })[0];
+      var author = fullData.nodes.filter(function (n) { return n.id === aid; })[0];
       if (!author) return;
       var wpos = positions[id];
       if (!wpos) return;
@@ -681,12 +720,18 @@ export function toggleAuthorsInView(hidden) {
 
 function bindControls(container) {
   var dom = renderer.domElement;
+  var ctl = new AbortController();
+  boundCleanups.push(function () { ctl.abort(); });
+  function bindEvent(target, type, fn, extra) {
+    var o = extra ? Object.assign({ signal: ctl.signal }, extra) : { signal: ctl.signal };
+    target.addEventListener(type, fn, o);
+  }
 
   function dist(p1, p2) {
     return Math.sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
   }
 
-  dom.addEventListener("pointerdown", function (e) {
+  bindEvent(dom, "pointerdown", function (e) {
     activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
     dragging = true;
     dragButton = e.button; // 0=左键(平移/选择),2=右键(旋转)
@@ -700,7 +745,7 @@ function bindControls(container) {
       pinchDist = dist(activePointers[ids[0]], activePointers[ids[1]]);
     }
   });
-  dom.addEventListener("pointermove", function (e) {
+  bindEvent(dom, "pointermove", function (e) {
     if (dragging) {
       var ids = Object.keys(activePointers);
       if (ids.length >= 2 && activePointers[e.pointerId]) {
@@ -737,22 +782,22 @@ function bindControls(container) {
       hoverPick(e);
     }
   });
-  dom.addEventListener("pointerup", function (e) {
+  bindEvent(dom, "pointerup", function (e) {
     delete activePointers[e.pointerId];
     dragging = Object.keys(activePointers).length > 0;
     if (!dragging) dom.style.cursor = "grab";
     lastInteraction = Date.now();
     if (dragButton === 0 && !dragMoved) clickPick(e);
   });
-  dom.addEventListener("pointercancel", function (e) {
+  bindEvent(dom, "pointercancel", function (e) {
     delete activePointers[e.pointerId];
     dragging = Object.keys(activePointers).length > 0;
     dom.style.cursor = "grab";
   });
-  dom.addEventListener("contextmenu", function (e) {
+  bindEvent(dom, "contextmenu", function (e) {
     e.preventDefault(); // 屏蔽右键菜单,右键用于旋转
   });
-  container.addEventListener("wheel", function (e) {
+  bindEvent(container, "wheel", function (e) {
     e.preventDefault();
     cameraState.radius *= 1 + e.deltaY * 0.0011;
     cameraState.radius = Math.max(50, Math.min(8000, cameraState.radius));
@@ -819,8 +864,44 @@ function onResize() {
   labelRenderer.setSize(w, h);
 }
 
+// 组件卸载时释放 Three.js 资源(React StrictMode / 热更新下避免重复初始化与泄漏)
+export function disposeThree() {
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  window.removeEventListener("resize", onResize);
+  boundCleanups.forEach(function (fn) { try { fn(); } catch (e) { /* ignore */ } });
+  boundCleanups = [];
+  clearScene();
+  if (scene && backgroundStars) {
+    scene.remove(backgroundStars);
+    backgroundStars.geometry.dispose();
+    backgroundStars.material.dispose();
+    backgroundStars = null;
+  }
+  if (renderer) {
+    renderer.dispose();
+    if (renderer.domElement && renderer.domElement.parentNode) {
+      renderer.domElement.parentNode.removeChild(renderer.domElement);
+    }
+    renderer = null;
+  }
+  if (labelRenderer) {
+    if (labelRenderer.domElement && labelRenderer.domElement.parentNode) {
+      labelRenderer.domElement.parentNode.removeChild(labelRenderer.domElement);
+    }
+    labelRenderer = null;
+  }
+  scene = null;
+  camera = null;
+  glowTexture = null;
+  resizeContainer = null;
+  hiddenLabelIds = {};
+}
+
 function animate() {
-  requestAnimationFrame(animate);
+  animFrameId = requestAnimationFrame(animate);
   var now = Date.now();
     if (!hovering && now - lastInteraction > 1000) {
       cameraState.theta += 0.0016;

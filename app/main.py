@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import tomllib
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -17,7 +19,30 @@ logger = logging.getLogger("echo_graph")
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
-app = FastAPI(title="Echo Graph API", version="0.2.0", description="世界文学提及图谱 API(演示)")
+
+def _app_version() -> str:
+    """版本单一来源:pyproject.toml 的 [project].version。"""
+    try:
+        with (ROOT / "pyproject.toml").open("rb") as fh:
+            return str(tomllib.load(fh)["project"]["version"])
+    except Exception:  # noqa: BLE001 - 版本读取失败时回退
+        return "0.0.0"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
+
+
+app = FastAPI(
+    title="Echo Graph API",
+    version=_app_version(),
+    description="世界文学提及图谱 API(演示)",
+    lifespan=lifespan,
+)
 
 store = get_store()
 
@@ -48,6 +73,16 @@ def frontend_vendor(path: str) -> FileResponse:
 @app.get("/api/stats")
 def stats() -> dict:
     return store.stats()
+
+
+@app.get("/api/health")
+def health() -> dict:
+    """健康检查:返回当前存储后端与 Neo4j 回退次数。"""
+    return {
+        "status": "ok",
+        "store": store.name,
+        "fallbacks": getattr(store, "fallback_count", lambda: 0)(),
+    }
 
 
 @app.get("/api/graph")

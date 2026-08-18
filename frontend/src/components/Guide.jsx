@@ -21,7 +21,6 @@ export default function Guide() {
           <li><b>点击</b>作品星 → 展开涟漪；点击作者星 → 该作者与全部作品</li>
           <li><b>右键拖拽</b>旋转 · <b>左键拖拽</b>平移 · <b>滚轮</b>缩放</li>
           <li>鼠标移到屏幕<b>左右边缘</b>呼出工具栏 / 详情栏</li>
-          <li><b>Esc</b> 返回全图谱</li>
         </ul>
         <button
           onClick={() => {

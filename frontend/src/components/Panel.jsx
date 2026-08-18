@@ -11,13 +11,12 @@ function esc(s) {
 function AuthorPanel({ author, fullData }) {
   const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
   const years = String(author.birthYear ?? "?") + " – " + String(author.deathYear ?? "?");
-  const meta = [author.originalName || author.label_en, author.nationality, years, author.primaryLanguage ? "语言 " + author.primaryLanguage : ""]
+  const meta = [author.originalName || author.label_en, author.nationality, years]
     .filter(Boolean).join(" · ");
   return (
     <div className="panel-content-inner">
       <h2>{author.label}</h2>
       <div className="meta">{meta}</div>
-      {author.bio ? <p className="panel-bio">{author.bio}</p> : null}
       <h3>作品({works.length})</h3>
       <ul>
         {works.map((w) => (
@@ -32,12 +31,14 @@ function AuthorPanel({ author, fullData }) {
 }
 
 function WorkPanel({ d }) {
-  const w = d.work, a = d.author;
+  const w = d.work;
+  const authorName = (d.authors && d.authors.length)
+    ? d.authors.map((a) => a.name || a.originalName || "佚名").join("、")
+    : (d.author ? (d.author.name || d.author.originalName || "佚名") : "佚名");
   return (
     <div className="panel-content-inner">
       <h2>{w.title}</h2>
-      <div className="meta">{w.originalTitle || w.title_en} · {a.name} · {w.year || "?"} · {w.language}</div>
-      {w.summary ? <p className="panel-bio">{w.summary}</p> : null}
+      <div className="meta">{w.originalTitle || w.title_en} · {authorName} · {w.year || "?"} · {w.language}</div>
       {d.mentioned_by.length > 0 && (
         <>
           <h3>谁提及了这本书(回声来源)</h3>
@@ -166,8 +167,6 @@ export default function Panel() {
     content = <WorkPanel d={panel.d} />;
   } else if (panel.type === "path") {
     content = <PathPanel panel={panel} fullData={state.fullData} />;
-  } else if (panel.type === "noPath") {
-    content = <p className="no-path">未找到「{panel.f} → {panel.t}」的提及链。</p>;
   }
   return (
     <>

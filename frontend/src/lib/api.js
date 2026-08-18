@@ -3,6 +3,11 @@ export async function loadGraphData() {
   return r.json();
 }
 
+export async function loadStats() {
+  const r = await fetch("/api/stats");
+  return r.json();
+}
+
 export async function search(q) {
   const r = await fetch("/api/search?q=" + encodeURIComponent(q));
   return r.json();

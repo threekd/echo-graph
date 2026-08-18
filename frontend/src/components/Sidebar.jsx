@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { search } from "../lib/api.js";
 import {
-  renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced, syncUrl, getShareHash,
+  renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced, reRenderRipple, syncUrl, getShareHash,
 } from "../lib/graph.js";
 import { toggleAuthorsInView } from "../lib/renderer.js";
 
@@ -148,7 +148,12 @@ export default function Sidebar() {
               onChange={(e) => {
                 const value = e.target.checked;
                 dispatch({ type: "SET_HIDE_ISLANDS", value });
-                if (state.currentView === "main") renderMain({ preserveCamera: true }, null, { hideIslands: value });
+                if (state.currentView === "main") {
+                  renderMain({ preserveCamera: true }, null, { hideIslands: value });
+                } else if (state.currentView === "ripple") {
+                  reRenderRipple();
+                }
+                syncUrl({ view: state.currentView, hideIslands: value, showAuthors: state.showAuthors });
               }}
             />
             <span>隐藏孤岛星</span>

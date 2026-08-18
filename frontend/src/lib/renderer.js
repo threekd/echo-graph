@@ -165,13 +165,14 @@ function makeGlowTexture() {
 
 function createNodeGroup(n, pos) {
   var isAuthor = n.type === "author";
+  var isExtra = !!n.__extra; // 作者名下额外作品:更小更暗,隐约环绕作者
   var color = isAuthor ? 0x9cc7ff : 0xffd166; // 作者星:蓝白 / 作品星:金色
-  var r = isAuthor ? 6 : 8.5;
+  var r = isAuthor ? 6 : (isExtra ? 6.2 : 8.5);
   if (!glowTexture) glowTexture = makeGlowTexture();
 
   var core = new THREE.Mesh(
     new THREE.SphereGeometry(r, 14, 14),
-    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.95, fog: false })
+    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: isExtra ? 0.7 : 0.95, fog: false })
   );
   core.userData.node = n;
   core.userData.baseR = r;
@@ -189,6 +190,7 @@ function createNodeGroup(n, pos) {
   );
   sprite.scale.set(r * 9, r * 9, 1);
   sprite.userData.phase = Math.random() * Math.PI * 2;
+  sprite.userData.baseOpacity = isExtra ? 0.28 : 0.55;
 
   var group = new THREE.Group();
   group.add(core);
@@ -391,8 +393,16 @@ function rippleLayout(data) {
 
   positions[centerId] = new THREE.Vector3(0, 0, 0);
   var R = 300;
+  // 有涟漪连接的节点才排到涟漪球面;作者名下的额外作品(无链接)留在作者周围形成星云
+  var echoIds = {};
+  echoIds[centerId] = true;
+  data.edges.forEach(function (e) {
+    if (e.type !== "echo") return;
+    echoIds[e.source] = true;
+    echoIds[e.target] = true;
+  });
   // 中点 phi 分布:避免节点落在极点,小数量时也不会排成一条线
-  var neighbors = workNodes.filter(function (n) { return n.id !== centerId; });
+  var neighbors = workNodes.filter(function (n) { return n.id !== centerId && echoIds[n.id]; });
   neighbors.forEach(function (n, i) {
     var phi = Math.acos(1 - 2 * (i + 0.5) / Math.max(neighbors.length, 1));
     var theta = i * 2.399963;
@@ -421,6 +431,21 @@ function rippleLayout(data) {
         .add(perp.multiplyScalar(35))
         .add(new THREE.Vector3(0, 25, 0));
     }
+  });
+  // 额外作品:围绕各自作者形成小球状星云(位置随机,隐约环绕)
+  workNodes.forEach(function (n) {
+    if (n.id === centerId || echoIds[n.id] || positions[n.id]) return;
+    var apos = positions[n.author_id];
+    if (!apos) return;
+    var r = 110 + Math.random() * 70;
+    var u = Math.random() * 2 - 1;
+    var th = Math.random() * Math.PI * 2;
+    var s = Math.sqrt(Math.max(0, 1 - u * u));
+    positions[n.id] = new THREE.Vector3(
+      apos.x + r * s * Math.cos(th),
+      apos.y + r * u,
+      apos.z + r * s * Math.sin(th)
+    );
   });
   return positions;
 }
@@ -554,6 +579,10 @@ export function renderView(kind, data, opts) {
   var token = ++viewToken;
   state.viewData = data;
   hiddenLabelIds = kind === "main" ? isolatedWorkIds(data) : {};
+  if (kind === "ripple") {
+    // 额外作品默认不显示标签,悬停时再显示
+    data.nodes.forEach(function (n) { if (n.__extra) hiddenLabelIds[n.id] = true; });
+  }
   clearScene();
   if (kind === "main") {
     // 分帧布局:大数据量时不阻塞主线程
@@ -802,7 +831,8 @@ function animate() {
     var g = nodeGroups[id];
     var sprite = g.userData.sprite;
     var phase = sprite.userData.phase;
-    sprite.material.opacity = 0.42 + 0.25 * (0.5 + 0.5 * Math.sin(t * 2.1 + phase));
+    var base = sprite.userData.baseOpacity || 0.55;
+    sprite.material.opacity = base * (0.76 + 0.45 * (0.5 + 0.5 * Math.sin(t * 2.1 + phase)));
     var core = g.userData.core;
     core.scale.setScalar(1 + 0.07 * Math.sin(t * 1.4 + phase));
   });

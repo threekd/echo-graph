@@ -27,7 +27,7 @@ function AppContent() {
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
   // cam / islands / authors 参数用于恢复分享链接;数据加载完成后再次应用,保证首载深链生效
   const applyHash = (data) => {
-    const st = data ? { fullData: data } : stateRef.current.state;
+    let st = data ? { fullData: data } : stateRef.current.state;
     if (!st.fullData || !st.fullData.nodes.length) return;
     if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
     const h = location.hash.replace(/^#/, "");
@@ -41,6 +41,21 @@ function AppContent() {
     const cam = parts.cam ? parseCam(parts.cam) : null;
     const hideIslands = parts.islands === "1" || location.search.indexOf("hideislands") !== -1;
     const showAuthors = parts.authors !== "0";
+    // 先同步过滤状态,保证本次渲染(涟漪等视图)读取到正确的 hideIslands / showAuthors
+    if (st.hideIslands !== hideIslands || st.showAuthors !== showAuthors) {
+      stateRef.current = {
+        state: {
+          ...stateRef.current.state,
+          fullData: data || stateRef.current.state.fullData,
+          hideIslands,
+          showAuthors,
+        },
+        dispatch,
+      };
+      st = stateRef.current.state;
+      dispatch({ type: "SET_HIDE_ISLANDS", value: hideIslands });
+      dispatch({ type: "SET_SHOW_AUTHORS", value: showAuthors });
+    }
     if (v.indexOf("ripple:") === 0) {
       const seg = v.slice(7).split(":");
       const id = seg[0];

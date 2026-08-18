@@ -193,10 +193,21 @@ function addAuthorsTo(data) {
       if (an) { nodes.push(an); have[aid] = true; }
     }
   });
+  // 未勾选"隐藏孤岛星"时:把当前视图里每位作者名下的全部作品也展示出来(勾选后回到仅涟漪节点的行为)
+  if (!st.hideIslands) {
+    nodes.filter((n) => n.type === "author").forEach((a) => {
+      st.fullData.nodes.filter((w) => w.type === "work" && w.author_id === a.id).forEach((w) => {
+        if (have[w.id]) return;
+        nodes.push({ ...w, __extra: true }); // 作者名下额外作品:环绕作者形成隐约星云
+        have[w.id] = true;
+        edges.push({ source: w.id, target: a.id, type: "authored" });
+      });
+    });
+  }
   return out;
 }
 
-export function renderRipple(detail, hops) {
+export function renderRipple(detail, hops, opts) {
   const center = detail.work.id;
   const expandHops = Math.max(1, parseInt(hops, 10) || 1);
   dispatch({ type: "SET_RIPPLE_CENTER", id: center });
@@ -219,10 +230,21 @@ export function renderRipple(detail, hops) {
   });
   const data = addAuthorsTo({ nodes, edges, centerId: center });
   dispatch({ type: "SET_VIEW_DATA", data });
-  renderView("ripple", data, {});
+  renderView("ripple", data, opts || {});
   syncUrl({
     view: "ripple", id: center, hops: expandHops,
     hideIslands: getState().hideIslands, showAuthors: getState().showAuthors,
+  });
+}
+
+// 涟漪视图下切换"隐藏孤岛星"等状态时,按当前设置重新渲染(保持相机)
+export function reRenderRipple() {
+  const st = getState();
+  if (st.currentView !== "ripple" || !st.rippleCenter) return;
+  const hops = st.expandHops || 1;
+  workDetail(st.rippleCenter).then((d) => {
+    renderRipple(d, hops, { preserveCamera: true });
+    if (hops > 1) expandRippleDebounced(hops);
   });
 }
 

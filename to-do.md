@@ -37,6 +37,7 @@
 - [x] 真实数据接入:`data/real/*.csv`(8 作者 / 67 作品 / 3 提及)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
+- [x] 涟漪视图:未勾选「隐藏孤岛星」时,展示视图中已出现作者名下的全部作品,额外作品围绕作者形成隐约星云(更小更暗、悬停显示标签);勾选后仅保留涟漪节点(即时重渲染,保持相机)
 
 ## 3. 可视化效果
 

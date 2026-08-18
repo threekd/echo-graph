@@ -2,4 +2,19 @@
 .venv/
 __pycache__/
 *.pyc
-data
+
+# 前端(React + Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/*.local
+
+# 数据:保留 data/real/*.csv 真实数据源;忽略自动生成的快照/版本备份
+data/versions/
+data/snapshots/
+
+# 编辑器/系统
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db

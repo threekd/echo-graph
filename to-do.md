@@ -10,12 +10,11 @@
   - Work:`id`、`language`(ISO 639-1)、`originalTitle`、`Title_CN`、`Title_EN`、`publicationYear`、`creationYear`、`summary`、时间戳
   - 补充:`slug`(URL 标识)、`genre`(体裁)、可选 `deletedAt`;`Author` 同含 `slug`
 - [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
-- [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`confidence`(0–1)、`reviewStatus`(draft/reviewed/rejected)、`dataSource`(manual/auto/nlp)与时间戳
-- [x] 演示种子数据:51 位作者 / 159 部作品 / 55 条 ECHO / 159 条 AUTHORED_BY
-- [x] 新增阿加莎·克里斯蒂及其 59 部作品,并接入提及链
-- [x] 提供新增/修改数据的标准流程(`generate_seed_data.py` → `import_data.py`)
-- [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务,导入前清空本项目演示节点(不影响既有 Entity 数据)
-- ⬜ 替换为真实策展数据并附真实原文片段(当前全部为编造演示数据)
+- [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`reviewStatus` 与时间戳
+- [x] 真实数据接入:`data_echo-graph.xlsx`(7 位作者 / 67 部作品 / 3 条提及)已全量导入 Neo4j;示例数据(seed.json、演示快照、生成脚本)已删除
+- [x] 提供新增/修改数据的标准流程(`data_echo-graph.xlsx` → `import_data.py`)
+- [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
+- ⬜ 逐条审核真实关系并置 `reviewed`,扩充数据量与出处精确性
 
 ## 2. 后端 / API
 
@@ -27,8 +26,9 @@
   - `GET /api/expansion/{workId}?hops=N` N 级扩散子图
   - `GET /api/stats` 数据统计
 - [x] Neo4j Aura 数据导入与约束(index)
-- [x] 导入管线重构:`data/real/*.csv`(真实数据)与 `data/seed.json`(演示)双源;Pydantic 校验(类型/枚举/交叉引用/重复),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
-- [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`),演示不中断
+- [x] 导入管线重构:`data_echo-graph.xlsx` / `data/real/*.csv` 双源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id·slug),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
+- [x] 真实数据接入:`data_echo-graph.xlsx`(Author/Work/Echo)直接导入;对齐 schema 1.1(Work 增 `Title_Other`/`Author`、genre 枚举,移除 summary/confidence 等);slug 自动生成;Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导;已用真实数据全量重建 Neo4j(7 作者 / 67 作品 / 3 提及)
+- [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 
 ## 3. 可视化效果
@@ -81,7 +81,7 @@
 
 ## 遗留与下一步建议
 
-1. **真实数据策展**(最高优先级):替换编造演示关系,附真实原文片段
+1. **数据审核与扩充**:逐条审核 3 条真实提及并置 `reviewed`,补充出处精确性,扩充数据集
 2. React + Vite 迁移:功能定型后,把 Three.js 渲染器套进 React 组件边界
 3. 按年代 / 语言 / 国别配色或聚类,让图谱携带更多语义
 4. 扩散滑动条防抖、加载状态指示等体验细节

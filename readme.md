@@ -41,28 +41,26 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 ---
 
-## 当前实现状态(演示版)
+## 当前实现状态
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(含 `slug`、`genre` 等);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`confidence`(0–1)、`reviewStatus`(draft/reviewed/rejected)、`dataSource`(manual/auto/nlp)与时间戳。图谱中**同时显示作者与作品节点**。
-- **演示种子数据**：50 位作家、100 部作品、50 条 ECHO 关系,由 `scripts/generate_seed_data.py` 生成到 `data/seed.json`。
-- **Neo4j**：`scripts/import_data.py` 将种子数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据,演示不会中断。
-- **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据,演示不会中断。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(含 `slug`、`genre` 等);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `evidence` / `evidenceSource` / `evidenceLang`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **真实数据**：来自 `data/real/data_echo-graph.xlsx`(sheet:Author / Work / Echo),当前 7 位作者、67 部作品、3 条提及关系,已全量导入 Neo4j;示例数据已删除。
+- **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
+- **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
 - **前端**：无构建单页(HTML + Three.js,3D 渲染),已按原生 ES module 拆分(util / state / renderer / panels / actions / main,无打包器)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式
 
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
-uv run python scripts/generate_seed_data.py   # 重新生成演示数据(可选)
-uv run python scripts/import_data.py          # 导入 Neo4j(自动:有 data/real/*.csv 则导入真实数据,否则导入演示数据)
-uv run python scripts/import_data.py --source seed --wipe      # 强制用演示数据全量重建
-uv run python scripts/import_data.py --source real --version 1.0  # 导入 data/real/ 真实数据(幂等,可重复执行)
+uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 data/real/data_echo-graph.xlsx 或 csv)
+uv run python scripts/import_data.py --source xlsx --wipe --version 1.0  # 真实数据全量重建(删除示例数据)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-真实数据模板见 `data/real/README.md`(authors.csv / works.csv / echoes.csv),导入前会自动校验(类型、枚举、交叉引用、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
+真实数据以 `data/real/data_echo-graph.xlsx`(sheet:Author / Work / Echo)为准,字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id/slug),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 
@@ -91,6 +89,6 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`cam=theta,phi,radius,c
 
 ### 重要声明
 
-- 当前所有提及关系与"引文"均为**编造演示数据**,仅用于展示产品形态;作家/作品元信息大致符合文学史,但关系不可作为学术依据。正式版本需人工策展并附真实原文片段。
+- 当前数据为**真实策展数据**(7 位作者 / 67 部作品 / 3 条提及),摘抄与出处来自 `data_echo-graph.xlsx`;关系目前均为 `draft` 状态,正式发布前需逐条人工审核并置为 `reviewed`。
 - 前端目前采用无构建的单页实现(暂不依赖 npm);npm 已可用(12.0.2),后续可平滑迁移到 React + Vite。
 - Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。

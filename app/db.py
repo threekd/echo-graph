@@ -26,14 +26,12 @@ SEED_PATH = ROOT / "data" / "seed.json"
 
 def _load_seed() -> dict:
     if not SEED_PATH.exists():
-        raise FileNotFoundError(
-            f"seed data not found at {SEED_PATH}; run scripts/generate_seed_data.py first"
-        )
+        return {"meta": {"demo": False, "note": "no bundled dataset"}, "authors": [], "works": [], "edges": []}
     return json.loads(SEED_PATH.read_text(encoding="utf-8"))
 
 
 class JsonStore:
-    """In-memory fallback store backed by data/seed.json."""
+    """In-memory fallback store (bundled snapshot if present, otherwise empty)."""
 
     name = "json"
 

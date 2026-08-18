@@ -6,10 +6,6 @@ import { state } from "./state.js";
 var selectHandler = null;
 var toastTimer = null;
 
-function reviewLabel(s) {
-  return { draft: "草稿", reviewed: "已审核", rejected: "已驳回" }[s] || s || "草稿";
-}
-
 export function setOnSelect(fn) {
   selectHandler = fn;
 }
@@ -78,8 +74,7 @@ export function renderWorkPanel(d) {
         "<strong>" + esc(e.source_title) + "</strong> <small>(" + esc(e.source_author) + ")</small>" +
         "<div class='quote'>" + esc(e.evidence) + "</div>" +
         "<div class='quote' style='opacity:0.75'>" + esc(e.note || "") + "</div>" +
-        "<div class='quote' style='opacity:0.6'>置信度 " + Math.round((e.confidence || 0) * 100) + "% · " + reviewLabel(e.reviewStatus) +
-        (e.evidenceSource ? " · " + esc(e.evidenceSource) : "") + "</div></li>";
+        (e.evidenceSource ? "<div class='quote' style='opacity:0.6'>" + esc(e.evidenceSource) + "</div>" : "") + "</li>";
     });
     html += "</ul>";
   }
@@ -90,8 +85,7 @@ export function renderWorkPanel(d) {
         "<strong>" + esc(e.target_title) + "</strong> <small>(" + esc(e.target_author) + ")</small>" +
         "<div class='quote'>" + esc(e.evidence) + "</div>" +
         "<div class='quote' style='opacity:0.75'>" + esc(e.note || "") + "</div>" +
-        "<div class='quote' style='opacity:0.6'>置信度 " + Math.round((e.confidence || 0) * 100) + "% · " + reviewLabel(e.reviewStatus) +
-        (e.evidenceSource ? " · " + esc(e.evidenceSource) : "") + "</div></li>";
+        (e.evidenceSource ? "<div class='quote' style='opacity:0.6'>" + esc(e.evidenceSource) + "</div>" : "") + "</li>";
     });
     html += "</ul>";
   }
@@ -112,7 +106,7 @@ export function renderPathPanel(result, f, t) {
       "<strong>" + esc(tn ? tn.label : e.target) + "</strong>" +
       "<div class='edge'>提及 · " + esc(e.note || "") + "</div>" +
       "<div class='quote'>" + esc(e.evidence || "") + "</div>" +
-      "<div class='quote' style='opacity:0.6'>置信度 " + Math.round((e.confidence || 0) * 100) + "% · " + reviewLabel(e.reviewStatus) + "</div></div>";
+      (e.evidenceSource ? "<div class='quote' style='opacity:0.6'>" + esc(e.evidenceSource) + "</div>" : "") + "</div>";
   }
   el("panel-content").innerHTML = html;
 }

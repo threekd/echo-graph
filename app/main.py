@@ -7,7 +7,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.admin import router as admin_router
 from app.db import get_store
@@ -25,10 +24,11 @@ store = get_store()
 
 @app.get("/")
 def index() -> FileResponse:
-    # React + Vite 构建产物优先;未构建时回退到旧的静态页面
-    if (FRONTEND_DIST / "index.html").exists():
-        return FileResponse(FRONTEND_DIST / "index.html")
-    return FileResponse(ROOT / "static" / "index.html")
+    # 需先构建 React 前端:cd frontend && pnpm build
+    index_file = FRONTEND_DIST / "index.html"
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="前端未构建:请先运行 cd frontend && pnpm build")
+    return FileResponse(index_file)
 
 
 @app.get("/assets/{path:path}")
@@ -91,16 +91,6 @@ def path(
     return result
 
 
-class NoCacheStaticFiles(StaticFiles):
-    """静态文件总是重新校验,避免浏览器缓存旧版 JS/CSS 模块。"""
-
-    async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
-        response.headers.setdefault("Cache-Control", "no-cache")
-        return response
-
-
-app.mount("/static", NoCacheStaticFiles(directory=ROOT / "static"), name="static")
 app.include_router(admin_router)
 
 

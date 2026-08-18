@@ -1,7 +1,7 @@
 [project]
 name = "echo-graph"
 version = "0.1.0"
-description = "Add your description here"
+description = "Echo Graph — 世界文学影响图谱(回声图谱)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

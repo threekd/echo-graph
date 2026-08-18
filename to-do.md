@@ -29,6 +29,8 @@
 - [x] Neo4j Aura 数据导入与约束(index)
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
+- [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j、导出 JSON(后端保留 CSV 导出接口,均需管理令牌);保存时自动版本快照(`data/versions/`)
+- [x] 软删除同步 Neo4j:导入时从图谱移除 `deletedAt` 非空的行,查询层统一过滤已删除项
 - [x] 真实数据接入:`data/real/*.csv`(8 作者 / 67 作品 / 3 提及)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
@@ -81,7 +83,9 @@
 - [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤、相机位置写入 URL(`#v=ripple:workId:hops&islands=1&cam=...`);浏览器前进/后退可导航;左侧栏提供"分享链接 / 导出图片"(PNG 含节点文字标签)
 - [x] 移除"导出数据"按钮与"示例"按钮;"数据管理"入口移至侧边栏底部;路径输入区改为上下等宽下拉框 + 切换按钮 + 右侧"寻找路径"
 - [x] React + Vite 迁移:前端重构为 React 18 + Vite 5(`frontend/`),FastAPI 托管构建产物;核心功能(图谱渲染/搜索/路径/涟漪/作者视图/深链/管理页)已验证
-- ⬜ 数据管理功能的权限设置
+- [x] 数据管理功能的权限设置:管理接口统一 Bearer Token 鉴权(`ADMIN_TOKEN`,前端管理页输入令牌后可用)
+- [x] 恢复 URL 深链:React 版支持 `cam=` / `islands=` / `authors=` 参数与首载深链,分享链接可恢复相机位置;路径输入恢复作品联想下拉
+- [x] 清理旧版 `static/` 页面与前端死代码(`lib/actions.js` / `admin.js` / `panels.js`、重复 vendor 副本),前端单一维护源
 - ⬜ 部署到GitHub
 
 ## 遗留与下一步建议

@@ -9,17 +9,41 @@ import csv
 import datetime as dt
 import io
 import json
+import os
 import uuid
-from typing import Literal
+from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.data_models import parse_rows
 from app.data_store import EDGE_HEADER, AUTHOR_HEADER, WORK_HEADER, load_rows, save_rows, snapshot
 from app.importer import run_import
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+_admin_bearer = HTTPBearer(auto_error=False)
+
+
+def require_admin_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_admin_bearer),
+) -> None:
+    """管理接口鉴权:需在 .env 配置 ADMIN_TOKEN,请求头带 Authorization: Bearer <token>。"""
+    token = os.getenv("ADMIN_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="ADMIN_TOKEN 未配置,管理接口已禁用")
+    if credentials is None or credentials.credentials != token:
+        raise HTTPException(
+            status_code=401,
+            detail="无效的管理令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin_token)],
+)
 
 Kind = Literal["authors", "works", "edges"]
 HEADERS = {"authors": AUTHOR_HEADER, "works": WORK_HEADER, "edges": EDGE_HEADER}
@@ -48,6 +72,22 @@ def _new_uuid() -> str:
         return str(uuid.uuid4())
 
 
+def _edge_pair(row: dict) -> Optional[tuple[str, str]]:
+    """边的复合标识:source_work_id + ':' + target_work_id(边没有独立 id 字段)。"""
+    s = row.get("source_work_id")
+    t = row.get("target_work_id")
+    if s and t:
+        return (str(s), str(t))
+    return None
+
+
+def _split_edge_id(item_id: str) -> tuple[str, str]:
+    parts = item_id.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail=f"无效的提及标识:{item_id}")
+    return parts[0], parts[1]
+
+
 @router.get("/data")
 def get_data() -> dict:
     a, w, e = load_rows()
@@ -73,7 +113,7 @@ def do_import(body: dict) -> dict:
     wipe = bool(body.get("wipe", False))
     version = str(body.get("version", "1.1"))
     try:
-        return run_import("csv", wipe=wipe, version=version)
+        return {"ok": True, **run_import("csv", wipe=wipe, version=version)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}")
     except (FileNotFoundError, RuntimeError) as exc:
@@ -87,7 +127,11 @@ def create(kind: Kind, row: dict) -> dict:
     rows = cand[kind]
     if kind in ("authors", "works") and not row.get("id"):
         row["id"] = _new_uuid()  # 新增作者/作品自动生成 UUID v7
-    if any(r.get("id") == row.get("id") for r in rows):
+    if kind == "edges":
+        pair = _edge_pair(row)
+        if pair and any(_edge_pair(r) == pair for r in rows):
+            raise HTTPException(status_code=400, detail=f"提及关系已存在:{pair[0]} -> {pair[1]}")
+    elif any(r.get("id") == row.get("id") for r in rows):
         raise HTTPException(status_code=400, detail=f"id 已存在:{row.get('id')}")
     rows.append(row)
     _validate(cand["authors"], cand["works"], cand["edges"])
@@ -100,10 +144,26 @@ def create(kind: Kind, row: dict) -> dict:
 def update(kind: Kind, item_id: str, row: dict) -> dict:
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
-    if not any(r.get("id") == item_id for r in cand[kind]):
-        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-    row["id"] = item_id
-    cand[kind] = [row if r.get("id") == item_id else r for r in cand[kind]]
+    rows = cand[kind]
+    if kind == "edges":
+        s0, t0 = _split_edge_id(item_id)
+        idx = next(
+            (i for i, r in enumerate(rows) if r.get("source_work_id") == s0 and r.get("target_work_id") == t0),
+            None,
+        )
+        if idx is None:
+            raise HTTPException(status_code=404, detail=f"未找到提及 {item_id}")
+        if not row.get("source_work_id") or not row.get("target_work_id"):
+            raise HTTPException(status_code=400, detail="source_work_id / target_work_id 不能为空")
+        pair = (str(row["source_work_id"]), str(row["target_work_id"]))
+        if any(i != idx and _edge_pair(r) == pair for i, r in enumerate(rows)):
+            raise HTTPException(status_code=400, detail=f"提及关系已存在:{pair[0]} -> {pair[1]}")
+        rows[idx] = row
+    else:
+        if not any(r.get("id") == item_id for r in rows):
+            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        row["id"] = item_id
+        cand[kind] = [row if r.get("id") == item_id else r for r in rows]
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
@@ -116,10 +176,17 @@ def delete(kind: Kind, item_id: str) -> dict:
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
     found = False
-    for r in rows:
-        if r.get("id") == item_id:
-            r["deletedAt"] = _now()
-            found = True
+    if kind == "edges":
+        s0, t0 = _split_edge_id(item_id)
+        for r in rows:
+            if r.get("source_work_id") == s0 and r.get("target_work_id") == t0:
+                r["deletedAt"] = _now()
+                found = True
+    else:
+        for r in rows:
+            if r.get("id") == item_id:
+                r["deletedAt"] = _now()
+                found = True
     if not found:
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
     _validate(cand["authors"], cand["works"], cand["edges"])

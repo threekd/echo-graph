@@ -53,7 +53,10 @@ export default function Sidebar() {
 
   const shareLink = () => {
     const cam = getCameraState();
-    const hash = "v=main&cam=" + [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz].map((x) => +x.toFixed(3)).join(",");
+    const parts = ["v=main&cam=" + [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz].map((x) => +x.toFixed(3)).join(",")];
+    if (state.hideIslands) parts.push("islands=1");
+    if (!state.showAuthors) parts.push("authors=0");
+    const hash = parts.join("&");
     navigator.clipboard.writeText(location.origin + location.pathname + "#" + hash)
       .then(() => dispatch({ type: "SET_TOAST", msg: "分享链接已复制" }))
       .catch(() => dispatch({ type: "SET_TOAST", msg: "复制失败" }));
@@ -92,13 +95,20 @@ export default function Sidebar() {
             )}
           </div>
           <div className="path-box">
+            <datalist id="works-list">
+              {state.fullData.nodes
+                .filter((n) => n.type === "work")
+                .map((w) => (
+                  <option key={w.id} value={w.label + " - " + (w.author || "")} />
+                ))}
+            </datalist>
             <div className="path-fields">
               <div className="path-field">
-                <input id="from" value={from} placeholder="起点作品" onChange={(e) => setFrom(e.target.value)} />
+                <input id="from" list="works-list" value={from} placeholder="起点作品" onChange={(e) => setFrom(e.target.value)} />
               </div>
               <button id="btn-swap" title="交换起终点" onClick={() => { setFrom(to); setTo(from); }}>⇅</button>
               <div className="path-field">
-                <input id="to" value={to} placeholder="终点作品" onChange={(e) => setTo(e.target.value)} />
+                <input id="to" list="works-list" value={to} placeholder="终点作品" onChange={(e) => setTo(e.target.value)} />
               </div>
             </div>
             <button id="btn-path" onClick={doPath}>寻找路径</button>

@@ -67,6 +67,9 @@ def import_data(
     *,
     wipe: bool,
     version: str,
+    deleted_authors: Optional[list[dict]] = None,
+    deleted_works: Optional[list[dict]] = None,
+    deleted_echoes: Optional[list[dict]] = None,
 ) -> None:
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     work_lang = {w.id: w.language for w in works}
@@ -135,6 +138,37 @@ def import_data(
                     {"rows": chunk},
                 )
 
+            # 软删除同步:CSV 中 deletedAt 非空的行从图谱中移除(数据仍保留在 CSV 存档)
+            if deleted_echoes:
+                deleted_rel_rows = [
+                    {"source": r.get("source_work_id"), "target": r.get("target_work_id")}
+                    for r in deleted_echoes
+                    if r.get("source_work_id") and r.get("target_work_id")
+                ]
+                for chunk in _chunks(deleted_rel_rows):
+                    tx.run(
+                        "UNWIND $rows AS row "
+                        "MATCH (s:Work {id: row.source})-[r:ECHO]->(t:Work {id: row.target}) "
+                        "DELETE r",
+                        {"rows": chunk},
+                    )
+            if deleted_works:
+                for chunk in _chunks([{"id": r.get("id")} for r in deleted_works if r.get("id")]):
+                    tx.run(
+                        "UNWIND $rows AS row "
+                        "MATCH (w:Work {id: row.id}) "
+                        "DETACH DELETE w",
+                        {"rows": chunk},
+                    )
+            if deleted_authors:
+                for chunk in _chunks([{"id": r.get("id")} for r in deleted_authors if r.get("id")]):
+                    tx.run(
+                        "UNWIND $rows AS row "
+                        "MATCH (a:Author {id: row.id}) "
+                        "DETACH DELETE a",
+                        {"rows": chunk},
+                    )
+
             tx.run(
                 "MERGE (m:Dataset {id: 'echo-graph'}) "
                 "SET m.version = $version, m.importedAt = $now",
@@ -188,12 +222,15 @@ def run_import(
     if not (uri and username and password):
         raise RuntimeError("NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD missing in .env")
 
-    authors, works, echoes = load_rows()
+    authors_all, works_all, echoes_all = load_rows()
 
     # 软删除的行保留在 CSV 存档,但不进入图谱
-    authors = [a for a in authors if not a.get("deletedAt")]
-    works = [w for w in works if not w.get("deletedAt")]
-    echoes = [e for e in echoes if not e.get("deletedAt")]
+    authors = [a for a in authors_all if not a.get("deletedAt")]
+    works = [w for w in works_all if not w.get("deletedAt")]
+    echoes = [e for e in echoes_all if not e.get("deletedAt")]
+    deleted_authors = [a for a in authors_all if a.get("deletedAt")]
+    deleted_works = [w for w in works_all if w.get("deletedAt")]
+    deleted_echoes = [e for e in echoes_all if e.get("deletedAt")]
 
     author_models, work_models, echo_models, work_authors = parse_rows(authors, works, echoes)
     driver = GraphDatabase.driver(uri, auth=(username, password))
@@ -202,6 +239,9 @@ def run_import(
         import_data(
             driver, database, author_models, work_models, echo_models, work_authors,
             wipe=wipe, version=version,
+            deleted_authors=deleted_authors,
+            deleted_works=deleted_works,
+            deleted_echoes=deleted_echoes,
         )
         if not no_snapshot:
             write_snapshot(driver, database, version)

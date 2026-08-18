@@ -600,6 +600,23 @@ button.ghost { color: var(--muted); }
 }
 #admin-table tr:hover td { background: rgba(148, 163, 255, 0.06); }
 #admin-table tr.deleted td { opacity: 0.45; }
+#admin-table td button {
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(30, 44, 90, 0.5);
+  color: var(--ink);
+  font-size: 11.5px;
+  cursor: pointer;
+  margin-right: 4px;
+}
+#admin-table td button:hover {
+  border-color: rgba(138, 184, 255, 0.8);
+}
+#admin-table td button.del {
+  border-color: rgba(255, 120, 120, 0.4);
+  color: #ffb0b0;
+}
 .row-actions button {
   padding: 4px 9px;
   border-radius: 7px;

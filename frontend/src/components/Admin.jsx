@@ -29,34 +29,144 @@ const COLS = {
   ],
 };
 
+// 表单字段配置
+const FIELDS = {
+  authors: [
+    { key: "originalName", label: "原文名(必填)", required: true },
+    { key: "Name_CN", label: "中文名" },
+    { key: "Name_EN", label: "英文名" },
+    { key: "nationality", label: "国籍" },
+    { key: "birthYear", label: "出生年份", type: "number" },
+    { key: "deathYear", label: "去世年份", type: "number" },
+  ],
+  works: [
+    { key: "language", label: "语言(ISO 639-1)", required: true, type: "select", options: ["ar", "de", "el", "en", "es", "fr", "it", "ja", "la", "no", "pt", "ru", "zh", "bn"] },
+    { key: "originalTitle", label: "原著标题(必填)", required: true },
+    { key: "Title_CN", label: "中文名" },
+    { key: "Title_EN", label: "英文名" },
+    { key: "Title_Other", label: "其他标题" },
+    { key: "Author", label: "作者(逗号分隔多人)" },
+    { key: "publicationYear", label: "出版年份", type: "number" },
+    { key: "creationYear", label: "创作年份", type: "number" },
+    { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
+  ],
+  edges: [
+    { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
+    { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
+    { key: "evidence", label: "摘抄(必填)", required: true, type: "textarea" },
+    { key: "evidenceSource", label: "出处" },
+    { key: "evidenceLang", label: "摘抄语言" },
+    { key: "note", label: "备注" },
+    { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
+  ],
+};
+
+function workLabel(w) {
+  return (w.originalTitle || "") + " - " + (w.Title_CN || "");
+}
+
+// 提及(边)没有独立 id,用 source:target 作为复合标识
+function edgeKey(r) {
+  return (r.source_work_id || "") + ":" + (r.target_work_id || "");
+}
+
 export default function Admin() {
   const { state, dispatch } = useApp();
   const [kind, setKind] = useState("authors");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [modal, setModal] = useState(null); // { mode: "add" | "edit", row: {} }
+  const [form, setForm] = useState({});
+  const [formError, setFormError] = useState("");
+  const [token, setToken] = useState(() => {
+    try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch (e) { return ""; }
+  });
+
+  const authFetch = (url, options = {}) => {
+    const headers = new Headers(options.headers || {});
+    if (token) headers.set("Authorization", "Bearer " + token);
+    return fetch(url, { ...options, headers });
+  };
+
+  const handleAuthError = (r) => {
+    if (r.status === 401 || r.status === 403) {
+      setStatus("管理令牌无效或缺失,请在上方输入令牌后保存");
+      return true;
+    }
+    return false;
+  };
 
   const load = () => {
     setLoading(true);
-    fetch("/api/admin/data")
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
+    authFetch("/api/admin/data")
+      .then((r) => {
+        if (!r.ok) {
+          handleAuthError(r);
+          setLoading(false);
+          return null;
+        }
+        return r.json();
+      })
+      .then((d) => { if (d) { setData(d); setLoading(false); } })
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
   };
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { load(); }, [kind]);
 
   if (!state.adminOpen) return null;
 
-  const rows = data ? data[kind] || [] : [];
+  const allRows = data ? data[kind] || [] : [];
+  const rows = search.trim()
+    ? allRows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(search.toLowerCase())))
+    : allRows;
   const cols = COLS[kind];
   const counts = data ? data.counts || {} : {};
+
+  const switchKind = (k) => {
+    setKind(k);
+    setSearch("");
+    setModal(null);
+  };
+
+  const openAdd = () => {
+    setForm({});
+    setFormError("");
+    setModal({ mode: "add", row: {} });
+  };
+
+  const openEdit = (row) => {
+    setForm({ ...row });
+    setFormError("");
+    setModal({ mode: "edit", row });
+  };
+
+  const doDelete = (id) => {
+    if (!window.confirm("确认删除「" + id + "」?(软删除,可恢复)")) return;
+    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
+      .then((r) => r.json())
+      .then((d) => { setStatus(d.ok ? "已软删除" : (d.detail || "删除失败")); load(); })
+      .catch((e) => setStatus("删除失败: " + e.message));
+  };
+
+  const doRestore = (id) => {
+    const row = allRows.find((r) => (r.id || edgeKey(r)) === id);
+    if (!row) return;
+    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...row, deletedAt: null }),
+    })
+      .then((r) => r.json())
+      .then((d) => { setStatus(d.ok ? "已恢复" : (d.detail || "恢复失败")); load(); })
+      .catch((e) => setStatus("恢复失败: " + e.message));
+  };
 
   const doImport = () => {
     if (!window.confirm("将 data/real/*.csv 写入 Neo4j(增量合并),继续?")) return;
     setStatus("导入中…");
-    fetch("/api/admin/import", {
+    authFetch("/api/admin/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wipe: false, version: "1.1" }),
@@ -69,30 +179,62 @@ export default function Admin() {
       .catch((e) => setStatus("导入失败: " + e.message));
   };
 
-  const doDelete = (id) => {
-    if (!window.confirm("确认删除「" + id + "」?(软删除,可恢复)")) return;
-    fetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
-      .then((r) => r.json())
-      .then((d) => { setStatus(d.ok ? "已软删除" : (d.detail || "删除失败")); load(); })
-      .catch((e) => setStatus("删除失败: " + e.message));
-  };
-
-  const doRestore = (id) => {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return;
-    fetch("/api/admin/" + kind + "/" + encodeURIComponent(id), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...row, deletedAt: null }),
-    })
-      .then((r) => r.json())
-      .then((d) => { setStatus(d.ok ? "已恢复" : (d.detail || "恢复失败")); load(); })
-      .catch((e) => setStatus("恢复失败: " + e.message));
-  };
-
   const exportJson = () => {
-    window.open("/api/admin/export/json", "_blank");
+    authFetch("/api/admin/export/json")
+      .then((r) => {
+        if (!r.ok) {
+          handleAuthError(r);
+          return null;
+        }
+        return r.blob();
+      })
+      .then((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "echo-graph-data.json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => setStatus("导出失败: " + e.message));
   };
+
+  const saveForm = () => {
+    // 前端必填校验
+    const fields = FIELDS[kind];
+    for (const f of fields) {
+      if (f.required && !String(form[f.key] || "").trim()) {
+        setFormError("请填写「" + f.label + "」");
+        return;
+      }
+    }
+    setFormError("");
+    const url = modal.mode === "edit"
+      ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id || edgeKey(modal.row))
+      : "/api/admin/" + kind;
+    authFetch(url, {
+      method: modal.mode === "edit" ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+      .then((res) => {
+        if (!res.ok) {
+          setFormError(res.data.detail || "保存失败");
+          return;
+        }
+        setModal(null);
+        setStatus(modal.mode === "edit" ? "已更新" : "已新增");
+        load();
+      })
+      .catch((e) => setFormError("请求失败: " + e.message));
+  };
+
+  const worksList = data ? data.works || [] : [];
+  const authorsList = data ? data.authors || [] : [];
 
   return (
     <div id="admin-overlay">
@@ -105,13 +247,35 @@ export default function Admin() {
                 key={k.key}
                 className={"admin-tab" + (kind === k.key ? " active" : "")}
                 data-kind={k.key}
-                onClick={() => setKind(k.key)}
+                onClick={() => switchKind(k.key)}
               >
                 {k.label} <span className="cnt">{counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : "")}</span>
               </button>
             ))}
           </div>
           <div className="admin-actions">
+            <input
+              placeholder="搜索…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <input
+              type="password"
+              placeholder="管理令牌"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              style={{ width: "10em" }}
+            />
+            <button
+              onClick={() => {
+                try { sessionStorage.setItem("echo_graph_admin_token", token); } catch (e) { /* ignore */ }
+                setStatus("令牌已保存");
+                load();
+              }}
+            >
+              保存令牌
+            </button>
+            <button onClick={openAdd}>＋ 新增</button>
             <button onClick={doImport}>导入到 Neo4j</button>
             <button onClick={exportJson}>导出 JSON</button>
             <button id="admin-close" onClick={() => dispatch({ type: "SET_ADMIN", open: false })}>关闭</button>
@@ -129,12 +293,17 @@ export default function Admin() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id || r.source_work_id + r.target_work_id} className={r.deletedAt ? "deleted" : ""}>
+                  <tr key={r.id || edgeKey(r)} className={r.deletedAt ? "deleted" : ""}>
                     {cols.map((c) => <td key={c.key}>{String(r[c.key] ?? "")}</td>)}
                     <td>
                       {r.deletedAt
-                        ? <button onClick={() => doRestore(r.id)}>恢复</button>
-                        : <button onClick={() => doDelete(r.id)}>删除</button>}
+                        ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
+                        : (
+                          <>
+                            <button onClick={() => openEdit(r)}>编辑</button>
+                            <button className="del" onClick={() => doDelete(r.id || edgeKey(r))}>删除</button>
+                          </>
+                        )}
                     </td>
                   </tr>
                 ))}
@@ -143,6 +312,74 @@ export default function Admin() {
           )}
         </div>
       </div>
+
+      {modal && (
+        <div id="admin-modal" style={{ display: "flex" }}>
+          <div className="admin-modal-card">
+            <h3>{modal.mode === "edit" ? "编辑" : "新增"} {KINDS.find((k) => k.key === kind).label}</h3>
+            <div id="admin-form">
+              {FIELDS[kind].map((f) => {
+                if (f.type === "workPicker") {
+                  return (
+                    <label key={f.key}>
+                      <span>{f.label}</span>
+                      <select
+                        value={form[f.key] || ""}
+                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      >
+                        <option value="">请选择…</option>
+                        {worksList.map((w) => (
+                          <option key={w.id} value={w.id}>{workLabel(w)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                }
+                if (f.type === "textarea") {
+                  return (
+                    <label key={f.key} className="full">
+                      <span>{f.label}</span>
+                      <textarea
+                        value={form[f.key] || ""}
+                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      />
+                    </label>
+                  );
+                }
+                if (f.type === "select") {
+                  return (
+                    <label key={f.key}>
+                      <span>{f.label}</span>
+                      <select
+                        value={form[f.key] || ""}
+                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      >
+                        <option value="">请选择…</option>
+                        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </label>
+                  );
+                }
+                return (
+                  <label key={f.key}>
+                    <span>{f.label}</span>
+                    <input
+                      type={f.type === "number" ? "number" : "text"}
+                      value={form[f.key] ?? ""}
+                      onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+            {formError && <div id="admin-form-errors">{formError}</div>}
+            <div className="admin-modal-actions">
+              <button onClick={saveForm}>保存</button>
+              <button onClick={() => setModal(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -37,9 +37,9 @@ class JsonStore:
 
     def __init__(self) -> None:
         self.seed = _load_seed()
-        self.authors: dict[str, dict] = {a["id"]: a for a in self.seed["authors"]}
-        self.works: dict[str, dict] = {w["id"]: w for w in self.seed["works"]}
-        self.edges: list[dict] = self.seed["edges"]
+        self.authors: dict[str, dict] = {a["id"]: a for a in self.seed["authors"] if not a.get("deletedAt")}
+        self.works: dict[str, dict] = {w["id"]: w for w in self.seed["works"] if not w.get("deletedAt")}
+        self.edges: list[dict] = [e for e in self.seed["edges"] if not e.get("deletedAt")]
         self.out: dict[str, list[dict]] = {}
         self.inc: dict[str, list[dict]] = {}
         for e in self.edges:
@@ -351,6 +351,7 @@ class Neo4jStore:
         author_rows = self._query(
             """
             MATCH (a:Author)
+            WHERE a.deletedAt IS NULL
             RETURN properties(a) AS props
             """
         )
@@ -375,7 +376,9 @@ class Neo4jStore:
         node_rows = self._query(
             """
             MATCH (w:Work)
+            WHERE w.deletedAt IS NULL
             OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author)
+            WHERE a.deletedAt IS NULL
             RETURN properties(w) AS props, a.Name_CN AS author_name, a.id AS author_id
             """
         )
@@ -388,6 +391,7 @@ class Neo4jStore:
         echo_rows = self._query(
             """
             MATCH (w1:Work)-[r:ECHO]->(w2:Work)
+            WHERE w1.deletedAt IS NULL AND w2.deletedAt IS NULL AND r.deletedAt IS NULL
             RETURN w1.id AS source, w2.id AS target,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
                    r.evidenceLang AS evidenceLang, r.note AS note,
@@ -406,6 +410,7 @@ class Neo4jStore:
         authored_rows = self._query(
             """
             MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)
+            WHERE w.deletedAt IS NULL AND a.deletedAt IS NULL
             RETURN w.id AS source, a.id AS target
             """
         )
@@ -419,8 +424,9 @@ class Neo4jStore:
         rows = self._query(
             """
             MATCH (n)
-            WHERE (n:Work AND (n.Title_CN CONTAINS $q OR toLower(n.Title_EN) CONTAINS toLower($q) OR toLower(n.originalTitle) CONTAINS toLower($q)))
-               OR (n:Author AND (n.Name_CN CONTAINS $q OR toLower(n.Name_EN) CONTAINS toLower($q) OR toLower(n.originalName) CONTAINS toLower($q)))
+            WHERE ((n:Work AND (n.Title_CN CONTAINS $q OR toLower(n.Title_EN) CONTAINS toLower($q) OR toLower(n.originalTitle) CONTAINS toLower($q)))
+               OR (n:Author AND (n.Name_CN CONTAINS $q OR toLower(n.Name_EN) CONTAINS toLower($q) OR toLower(n.originalName) CONTAINS toLower($q))))
+              AND n.deletedAt IS NULL
             RETURN n.id AS id, labels(n)[0] AS label, n LIMIT $limit
             """,
             {"q": q, "limit": limit},
@@ -455,6 +461,8 @@ class Neo4jStore:
             "MATCH p = shortestPath((a:Work {id:$from})-[r:ECHO*1.."
             f"{hop}"
             "]->(b:Work {id:$to})) "
+            "WHERE all(x IN nodes(p) WHERE x.deletedAt IS NULL) "
+            "AND all(rel IN relationships(p) WHERE rel.deletedAt IS NULL) "
             "RETURN [x IN nodes(p) | x.id] AS node_ids, "
             "[rel IN relationships(p) | {source: startNode(rel).id, target: endNode(rel).id, "
             "evidence: rel.evidence, evidenceSource: rel.evidenceSource, "
@@ -471,6 +479,7 @@ class Neo4jStore:
         rows = self._query(
             """
             MATCH (w:Work {id:$id})-[:AUTHORED_BY]->(a:Author)
+            WHERE w.deletedAt IS NULL AND a.deletedAt IS NULL
             RETURN properties(w) AS w, properties(a) AS a LIMIT 1
             """,
             {"id": work_id},
@@ -482,6 +491,7 @@ class Neo4jStore:
             """
             MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
             MATCH (i)-[:AUTHORED_BY]->(ia:Author)
+            WHERE i.deletedAt IS NULL AND r.deletedAt IS NULL AND ia.deletedAt IS NULL
             RETURN i.id AS source, i.Title_CN AS source_title, ia.Name_CN AS source_author,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
                    r.evidenceLang AS evidenceLang, r.note AS note,
@@ -494,6 +504,7 @@ class Neo4jStore:
             """
             MATCH (w:Work {id:$id})-[r:ECHO]->(o:Work)
             MATCH (o)-[:AUTHORED_BY]->(oa:Author)
+            WHERE r.deletedAt IS NULL AND o.deletedAt IS NULL AND oa.deletedAt IS NULL
             RETURN o.id AS target, o.Title_CN AS target_title, oa.Name_CN AS target_author,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
                    r.evidenceLang AS evidenceLang, r.note AS note,
@@ -534,8 +545,8 @@ class Neo4jStore:
         hop = max(1, min(int(hops), 8))
         node_rows = self._query(
             "MATCH (c:Work {id:$id}) "
-            f"MATCH (n:Work) WHERE n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n) "
-            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) "
+            f"MATCH (n:Work) WHERE (n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n)) AND n.deletedAt IS NULL "
+            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) WHERE a.deletedAt IS NULL "
             "RETURN properties(n) AS props, a.Name_CN AS author_name, a.id AS author_id",
             {"id": work_id},
         )
@@ -555,6 +566,7 @@ class Neo4jStore:
             "WITH collect(n.id) AS ids "
             "MATCH (a:Work)-[r:ECHO]->(b:Work) "
             "WHERE a.id IN ids AND b.id IN ids "
+            "AND a.deletedAt IS NULL AND b.deletedAt IS NULL AND r.deletedAt IS NULL "
             "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, "
             "r.evidenceSource AS evidenceSource, r.evidenceLang AS evidenceLang, "
             "r.note AS note, r.confidence AS confidence, r.reviewStatus AS reviewStatus, "
@@ -579,9 +591,13 @@ class Neo4jStore:
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
 
     def stats(self) -> dict:
-        author_count = self._query("MATCH (a:Author) RETURN count(a) AS c")[0]["c"]
-        work_count = self._query("MATCH (w:Work) RETURN count(w) AS c")[0]["c"]
-        edge_count = self._query("MATCH (:Work)-[r:ECHO]->(:Work) RETURN count(r) AS c")[0]["c"]
+        author_count = self._query("MATCH (a:Author) WHERE a.deletedAt IS NULL RETURN count(a) AS c")[0]["c"]
+        work_count = self._query("MATCH (w:Work) WHERE w.deletedAt IS NULL RETURN count(w) AS c")[0]["c"]
+        edge_count = self._query(
+            "MATCH (a:Work)-[r:ECHO]->(b:Work) "
+            "WHERE a.deletedAt IS NULL AND b.deletedAt IS NULL AND r.deletedAt IS NULL "
+            "RETURN count(r) AS c"
+        )[0]["c"]
         return {
             "authors": author_count,
             "works": work_count,

@@ -25,7 +25,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 **技术架构**
 - 数据存储：Neo4j 图数据库
 - 后端：Python / FastAPI，提供查询路径、扩散计算、影响力算法
-- 前端：React + AntV G6 + Three.js，支持大数据量图谱可视化
+- 前端：React + Three.js，支持大数据量图谱可视化
 
 ---
 
@@ -63,6 +63,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 前端开发模式:`cd frontend && pnpm dev`(Vite 开发服务器 5173 端口,`/api` 代理到 8000)。
 
+> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`;前端「数据管理」页顶部输入令牌并保存后即可操作。
+
 真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
 
 浏览器打开 <http://127.0.0.1:8000/>。
@@ -94,5 +96,5 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作�
 ### 重要声明
 
 - 当前数据为**真实策展数据**(8 位作者 / 67 部作品 / 3 条提及),摘抄与出处来自 `data/real/edges.csv`;关系目前均为 `draft` 状态,正式发布前需逐条人工审核并置为 `reviewed`。
-- 前端已迁移到 React + Vite;旧版无构建静态页保留在 `static/`,仅作为回退。
+- 前端已迁移到 React + Vite;旧版无构建静态页已移除,前端以 `frontend/dist` 构建产物为唯一维护源(由 FastAPI 托管)。
 - Neo4j 实例中另有 591 个存量 `Entity` 节点,接口查询已限定在 `Author` / `Work`,不影响这些数据。

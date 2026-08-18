@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { selectNode } from "../lib/graph.js";
 
@@ -104,9 +104,52 @@ function PathPanel({ panel, fullData }) {
 export default function Panel() {
   const { state } = useApp();
   const panel = state.panel;
+  const hideTimer = useRef(null);
+
+  const cancelHide = () => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  };
+
+  const scheduleHide = () => {
+    cancelHide();
+    hideTimer.current = setTimeout(() => {
+      const el = document.getElementById("panel");
+      // 3 秒后鼠标仍不在面板上时才隐藏
+      if (el && !el.matches(":hover")) el.classList.remove("show");
+    }, 3000);
+  };
+
+  // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
+  useEffect(() => {
+    const onMove = (e) => {
+      const el = document.getElementById("panel");
+      if (!el || !el.classList.contains("show")) return;
+      const rect = el.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (inside) cancelHide();
+      else scheduleHide();
+    };
+    const onLeave = () => scheduleHide(); // 鼠标离开窗口时也进入倒计时
+    window.addEventListener("mousemove", onMove);
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+      cancelHide();
+    };
+  }, []);
+
   useEffect(() => {
     const el = document.getElementById("panel");
-    if (el && panel.type !== "empty") el.classList.add("show");
+    if (el && panel.type !== "empty") {
+      el.classList.add("show");
+      scheduleHide(); // 展示时启动倒计时,鼠标移入面板会取消
+    }
   }, [panel]);
   let content = null;
   if (panel.type === "empty") {
@@ -129,12 +172,7 @@ export default function Panel() {
   return (
     <>
       <div id="sidebar-zone-right"><span className="zone-icon">▶</span></div>
-      <aside
-        id="panel"
-        onMouseLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove("show");
-        }}
-      >
+      <aside id="panel">
         <div id="panel-content">{content}</div>
       </aside>
     </>

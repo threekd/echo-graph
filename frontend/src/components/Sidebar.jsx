@@ -78,6 +78,13 @@ export default function Sidebar() {
         </div>
         <nav>
           <div id="view-status">视图:{viewLabel(state.currentView)}</div>
+          <button
+            id="btn-back-main" className="side-btn"
+            style={{ display: state.currentView === "main" ? "none" : "block" }}
+            onClick={backMain}
+          >
+            返回全部图谱
+          </button>
           <div className="field">
             <input id="q" value={q} placeholder="搜索作家 / 作品…" onChange={(e) => setQ(e.target.value)} />
             {qResults.length > 0 && (
@@ -109,13 +116,6 @@ export default function Sidebar() {
             </div>
             <button id="btn-path" onClick={doPath}>寻找路径</button>
           </div>
-          <button
-            id="btn-back-main" className="side-btn"
-            style={{ display: state.currentView === "main" ? "none" : "block" }}
-            onClick={backMain}
-          >
-            返回全部图谱
-          </button>
           <div id="expand-bar" style={{ display: state.currentView === "ripple" ? "flex" : "none" }}>
             <span className="expand-label">扩散范围</span>
             <input

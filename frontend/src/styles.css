@@ -594,6 +594,7 @@ button.ghost { color: var(--muted); }
 #admin-table th {
   position: sticky;
   top: 0;
+  z-index: 2;
   background: #0e1530;
   text-align: left;
   padding: 9px 10px;
@@ -622,7 +623,10 @@ th.sortable.active .sort-icon {
   color: #7dd3fc;
 }
 #admin-table .filter-row td {
-  background: rgba(14, 21, 48, 0.85);
+  position: sticky;
+  top: var(--filter-sticky-top, 34px);
+  z-index: 1;
+  background: #0e1530; /* 实底,遮挡下方滚动内容 */
   padding: 4px 6px;
   border-bottom: 1px solid rgba(148, 163, 255, 0.12);
 }

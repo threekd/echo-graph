@@ -29,7 +29,8 @@ EDGE_HEADER = [
 ]
 
 
-def _clean_row(raw: dict) -> dict:
+def clean_row(raw: dict) -> dict:
+    """基础数据清洗:字符串去首尾空白,空串归一为 None。所有落盘数据先过这里。"""
     out: dict = {}
     for k, v in raw.items():
         if isinstance(v, str):
@@ -42,7 +43,7 @@ def _read_csv(path: Path) -> list[dict]:
     if not path.exists():
         return []
     with path.open(encoding="utf-8-sig", newline="") as fh:
-        return [_clean_row(r) for r in csv.DictReader(fh) if any((v or "").strip() for v in r.values())]
+        return [clean_row(r) for r in csv.DictReader(fh) if any((v or "").strip() for v in r.values())]
 
 
 def _write_csv(path: Path, header: list[str], rows: list[dict]) -> None:

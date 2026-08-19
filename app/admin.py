@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.data_models import parse_rows
-from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, load_rows, save_rows, snapshot
+from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, clean_row, load_rows, save_rows, snapshot
 from app.importer import run_import
 
 _admin_bearer = HTTPBearer(auto_error=False)
@@ -121,6 +121,7 @@ def do_import(body: dict) -> dict:
 
 @router.post("/{kind}")
 def create(kind: Kind, row: dict) -> dict:
+    row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
@@ -146,6 +147,7 @@ def create(kind: Kind, row: dict) -> dict:
 
 @router.put("/{kind}/{item_id}")
 def update(kind: Kind, item_id: str, row: dict) -> dict:
+    row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]

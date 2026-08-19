@@ -26,6 +26,13 @@ def _coerce_int(v):
     return v
 
 
+def _strip_strings(v):
+    """自由文本字段基础清洗:去首尾空白(内部空白与换行保留)。"""
+    if isinstance(v, dict):
+        return {k: (x.strip() if isinstance(x, str) else x) for k, x in v.items()}
+    return v
+
+
 class AuthorRow(BaseModel):
     model_config = {"extra": "ignore"}
 
@@ -61,6 +68,11 @@ class AuthorRow(BaseModel):
     @classmethod
     def _int_or_none(cls, v):
         return _coerce_int(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_strings(cls, data):
+        return _strip_strings(data)
 
     @field_validator("nationality")
     @classmethod
@@ -130,6 +142,11 @@ class WorkRow(BaseModel):
     def _int_or_none(cls, v):
         return _coerce_int(v)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_strings(cls, data):
+        return _strip_strings(data)
+
 
 class EchoRow(BaseModel):
     model_config = {"extra": "ignore"}
@@ -160,6 +177,11 @@ class EchoRow(BaseModel):
     @classmethod
     def _review_status_default(cls, v):
         return _coerce_review_status(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_strings(cls, data):
+        return _strip_strings(data)
 
     @model_validator(mode="after")
     def _no_self(self) -> EchoRow:

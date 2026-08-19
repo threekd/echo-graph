@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import {
   AuthorPicker,
@@ -173,6 +173,16 @@ export default function Admin() {
 
   useEffect(() => { load(); }, [load]);
 
+  // 固定筛选行:实测表头行高度,作为筛选行的 sticky 吸附偏移
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  useEffect(() => {
+    const table = tableRef.current;
+    const firstRow = table?.querySelector("thead tr") as HTMLElement | null;
+    if (table && firstRow) {
+      table.style.setProperty("--filter-sticky-top", firstRow.offsetHeight + "px");
+    }
+  }, [kind, data]);
+
   if (!state.adminOpen) return null;
 
   const allRows: any[] = data ? data[kind] || [] : [];
@@ -338,9 +348,10 @@ export default function Admin() {
       }
     }
     setFormError("");
-    // 空串统一归一为 null:避免数字/日期字段清空后发送 "" 触发后端 int 解析失败
+    // 基础清洗:字符串去首尾空白,空串统一归一为 null
+    // (同时避免数字/日期字段清空后发送 "" 触发后端 int 解析失败)
     const payload = Object.fromEntries(
-      Object.entries(form).map(([k, v]) => [k, v === "" ? null : v])
+      Object.entries(form).map(([k, v]) => [k, typeof v === "string" ? (v.trim() || null) : v])
     );
     const url = modal.mode === "edit"
       ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id || edgeKey(modal.row))
@@ -471,7 +482,7 @@ export default function Admin() {
         )}
         <div className="admin-body">
           {loading ? <p>加载中…</p> : (
-            <table id="admin-table">
+            <table id="admin-table" ref={tableRef}>
               <thead>
                 <tr>
                   {cols.map((c) => {

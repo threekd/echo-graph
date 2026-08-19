@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../store.jsx";
+import iso6391 from "../lib/iso6391.json";
+import iso3166 from "../lib/iso3166-1.json";
 
 const KINDS = [
   { key: "authors", label: "作者" },
@@ -33,15 +35,15 @@ const COLS = {
 const FIELDS = {
   authors: [
     { key: "originalName", label: "原文名(必填)", required: true },
+    { key: "nationality", label: "国籍", type: "countryPicker" },
     { key: "Name_CN", label: "中文名" },
     { key: "Name_EN", label: "英文名" },
-    { key: "nationality", label: "国籍" },
     { key: "birthYear", label: "出生年份", type: "number" },
     { key: "deathYear", label: "去世年份", type: "number" },
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   works: [
-    { key: "language", label: "语言(ISO 639-1)", required: true, type: "select", options: ["ar", "de", "el", "en", "es", "fr", "it", "ja", "la", "no", "pt", "ru", "zh", "bn"] },
+    { key: "language", label: "原著语言", required: true, type: "languagePicker" },
     { key: "originalTitle", label: "原著标题(必填)", required: true },
     { key: "Title_CN", label: "中文名" },
     { key: "Title_EN", label: "英文名" },
@@ -65,6 +67,24 @@ const FIELDS = {
 
 function workLabel(w) {
   return w ? (w.Title_CN || "") + " - " + (w.originalTitle || "") : "";
+}
+
+// ISO 639-1 语言选项,格式为「代码-中文名」(如 en-英语)
+const LANG_OPTIONS = Object.entries(iso6391).map(([code, name]) => ({ value: code, label: code + "-" + name }));
+
+function langLabel(code) {
+  if (!code) return "";
+  const name = iso6391[code];
+  return name ? code + "-" + name : code;
+}
+
+// ISO 3166-1 国家/地区选项,格式为「代码-中文名」(如 CN-中国)
+const COUNTRY_OPTIONS = Object.entries(iso3166).map(([code, name]) => ({ value: code, label: code + "-" + name }));
+
+function countryLabel(code) {
+  if (!code) return "";
+  const name = iso3166[code];
+  return name ? code + "-" + name : code;
 }
 
 // 提及(边)没有独立 id,用 source:target 作为复合标识
@@ -145,6 +165,101 @@ function WorkPicker({ value, onChange, worksList, placeholder }) {
       )}
       {open && q && filtered.length === 0 && (
         <div className="work-picker-warn">没有匹配的作品,只能选择已存在条目</div>
+      )}
+    </div>
+  );
+}
+
+// 代码选择器(语言/国家/地区):输入中文或代码筛选,只能点选/回车选择列表项(不接收自由输入)
+function CodePicker({ value, onChange, options, getLabel, placeholder, emptyWarn }) {
+  const [query, setQuery] = useState(() => getLabel(value));
+  const [open, setOpen] = useState(false);
+  const [dir, setDir] = useState("down");
+  const [maxH, setMaxH] = useState(220);
+  const wrapRef = useRef(null);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastValue.current) {
+      lastValue.current = value;
+      const label = getLabel(value);
+      if (label) setQuery(label);
+    }
+  }, [value, getLabel]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter((o) => o.label.toLowerCase().includes(q))
+    : options;
+
+  const pick = (opt) => {
+    onChange(opt.value);
+    setQuery(opt.label);
+    setOpen(false);
+  };
+
+  // 按可用空间决定下拉展开方向与高度,避免溢出弹窗卡片产生滚动条
+  const openList = () => {
+    const el = wrapRef.current;
+    if (!el) {
+      setOpen(true);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const card = el.closest(".admin-modal-card");
+    const cardRect = card ? card.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const below = cardRect.bottom - rect.bottom;
+    const above = rect.top - cardRect.top;
+    const useUp = above > below;
+    setDir(useUp ? "up" : "down");
+    setMaxH(Math.max(110, Math.min(220, (useUp ? above : below) - 8)));
+    setOpen(true);
+  };
+
+  return (
+    <div className="work-picker" ref={wrapRef}>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          if (value) onChange(""); // 手动编辑即取消已选,必须重新选择已存在条目
+          setOpen(true);
+        }}
+        onFocus={openList}
+        onBlur={() => {
+          setQuery(getLabel(value));
+          setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter" && open && filtered.length) {
+            e.preventDefault();
+            pick(filtered[0]);
+          }
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <ul
+          className={"work-picker-results" + (dir === "up" ? " up" : "")}
+          style={{ display: "block", maxHeight: maxH }}
+        >
+          {filtered.map((o) => (
+            <li
+              key={o.value}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 先于 blur 触发,避免失焦清空
+                pick(o);
+              }}
+            >
+              {o.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && q && filtered.length === 0 && (
+        <div className="work-picker-warn">{emptyWarn}</div>
       )}
     </div>
   );
@@ -441,6 +556,36 @@ export default function Admin() {
                         onChange={(v) => setForm({ ...form, [f.key]: v })}
                         worksList={worksList}
                         placeholder="输入筛选并选择…"
+                      />
+                    </label>
+                  );
+                }
+                if (f.type === "languagePicker") {
+                  return (
+                    <label key={f.key}>
+                      <span>{f.label}</span>
+                      <CodePicker
+                        value={form[f.key] || ""}
+                        onChange={(v) => setForm({ ...form, [f.key]: v })}
+                        options={LANG_OPTIONS}
+                        getLabel={langLabel}
+                        placeholder="输入中文或代码筛选…"
+                        emptyWarn="没有匹配的语言,只能选择列表中的语言"
+                      />
+                    </label>
+                  );
+                }
+                if (f.type === "countryPicker") {
+                  return (
+                    <label key={f.key}>
+                      <span>{f.label}</span>
+                      <CodePicker
+                        value={form[f.key] || ""}
+                        onChange={(v) => setForm({ ...form, [f.key]: v })}
+                        options={COUNTRY_OPTIONS}
+                        getLabel={countryLabel}
+                        placeholder="输入中文或代码筛选…"
+                        emptyWarn="没有匹配的国家/地区,只能选择列表中的国家/地区"
                       />
                     </label>
                   );

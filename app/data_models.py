@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import uuid
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -36,6 +37,16 @@ class AuthorRow(BaseModel):
         except ValueError as exc:
             raise ValueError(f"id 需为 UUID 格式,got {v!r}") from exc
         return v
+
+    @field_validator("nationality")
+    @classmethod
+    def _nationality_ok(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or not str(v).strip():
+            return None
+        v = str(v).strip()
+        if not re.fullmatch(r"[A-Za-z]{2}", v):
+            raise ValueError(f"国籍需为 ISO 3166-1 alpha-2 代码(如 CN),got {v!r}")
+        return v.upper()
 
     @model_validator(mode="after")
     def _years(self) -> "AuthorRow":

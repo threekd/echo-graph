@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useApp } from "../store.jsx";
 import { selectNode } from "../lib/graph.js";
+import iso3166 from "../lib/iso3166-1.json";
 
 function AuthorPanel({ author, fullData }) {
   const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
   const years = String(author.birthYear ?? "?") + " – " + String(author.deathYear ?? "?");
-  const meta = [author.originalName || author.label_en, author.nationality, years]
+  const nationality = author.nationality ? (iso3166[author.nationality] || author.nationality) : "";
+  const meta = [author.originalName || author.label_en, nationality, years]
     .filter(Boolean).join(" · ");
   return (
     <div className="panel-content-inner">

@@ -9,6 +9,7 @@
 - **主键与 URL 标识**:`id` 使用 UUID(建议 UUID v7,时间有序),同时也是 URL 使用的标识;新增作者/作品/涟漪时由后端自动生成。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),作为对外展示字段。
 - **语言编码**:优先 ISO 639-1;无法表达时(如中古英语、古典日语)使用 ISO 639-3(`enm`、`ojp`)或自定义枚举,并在文档中登记。
+- **国籍编码**:使用 ISO 3166-1 alpha-2 大写代码(如 `CN` 中国、`US` 美国);无国籍/未知时留空。
 
 ## 节点类型与属性
 
@@ -39,7 +40,7 @@
 | `originalName` | String | 是 | 全名/原文名 |
 | `Name_CN` | String | 是 | 中文名 |
 | `Name_EN` | String | 否 | 英文名 |
-| `nationality` | String | 否 | 国籍/族裔 |
+| `nationality` | String | 否 | 国籍(ISO 3166-1 alpha-2 大写代码,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` | Integer | 否 | 出生年份 |
 | `deathYear` | Integer | 否 | 去世年份 |
 | `reviewStatus` | String | 否 | 审核状态，枚举:`draft` / `reviewed` / `rejected`，默认 `draft` |

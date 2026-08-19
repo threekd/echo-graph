@@ -700,6 +700,43 @@ button.ghost { color: var(--muted); }
   z-index: 30;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
 }
+.work-picker-results.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+/* 下拉列表滚动条统一深色风格(Firefox 标准属性 + WebKit 伪元素) */
+.work-picker-results, #q-results, #from-results, #to-results {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 255, 0.38) rgba(10, 14, 34, 0.55);
+}
+.work-picker-results::-webkit-scrollbar,
+#q-results::-webkit-scrollbar,
+#from-results::-webkit-scrollbar,
+#to-results::-webkit-scrollbar {
+  width: 8px;
+}
+.work-picker-results::-webkit-scrollbar-track,
+#q-results::-webkit-scrollbar-track,
+#from-results::-webkit-scrollbar-track,
+#to-results::-webkit-scrollbar-track {
+  background: rgba(10, 14, 34, 0.55);
+  border-radius: 8px;
+}
+.work-picker-results::-webkit-scrollbar-thumb,
+#q-results::-webkit-scrollbar-thumb,
+#from-results::-webkit-scrollbar-thumb,
+#to-results::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 255, 0.38);
+  border-radius: 8px;
+}
+.work-picker-results::-webkit-scrollbar-thumb:hover,
+#q-results::-webkit-scrollbar-thumb:hover,
+#from-results::-webkit-scrollbar-thumb:hover,
+#to-results::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 255, 0.58);
+}
+
 .work-picker-results li {
   padding: 6px 8px;
   border-radius: 6px;

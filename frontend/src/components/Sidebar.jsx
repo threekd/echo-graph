@@ -11,6 +11,8 @@ export default function Sidebar() {
   const [qResults, setQResults] = useState([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [fromOpen, setFromOpen] = useState(false);
+  const [toOpen, setToOpen] = useState(false);
   const [expandText, setExpandText] = useState("1 级");
   const expandTimer = useRef(null);
   const lookups = useRef({ workLookup: {}, workById: {}, options: [] });
@@ -51,6 +53,13 @@ export default function Sidebar() {
     dispatch({ type: "SET_EXPAND", value: hops });
     if (expandTimer.current) clearTimeout(expandTimer.current);
     expandTimer.current = setTimeout(() => expandRippleDebounced(hops), 400);
+  };
+
+  // 起点/终点作品建议列表:按输入文本过滤,点选已存在作品(可自由输入,提交时校验)
+  const filterOptions = (query) => {
+    const q = query.trim().toLowerCase();
+    const all = lookups.current.options;
+    return q ? all.filter((o) => o.value.toLowerCase().includes(q)).slice(0, 50) : all.slice(0, 50);
   };
 
   const shareLink = () => {
@@ -130,18 +139,61 @@ export default function Sidebar() {
             )}
           </div>
           <div className="path-box">
-            <datalist id="works-list">
-              {lookups.current.options.map((o) => (
-                <option key={o.id} value={o.value} />
-              ))}
-            </datalist>
             <div className="path-fields">
               <div className="path-field">
-                <input id="from" list="works-list" value={from} placeholder="起点作品" onChange={(e) => setFrom(e.target.value)} />
+                <input
+                  id="from"
+                  value={from}
+                  placeholder="起点作品"
+                  onChange={(e) => setFrom(e.target.value)}
+                  onFocus={() => setFromOpen(true)}
+                  onBlur={() => setFromOpen(false)}
+                  onKeyDown={(e) => { if (e.key === "Escape") setFromOpen(false); }}
+                />
+                {fromOpen && filterOptions(from).length > 0 && (
+                  <ul id="from-results" style={{ display: "block" }}>
+                    {filterOptions(from).map((o) => (
+                      <li
+                        key={o.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // 先于 blur 触发,避免失焦关闭
+                          setFrom(o.value);
+                          setFromOpen(false);
+                        }}
+                      >
+                        {o.value}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <button id="btn-swap" title="交换起终点" onClick={() => { setFrom(to); setTo(from); }}>⇅</button>
               <div className="path-field">
-                <input id="to" list="works-list" value={to} placeholder="终点作品" onChange={(e) => setTo(e.target.value)} />
+                <input
+                  id="to"
+                  value={to}
+                  placeholder="终点作品"
+                  onChange={(e) => setTo(e.target.value)}
+                  onFocus={() => setToOpen(true)}
+                  onBlur={() => setToOpen(false)}
+                  onKeyDown={(e) => { if (e.key === "Escape") setToOpen(false); }}
+                />
+                {toOpen && filterOptions(to).length > 0 && (
+                  <ul id="to-results" style={{ display: "block" }}>
+                    {filterOptions(to).map((o) => (
+                      <li
+                        key={o.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // 先于 blur 触发,避免失焦关闭
+                          setTo(o.value);
+                          setToOpen(false);
+                        }}
+                      >
+                        {o.value}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
             <button id="btn-path" onClick={doPath}>寻找路径</button>

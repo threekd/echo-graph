@@ -11,6 +11,7 @@ import {
   workLabel,
   WorkPicker,
 } from "./admin/pickers";
+import { applyAdminQuery } from "./admin/query";
 
 type Kind = "authors" | "works" | "edges";
 
@@ -38,7 +39,7 @@ const COLS: Record<Kind, { key: string; label: string }[]> = {
     { key: "source_work_id", label: "源作品" },
     { key: "target_work_id", label: "目标作品" },
     { key: "reviewStatus", label: "审核" },
-    { key: "deletedAt", label: "删除时间" },
+    { key: "evidenceSource", label: "出处" },
   ],
 };
 
@@ -87,6 +88,10 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [textFilters, setTextFilters] = useState<Record<string, string>>({});
+  const [deletedFilter, setDeletedFilter] = useState<"all" | "active" | "deleted">("all");
   const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
   const [form, setForm] = useState<any>({});
   const [formError, setFormError] = useState("");
@@ -171,16 +176,51 @@ export default function Admin() {
   if (!state.adminOpen) return null;
 
   const allRows: any[] = data ? data[kind] || [] : [];
-  const rows = search.trim()
-    ? allRows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(search.toLowerCase())))
-    : allRows;
   const cols = COLS[kind];
   const counts = data ? data.counts || {} : {};
+
+  // 每类数据的可筛选列:select 为精确下拉,text 为按列搜索框
+  const filterCols: Record<Kind, { key: string; type: "select" | "text" }[]> = {
+    authors: [
+      { key: "reviewStatus", type: "select" },
+      { key: "nationality", type: "select" },
+      { key: "Name_CN", type: "text" },
+      { key: "originalName", type: "text" },
+    ],
+    works: [
+      { key: "reviewStatus", type: "select" },
+      { key: "genre", type: "select" },
+      { key: "language", type: "select" },
+      { key: "Title_CN", type: "text" },
+      { key: "originalTitle", type: "text" },
+      { key: "author_id", type: "text" },
+      { key: "publicationYear", type: "text" },
+    ],
+    edges: [
+      { key: "reviewStatus", type: "select" },
+      { key: "source_work_id", type: "text" },
+      { key: "target_work_id", type: "text" },
+      { key: "evidenceSource", type: "text" },
+    ],
+  };
+  const uniqueValues = (key: string): string[] =>
+    Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+  const toggleSort = (key: string) => {
+    setSort((prev) => {
+      if (prev && prev.key === key) return prev.dir === 1 ? { key, dir: -1 } : null;
+      return { key, dir: 1 };
+    });
+  };
 
   const switchKind = (k: Kind) => {
     setKind(k);
     setSearch("");
     setModal(null);
+    setFilters({});
+    setTextFilters({});
+    setSort(null);
+    setDeletedFilter("all");
   };
 
   const openAdd = () => {
@@ -298,13 +338,17 @@ export default function Admin() {
       }
     }
     setFormError("");
+    // 空串统一归一为 null:避免数字/日期字段清空后发送 "" 触发后端 int 解析失败
+    const payload = Object.fromEntries(
+      Object.entries(form).map(([k, v]) => [k, v === "" ? null : v])
+    );
     const url = modal.mode === "edit"
       ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id || edgeKey(modal.row))
       : "/api/admin/" + kind;
     authFetch(url, {
       method: modal.mode === "edit" ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
       .then((res) => {
@@ -325,6 +369,35 @@ export default function Admin() {
   const authorsById: Record<string, any> = {};
   worksList.forEach((w: any) => { worksById[w.id] = w; });
   authorsList.forEach((a: any) => { authorsById[a.id] = a; });
+
+  // 单元格显示值(与表格渲染一致,排序/筛选共用)
+  const cellValue = (r: any, key: string): string => {
+    if (kind === "edges" && (key === "source_work_id" || key === "target_work_id")) {
+      const w = worksById[r[key]];
+      return w ? workLabel(w) : String(r[key] ?? "");
+    }
+    if (kind === "works" && key === "author_id") {
+      return String(r.author_id || "")
+        .split(",")
+        .filter(Boolean)
+        .map((id: string) => {
+          const a = authorsById[id];
+          return a ? authorLabelOf(a) : id;
+        })
+        .join("、");
+    }
+    const v = r[key];
+    return v == null ? "" : String(v);
+  };
+
+  const rows = applyAdminQuery(allRows, {
+    search,
+    filters,
+    textFilters,
+    deletedFilter,
+    sort,
+    cellValue,
+  });
 
   return (
     <div id="admin-overlay">
@@ -349,6 +422,16 @@ export default function Admin() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            <select
+              className="admin-filter-select"
+              value={deletedFilter}
+              onChange={(e) => setDeletedFilter(e.target.value as "all" | "active" | "deleted")}
+              title="删除状态筛选"
+            >
+              <option value="all">全部状态</option>
+              <option value="active">仅正常</option>
+              <option value="deleted">仅已删除</option>
+            </select>
             <button id="btn-auth" className={token ? "authed" : ""} onClick={openAuth}>
               {token ? "已授权" : "获取授权"}
             </button>
@@ -391,30 +474,68 @@ export default function Admin() {
             <table id="admin-table">
               <thead>
                 <tr>
-                  {cols.map((c) => <th key={c.key}>{c.label}</th>)}
+                  {cols.map((c) => {
+                    const active = sort?.key === c.key;
+                    const icon = active ? (sort!.dir === 1 ? "▲" : "▼") : "↕";
+                    return (
+                      <th
+                        key={c.key}
+                        className={"sortable" + (active ? " active" : "")}
+                        onClick={() => toggleSort(c.key)}
+                        title="点击排序(再点切换升降序)"
+                      >
+                        {c.label} <span className="sort-icon">{icon}</span>
+                      </th>
+                    );
+                  })}
                   <th>操作</th>
+                </tr>
+                <tr className="filter-row">
+                  {cols.map((c) => {
+                    const fc = filterCols[kind].find((f) => f.key === c.key);
+                    if (!fc) {
+                      return <td key={c.key} className="filter-cell" />;
+                    }
+                    if (fc.type === "select") {
+                      const options = c.key === "reviewStatus"
+                        ? ["draft", "reviewed", "rejected"]
+                        : c.key === "genre"
+                          ? ["Fiction", "Non-fiction", "Poetry", "Drama"]
+                          : uniqueValues(c.key);
+                      return (
+                        <td key={c.key} className="filter-cell">
+                          <select
+                            value={filters[c.key] || ""}
+                            onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))}
+                            title={'筛选「' + c.label + '」'}
+                          >
+                            <option value="">全部</option>
+                            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </td>
+                      );
+                    }
+                    return (
+                      <td key={c.key} className="filter-cell">
+                        <input
+                          type="text"
+                          placeholder={'搜索' + c.label}
+                          value={textFilters[c.key] || ""}
+                          onChange={(e) => setTextFilters((f) => ({ ...f, [c.key]: e.target.value }))}
+                          title={'搜索「' + c.label + '」'}
+                        />
+                      </td>
+                    );
+                  })}
+                  <td className="filter-cell" />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.length === 0 ? (
+                  <tr><td className="empty-cell" colSpan={cols.length + 1}>无匹配记录</td></tr>
+                ) : rows.map((r) => (
                   <tr key={r.id || edgeKey(r)} className={r.deletedAt ? "deleted" : ""}>
-                    {cols.map((c) => {
-                      let val = r[c.key] ?? "";
-                      if (kind === "edges" && (c.key === "source_work_id" || c.key === "target_work_id")) {
-                        const w = worksById[r[c.key]];
-                        val = w ? workLabel(w) : String(val);
-                      } else if (kind === "works" && c.key === "author_id") {
-                        val = String(r.author_id || "")
-                          .split(",")
-                          .filter(Boolean)
-                          .map((id: string) => {
-                            const a = authorsById[id];
-                            return a ? authorLabelOf(a) : id;
-                          })
-                          .join("、");
-                      }
-                      return <td key={c.key}>{String(val)}</td>;
-                    })}
+                    {cols.map((c) => <td key={c.key}>{cellValue(r, c.key)}</td>)}
                     <td>
                       {r.deletedAt
                         ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>

@@ -19,6 +19,13 @@ def _coerce_review_status(v):
     return v
 
 
+def _coerce_int(v):
+    """可选整数字段:空串视为 None(前端清空输入框会发送 '')。"""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    return v
+
+
 class AuthorRow(BaseModel):
     model_config = {"extra": "ignore"}
 
@@ -49,6 +56,11 @@ class AuthorRow(BaseModel):
     @classmethod
     def _review_status_default(cls, v):
         return _coerce_review_status(v)
+
+    @field_validator("birthYear", "deathYear", mode="before")
+    @classmethod
+    def _int_or_none(cls, v):
+        return _coerce_int(v)
 
     @field_validator("nationality")
     @classmethod
@@ -112,6 +124,11 @@ class WorkRow(BaseModel):
     @classmethod
     def _review_status_default(cls, v):
         return _coerce_review_status(v)
+
+    @field_validator("publicationYear", "creationYear", mode="before")
+    @classmethod
+    def _int_or_none(cls, v):
+        return _coerce_int(v)
 
 
 class EchoRow(BaseModel):

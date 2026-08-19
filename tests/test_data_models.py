@@ -139,6 +139,19 @@ class ParseRowsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_rows(a, w, e)
 
+    def test_empty_numeric_fields_coerced_to_none(self) -> None:
+        """前端清空数字输入框会发送空串,应归一为 None 而不是 int 解析失败。"""
+        a, w, e = _fixture()
+        a[0]["birthYear"] = ""
+        a[0]["deathYear"] = ""
+        w[0]["publicationYear"] = ""
+        w[0]["creationYear"] = ""
+        am, wm, em, _ = parse_rows(a, w, e)
+        self.assertIsNone(am[0].birthYear)
+        self.assertIsNone(am[0].deathYear)
+        self.assertIsNone(wm[0].publicationYear)
+        self.assertIsNone(wm[0].creationYear)
+
 
 if __name__ == "__main__":
     unittest.main()

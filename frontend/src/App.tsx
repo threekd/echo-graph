@@ -93,6 +93,9 @@ function AppContent() {
       .then(([data, stats]) => {
         dispatch({ type: "SET_DATA", data });
         dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
+        if (location.search.indexOf("admin=1") !== -1) {
+          dispatch({ type: "SET_ADMIN", open: true }); // 深链直达数据管理页
+        }
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);
         } else {

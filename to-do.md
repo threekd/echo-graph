@@ -104,6 +104,7 @@
 - [x] TypeScript 迁移:全部 `src` 转 `.ts`/`.tsx`(strict + tsc --noEmit),接入 typescript-eslint 与 CI typecheck;tsconfig 单一来源
 - [x] 渲染器内核完全受控化:`viewData` 重新入 store 并被 GraphCanvas effect 消费;`graph.ts` 只计算并 dispatch(SET_VIEW / SET_VIEW_DATA / SET_CAMERA),不再直接调渲染器;renderer 退化为 `update(kind, data)` 纯执行器(相机由 `data.camera` 驱动,默认相机上移到 React 侧);移除 onViewChange 注入
 - [x] 作品关联改为按 id:`works.csv` 的 `Author`(名字)列迁移为 `author_id`(UUID,多人逗号分隔);后端按 id 校验关联,前端 AuthorPicker 按 id 选择;作者改名不再破坏作品关联(修复改名死锁)
+- [x] 数据管理页表格:表头点击排序(升降序循环 + 指示符)、筛选行(下拉:reviewStatus/国籍/体裁/语言;按列搜索框:作者中文名/原文名、作品中文名/原著标题/作者、涟漪源/目标作品,按显示值包含匹配)、删除状态筛选;逻辑抽为纯函数 `applyAdminQuery` 并补单测;新增 `?admin=1` 深链直达
 - ⬜ 部署到个人VPS服务器
 
 ## 遗留与下一步建议

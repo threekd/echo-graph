@@ -1,5 +1,5 @@
 ﻿id,language,originalTitle,Title_CN,Title_EN,Title_Other,author_id,publicationYear,creationYear,genre,reviewStatus,createdAt,updatedAt,deletedAt
-01a013e8-907e-77f3-83c6-bce355a36268,fr,L'Envers et l'Endroit,反与正,Betwixt and Between,The Wrong Side and the Right Side,01a013e6-e885-766b-b9db-315d518adeeb,1937,,Non-fiction,,2026-08-18T06:35:02.746000,2026-08-18T08:50:43+00:00,
+01a013e8-907e-77f3-83c6-bce355a36268,fr,L'Envers et l'Endroit,反与正,Betwixt and Between,The Wrong Side and the Right Side,01a013e6-e885-766b-b9db-315d518adeeb,1937,,Non-fiction,,2026-08-18T06:35:02.746,2026-08-19T06:26:15+00:00,
 01a013e8-907e-77f3-83c6-bce48f19b60d,fr,Noces,婚礼,Nuptials,,01a013e6-e885-766b-b9db-315d518adeeb,1938,,Non-fiction,,2026-08-18T06:35:02.746000,2026-08-18T08:50:43+00:00,
 01a013e8-907e-77f3-83c6-bce5cc3de32c,fr,L'Étranger,局外人,The Stranger,异乡人 / The Outsider,01a013e6-e885-766b-b9db-315d518adeeb,1942,,Fiction,reviewed,2026-08-18T06:35:02.746000,2026-08-18T08:50:43+00:00,
 01a013e8-907e-77f3-83c6-bce68afa9460,fr,Le Mythe de Sisyphe,西西弗神话,The Myth of Sisyphus,,01a013e6-e885-766b-b9db-315d518adeeb,1942,,Non-fiction,,2026-08-18T06:35:02.746000,2026-08-18T08:50:43+00:00,
@@ -69,5 +69,7 @@
 01a0156e-bb69-75d8-9889-54907fe1596f,en,Bible,圣经,Bible,,01a013f1-1c6e-7269-a405-f353134bd626,,,Non-fiction,,,,
 01a017db-86df-731c-82b7-b45d82218b46,en,The Picture of Dorian Gray,道林·格雷的画像,The Picture of Dorian Gray,,01a017d9-8ee7-7513-a6d8-e2fed3bd0434,1891,,Fiction,reviewed,,,
 01a017de-6529-7455-aa57-eb564adbb954,en,De Profundis,自深深处,,,01a017d9-8ee7-7513-a6d8-e2fed3bd0434,1897,,Non-fiction,draft,,,
-01a01888-9625-716a-96fb-d8331f462545,ja,世界の終りとハードボイルド・ワンダーランド,世界尽头与冷酷仙境,,,01a01887-be01-7589-b0b7-b6fec3d2811b,,1985,Fiction,reviewed,2026-08-19T05:39:59+00:00,2026-08-19T06:01:08+00:00,
+01a01888-9625-716a-96fb-d8331f462545,ja,世界の終りとハードボイルド・ワンダーランド,世界尽头与冷酷仙境,,,01a01887-be01-7589-b0b7-b6fec3d2811b,1985,,Fiction,reviewed,2026-08-19T05:39:59+00:00,2026-08-19T06:26:47+00:00,
 01a01889-6cc0-75f9-8c09-0ae6392a3ab5,ja,いちきゅうはちよん,1Q84,,,01a01887-be01-7589-b0b7-b6fec3d2811b,2009,,Fiction,reviewed,2026-08-19T05:40:54+00:00,2026-08-19T06:01:23+00:00,
+01a018b5-fa92-7642-ac15-6dc232b7303a,en,The Great Gatsby,了不起的盖茨比,The Great Gatsby,大亨小传,01a018b4-a243-77b8-abac-63ba1b51e6ca,1925,,Fiction,draft,2026-08-19T06:29:34+00:00,2026-08-19T06:29:34+00:00,
+01a018b6-f998-7104-9d02-e7e2a318d399,ja,ノルウェイの森／ノルウェイのもり,挪威的森林,,,01a01887-be01-7589-b0b7-b6fec3d2811b,1987,,Fiction,draft,2026-08-19T06:30:39+00:00,2026-08-19T06:30:39+00:00,

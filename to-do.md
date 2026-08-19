@@ -85,7 +85,7 @@
 ## 6. 工程与体验
 
 - [x] 验证 npm 修复(npm 12.0.2,registry 可达,Node v24)
-- [x] 前端拆分为原生 ES module(util / state / renderer / panels / actions / main,无构建)
+- [x] ~~前端拆分为原生 ES module(util / state / renderer / panels / actions / main,无构建)~~(已被 React + Vite 架构取代)
 - [x] 主图谱力导向布局分帧计算,避免大数据量卡顿(含视图令牌防止异步覆盖)
 - [x] 静态资源版本号防缓存(v=12)
 - [x] README 随进度同步维护
@@ -95,12 +95,19 @@
 - [x] 数据管理功能的权限设置:管理接口统一 Bearer Token 鉴权(`ADMIN_TOKEN`,前端管理页输入令牌后可用)
 - [x] 恢复 URL 状态化:视图/扩散级数/孤岛过滤/作者开关自动写入 hash,浏览器前进/后退可导航;支持 `cam=` / `islands=` / `authors=` 参数与首载深链,分享链接携带当前视图与最新相机位置;路径输入恢复作品联想下拉
 - [x] 清理旧版 `static/` 页面与前端死代码(`lib/actions.js` / `admin.js` / `panels.js`、重复 vendor 副本),前端单一维护源
+- [x] React 迁移复盘·清理:移除 `viewData` 死状态;`viewLabel` 去重;纯函数抽取到 `lib/graphData.js` 并接入 Vitest 单测(7 个用例)
+- [x] React 迁移复盘·解耦:深链 `applyHash` 不再篡改 `stateRef`,过滤状态改为显式 flags 透传;同视图刷新改为增量同步场景(保留节点/相机,不再全量重建)
+- [x] React 迁移复盘·依赖:three 0.185 升级为 npm 依赖(`three` + addons),移除 vendored 全局脚本
+- [x] React 19 升级(19.2.8,`@types/react` 19);lint/test/build 全绿
+- [x] 相机状态回传 React store(`SET_CAMERA`,视图切换/交互结束时节流同步);分享链接仍读渲染器实时值
+- [x] 节点点击/悬停改为 React 事件委托(`pickNode` / `setHoveredNode` API,移除注入式 onNodeClick/onNodeHover)
+- [x] TypeScript 迁移:全部 `src` 转 `.ts`/`.tsx`(strict + tsc --noEmit),接入 typescript-eslint 与 CI typecheck;tsconfig 单一来源
 - ⬜ 部署到GitHub
 
 ## 遗留与下一步建议
 
 1. **数据审核与扩充**:逐条审核真实提及并置 `reviewed`,补充出处精确性,扩充数据集
-2. ~~React + Vite 迁移~~(已完成):Three.js 渲染器已封装进 React 组件生命周期;后续可继续把渲染器内部状态逐步 React 化(可选)
+2. ~~React 化推进~~(相机入 store、事件委托、TS 已完成):剩余可选项为把渲染器内核转成受控组件(React 持有视图数据、effect 驱动场景 diff)
 3. 按年代 / 语言 / 国别配色或聚类,让图谱携带更多语义
 4. 加载状态指示、管理页恢复后自动导入 Neo4j 等体验细节
 5. 发布流程:按 `reviewStatus` 过滤草稿内容的公开视图,以及快照恢复入口

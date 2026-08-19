@@ -7,6 +7,15 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // three 是独立缓存 chunk(约 517KB),阈值上调避免误报
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ["three"],
+        },
+      },
+    },
   },
   server: {
     port: 5173,

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useApp } from "../store.jsx";
-import { selectNode } from "../lib/graph.js";
+import { useApp, type GraphData } from "../store";
+import { selectNode } from "../lib/graph";
 import iso3166 from "../lib/iso3166-1.json";
 
-function AuthorPanel({ author, fullData }) {
+const iso3166Map = iso3166 as Record<string, string>;
+
+function AuthorPanel({ author, fullData }: { author: any; fullData: GraphData }) {
   const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
   const years = String(author.birthYear ?? "?") + " – " + String(author.deathYear ?? "?");
-  const nationality = author.nationality ? (iso3166[author.nationality] || author.nationality) : "";
+  const nationality = author.nationality ? (iso3166Map[author.nationality] || author.nationality) : "";
   const meta = [author.originalName || author.label_en, nationality, years]
     .filter(Boolean).join(" · ");
   return (
@@ -26,10 +28,10 @@ function AuthorPanel({ author, fullData }) {
   );
 }
 
-function WorkPanel({ d }) {
+function WorkPanel({ d }: { d: any }) {
   const w = d.work;
   const authorName = (d.authors && d.authors.length)
-    ? d.authors.map((a) => a.name || a.originalName || "佚名").join("、")
+    ? d.authors.map((a: any) => a.name || a.originalName || "佚名").join("、")
     : (d.author ? (d.author.name || d.author.originalName || "佚名") : "佚名");
   return (
     <div className="panel-content-inner">
@@ -39,7 +41,7 @@ function WorkPanel({ d }) {
         <>
           <h3>回声来源</h3>
           <ul>
-            {d.mentioned_by.map((e, i) => (
+            {d.mentioned_by.map((e: any, i: number) => (
               <li key={i}>
                 <span className="tag-mention">提及</span>
                 <strong>{e.source_title}</strong> <small>({e.source_author})</small>
@@ -55,7 +57,7 @@ function WorkPanel({ d }) {
         <>
           <h3>涟漪扩散</h3>
           <ul>
-            {d.mentions.map((e, i) => (
+            {d.mentions.map((e: any, i: number) => (
               <li key={i}>
                 <span className="tag-mention">提及</span>
                 <strong>{e.target_title}</strong> <small>({e.target_author})</small>
@@ -74,15 +76,15 @@ function WorkPanel({ d }) {
   );
 }
 
-function PathPanel({ panel, fullData }) {
+function PathPanel({ panel, fullData }: { panel: any; fullData: GraphData }) {
   const result = panel.result;
-  const nodeById = {};
+  const nodeById: Record<string, any> = {};
   fullData.nodes.forEach((n) => { nodeById[n.id] = n; });
   return (
     <div className="panel-content-inner">
       <h2>提及链(3D)</h2>
       <div className="meta">{panel.f} → {panel.t} · {result.nodes.length} 本书 / {result.edges.length} 次提及</div>
-      {result.edges.map((e, i) => {
+      {result.edges.map((e: any, i: number) => {
         const sn = nodeById[e.source];
         const tn = nodeById[e.target];
         return (
@@ -101,7 +103,7 @@ function PathPanel({ panel, fullData }) {
 export default function Panel() {
   const { state } = useApp();
   const panel = state.panel;
-  const hideTimer = useRef(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelHide = useCallback(() => {
     if (hideTimer.current) {
@@ -121,7 +123,7 @@ export default function Panel() {
 
   // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
   useEffect(() => {
-    const onMove = (e) => {
+    const onMove = (e: MouseEvent) => {
       const el = document.getElementById("panel");
       if (!el || !el.classList.contains("show")) return;
       const rect = el.getBoundingClientRect();

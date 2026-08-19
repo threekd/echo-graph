@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useApp } from "../store.jsx";
+import { useApp } from "../store";
 
 export default function Guide() {
   const { state, dispatch } = useApp();

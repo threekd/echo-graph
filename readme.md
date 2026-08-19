@@ -49,24 +49,26 @@ The Echo Graph — A Ripple Atlas of World Literature
 - **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,已全量导入 Neo4j;示例数据已删除。
 - **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
-- **前端**：React 18 + Vite 5(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js 3D 渲染引擎保持命令式模块(react 壳层持有生命周期)。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
+- **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)3D 渲染引擎保持命令式模块(react 壳层持有生命周期,同视图刷新已改为增量同步);节点点击/悬停由 React 事件委托驱动,相机状态回传 React store。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式
 
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
-cd frontend && pnpm install && pnpm build   # 构建 React 前端(产物进入 frontend/dist)
+cd frontend && pnpm install && pnpm typecheck && pnpm build   # 构建 React 前端(产物进入 frontend/dist)
 uv run python scripts/import_data.py          # 导入 Neo4j(自动识别 csv)
 uv run python scripts/import_data.py --source csv --wipe --version 1.1  # 从 data/real/*.csv 导入(推荐)
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-质量检查(可选,已在 CI 中自动执行):
+质量检查(已在 CI 中自动执行):
 
 ```bash
 uv run python -m unittest discover -s tests -v   # 后端测试(无需额外依赖)
 uvx ruff check .                                  # 后端 lint
 cd frontend && pnpm lint                          # 前端 lint
+cd frontend && pnpm typecheck                     # 前端类型检查
+cd frontend && pnpm test                          # 前端单元测试(Vitest)
 ```
 
 前端开发模式:`cd frontend && pnpm dev`(Vite 开发服务器 5173 端口,`/api` 代理到 8000)。

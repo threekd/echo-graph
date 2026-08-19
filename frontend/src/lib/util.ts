@@ -1,6 +1,6 @@
 /* 通用工具与常量 */
 
-export function el(id) {
+export function el(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 

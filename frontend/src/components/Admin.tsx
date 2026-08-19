@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useApp } from "../store.jsx";
+import { useApp } from "../store";
 import iso6391 from "../lib/iso6391.json";
 import iso3166 from "../lib/iso3166-1.json";
 
-const KINDS = [
+const iso6391Map = iso6391 as Record<string, string>;
+const iso3166Map = iso3166 as Record<string, string>;
+
+type Kind = "authors" | "works" | "edges";
+
+const KINDS: { key: Kind; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
 ];
 
-const COLS = {
+const COLS: Record<Kind, { key: string; label: string }[]> = {
   authors: [
     { key: "Name_CN", label: "中文名" },
     { key: "originalName", label: "原文名" },
@@ -32,7 +37,7 @@ const COLS = {
 };
 
 // 表单字段配置
-const FIELDS = {
+const FIELDS: Record<Kind, any[]> = {
   authors: [
     { key: "originalName", label: "原文名", required: true },
     { key: "nationality", label: "国籍", type: "countryPicker" },
@@ -64,41 +69,51 @@ const FIELDS = {
   ],
 };
 
-function workLabel(w) {
+function workLabel(w: any): string {
   return w ? (w.Title_CN || "") + " - " + (w.originalTitle || "") : "";
 }
 
 // ISO 639-1 语言选项,格式为「代码-中文名」(如 en-英语)
-const LANG_OPTIONS = Object.entries(iso6391).map(([code, name]) => ({ value: code, label: code + "-" + name }));
+const LANG_OPTIONS = Object.entries(iso6391Map).map(([code, name]) => ({ value: code, label: code + "-" + name }));
 
-function langLabel(code) {
+function langLabel(code: string): string {
   if (!code) return "";
-  const name = iso6391[code];
+  const name = iso6391Map[code];
   return name ? code + "-" + name : code;
 }
 
 // ISO 3166-1 国家/地区选项,格式为「代码-中文名」(如 CN-中国)
-const COUNTRY_OPTIONS = Object.entries(iso3166).map(([code, name]) => ({ value: code, label: code + "-" + name }));
+const COUNTRY_OPTIONS = Object.entries(iso3166Map).map(([code, name]) => ({ value: code, label: code + "-" + name }));
 
-function countryLabel(code) {
+function countryLabel(code: string): string {
   if (!code) return "";
-  const name = iso3166[code];
+  const name = iso3166Map[code];
   return name ? code + "-" + name : code;
 }
 
 // 边有独立 id;source:target 仅作历史数据的兜底复合标识
-function edgeKey(r) {
+function edgeKey(r: any): string {
   return (r.source_work_id || "") + ":" + (r.target_work_id || "");
 }
 
 // 作品选择器:输入筛选,只能点选/回车选择已存在条目(不接收自由输入)
-function WorkPicker({ value, onChange, worksList, placeholder }) {
+function WorkPicker({
+  value,
+  onChange,
+  worksList,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  worksList: any[];
+  placeholder: string;
+}) {
   const [query, setQuery] = useState(() => {
     const w = worksList.find((x) => x.id === value);
     return w ? workLabel(w) : "";
   });
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastValue = useRef(value);
 
   useEffect(() => {
@@ -116,7 +131,7 @@ function WorkPicker({ value, onChange, worksList, placeholder }) {
       )
     : worksList;
 
-  const pick = (w) => {
+  const pick = (w: any) => {
     onChange(w.id);
     setQuery(workLabel(w));
     setOpen(false);
@@ -170,12 +185,26 @@ function WorkPicker({ value, onChange, worksList, placeholder }) {
 }
 
 // 代码选择器(语言/国家/地区):输入中文或代码筛选,只能点选/回车选择列表项(不接收自由输入)
-function CodePicker({ value, onChange, options, getLabel, placeholder, emptyWarn }) {
+function CodePicker({
+  value,
+  onChange,
+  options,
+  getLabel,
+  placeholder,
+  emptyWarn,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  getLabel: (code: string) => string;
+  placeholder: string;
+  emptyWarn: string;
+}) {
   const [query, setQuery] = useState(() => getLabel(value));
   const [open, setOpen] = useState(false);
   const [dir, setDir] = useState("down");
   const [maxH, setMaxH] = useState(220);
-  const wrapRef = useRef(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastValue = useRef(value);
 
   useEffect(() => {
@@ -191,7 +220,7 @@ function CodePicker({ value, onChange, options, getLabel, placeholder, emptyWarn
     ? options.filter((o) => o.label.toLowerCase().includes(q))
     : options;
 
-  const pick = (opt) => {
+  const pick = (opt: { value: string; label: string }) => {
     onChange(opt.value);
     setQuery(opt.label);
     setOpen(false);
@@ -264,13 +293,13 @@ function CodePicker({ value, onChange, options, getLabel, placeholder, emptyWarn
   );
 }
 
-function authorLabelOf(a) {
+function authorLabelOf(a: any): string {
   const name = a.Name_CN || a.originalName || "";
   return a.birthYear ? name + "-" + a.birthYear : name;
 }
 
 // 把逗号分隔的 Author 字符串解析为 [{ value: 原文名, label: 显示名 }]
-function parseAuthors(value, authorsList) {
+function parseAuthors(value: string, authorsList: any[]): { value: string; label: string }[] {
   return String(value || "")
     .split(",")
     .map((s) => s.trim())
@@ -282,13 +311,23 @@ function parseAuthors(value, authorsList) {
 }
 
 // 作者多选选择器:从作者表筛选,可添加多个作者(存储为逗号分隔的原文名)
-function AuthorPicker({ value, onChange, authorsList, placeholder }) {
+function AuthorPicker({
+  value,
+  onChange,
+  authorsList,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  authorsList: any[];
+  placeholder: string;
+}) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [dir, setDir] = useState("down");
   const [maxH, setMaxH] = useState(220);
   const [selected, setSelected] = useState(() => parseAuthors(value, authorsList));
-  const wrapRef = useRef(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastValue = useRef(value);
 
   useEffect(() => {
@@ -306,18 +345,18 @@ function AuthorPicker({ value, onChange, authorsList, placeholder }) {
     : authorsList;
   const available = filtered.filter((a) => !selected.some((s) => s.value === a.originalName));
 
-  const commit = (next) => {
+  const commit = (next: { value: string; label: string }[]) => {
     setSelected(next);
     onChange(next.map((s) => s.value).join(", "));
   };
 
-  const addAuthor = (a) => {
+  const addAuthor = (a: any) => {
     if (selected.some((s) => s.value === a.originalName)) return;
     commit([...selected, { value: a.originalName, label: authorLabelOf(a) }]);
     setQuery("");
   };
 
-  const removeAuthor = (v) => commit(selected.filter((s) => s.value !== v));
+  const removeAuthor = (v: string) => commit(selected.filter((s) => s.value !== v));
 
   // 按可用空间决定下拉展开方向与高度,避免溢出弹窗卡片产生滚动条
   const openList = () => {
@@ -398,13 +437,13 @@ function AuthorPicker({ value, onChange, authorsList, placeholder }) {
 
 export default function Admin() {
   const { state, dispatch } = useApp();
-  const [kind, setKind] = useState("authors");
-  const [data, setData] = useState(null);
+  const [kind, setKind] = useState<Kind>("authors");
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(null); // { mode: "add" | "edit", row: {} }
-  const [form, setForm] = useState({});
+  const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
+  const [form, setForm] = useState<any>({});
   const [formError, setFormError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [authInput, setAuthInput] = useState("");
@@ -414,13 +453,13 @@ export default function Admin() {
     try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch { return ""; }
   });
 
-  const authFetch = useCallback((url, options = {}) => {
+  const authFetch = useCallback((url: string, options: RequestInit = {}) => {
     const headers = new Headers(options.headers || {});
     if (token) headers.set("Authorization", "Bearer " + token);
     return fetch(url, { ...options, headers });
   }, [token]);
 
-  const handleAuthError = (r) => {
+  const handleAuthError = (r: Response): boolean => {
     if (r.status === 401 || r.status === 403) {
       setStatus("管理令牌无效或缺失,请点击「获取授权」重新授权");
       return true;
@@ -486,14 +525,14 @@ export default function Admin() {
 
   if (!state.adminOpen) return null;
 
-  const allRows = data ? data[kind] || [] : [];
+  const allRows: any[] = data ? data[kind] || [] : [];
   const rows = search.trim()
     ? allRows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(search.toLowerCase())))
     : allRows;
   const cols = COLS[kind];
   const counts = data ? data.counts || {} : {};
 
-  const switchKind = (k) => {
+  const switchKind = (k: Kind) => {
     setKind(k);
     setSearch("");
     setModal(null);
@@ -505,13 +544,13 @@ export default function Admin() {
     setModal({ mode: "add", row: {} });
   };
 
-  const openEdit = (row) => {
+  const openEdit = (row: any) => {
     setForm({ ...row });
     setFormError("");
     setModal({ mode: "edit", row });
   };
 
-  const doDelete = (id) => {
+  const doDelete = (id: string) => {
     if (!window.confirm("确认删除「" + id + "」?(软删除,可恢复)")) return;
     authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
       .then((r) => r.json())
@@ -519,7 +558,7 @@ export default function Admin() {
       .catch((e) => setStatus("删除失败: " + e.message));
   };
 
-  const doRestore = (id) => {
+  const doRestore = (id: string) => {
     const row = allRows.find((r) => (r.id || edgeKey(r)) === id);
     if (!row) return;
     authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), {
@@ -637,8 +676,8 @@ export default function Admin() {
 
   const worksList = data ? data.works || [] : [];
   const authorsList = data ? data.authors || [] : [];
-  const worksById = {};
-  worksList.forEach((w) => { worksById[w.id] = w; });
+  const worksById: Record<string, any> = {};
+  worksList.forEach((w: any) => { worksById[w.id] = w; });
 
   return (
     <div id="admin-overlay">
@@ -741,7 +780,7 @@ export default function Admin() {
       {modal && (
         <div id="admin-modal" style={{ display: "flex" }}>
           <div className="admin-modal-card">
-            <h3>{modal.mode === "edit" ? "编辑" : "新增"} {KINDS.find((k) => k.key === kind).label}</h3>
+            <h3>{modal.mode === "edit" ? "编辑" : "新增"} {KINDS.find((k) => k.key === kind)!.label}</h3>
             <div id="admin-form">
               {FIELDS[kind].map((f) => {
                 if (modal.mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
@@ -821,7 +860,7 @@ export default function Admin() {
                         onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                       >
                         <option value="">请选择…</option>
-                        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                        {f.options.map((o: any) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </label>
                   );

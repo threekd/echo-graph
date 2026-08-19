@@ -1,24 +1,25 @@
-import { useState, useEffect, useRef } from "react";
-import { useApp } from "../store.jsx";
-import { search } from "../lib/api.js";
+import { useState, useEffect, useRef, type ChangeEvent } from "react";
+import { useApp } from "../store";
+import { search } from "../lib/api";
+import { buildWorkLookups, type WorkLookups } from "../lib/graphData";
 import {
-  renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced, reRenderRipple, syncUrl, getShareHash,
-} from "../lib/graph.js";
+  renderMain, renderPath, selectNode, expandRippleDebounced, reRenderRipple, syncUrl, getShareHash,
+} from "../lib/graph";
 
 export default function Sidebar() {
   const { state, dispatch } = useApp();
   const [q, setQ] = useState("");
-  const [qResults, setQResults] = useState([]);
+  const [qResults, setQResults] = useState<any[]>([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [fromOpen, setFromOpen] = useState(false);
   const [toOpen, setToOpen] = useState(false);
-  const expandTimer = useRef(null);
-  const lookups = useRef({ workLookup: {}, workById: {}, options: [] });
+  const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookups = useRef<WorkLookups>({ workLookup: {}, workById: {}, options: [] });
   const expandText = state.expandHops + " 级";
 
   useEffect(() => {
-    lookups.current = buildWorkLookups();
+    lookups.current = buildWorkLookups(state.fullData);
   }, [state.fullData]);
 
   useEffect(() => {
@@ -48,14 +49,14 @@ export default function Sidebar() {
     });
   };
 
-  const onExpand = (hops) => {
+  const onExpand = (hops: number) => {
     dispatch({ type: "SET_EXPAND", value: hops });
     if (expandTimer.current) clearTimeout(expandTimer.current);
     expandTimer.current = setTimeout(() => expandRippleDebounced(hops), 400);
   };
 
   // 起点/终点作品建议列表:按输入文本过滤,点选已存在作品(可自由输入,提交时校验)
-  const filterOptions = (query) => {
+  const filterOptions = (query: string) => {
     const q = query.trim().toLowerCase();
     const all = lookups.current.options;
     return q ? all.filter((o) => o.value.toLowerCase().includes(q)).slice(0, 50) : all.slice(0, 50);
@@ -69,7 +70,7 @@ export default function Sidebar() {
   };
 
   // 过滤开关变化后按当前视图重新渲染(保持相机),主/涟漪视图由渲染函数自行同步 URL
-  const rerenderCurrentView = (overrides) => {
+  const rerenderCurrentView = (overrides: { hideIslands?: boolean; showAuthors?: boolean }) => {
     if (state.currentView === "main") {
       renderMain({ preserveCamera: true }, null, overrides);
     } else if (state.currentView === "ripple") {
@@ -83,13 +84,13 @@ export default function Sidebar() {
     }
   };
 
-  const onToggleAuthors = (e) => {
+  const onToggleAuthors = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.checked;
     dispatch({ type: "SET_SHOW_AUTHORS", value });
     rerenderCurrentView({ showAuthors: value });
   };
 
-  const onToggleIslands = (e) => {
+  const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.checked;
     dispatch({ type: "SET_HIDE_ISLANDS", value });
     rerenderCurrentView({ hideIslands: value });
@@ -106,7 +107,7 @@ export default function Sidebar() {
       <aside
         id="sidebar-left"
         onMouseLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove("show");
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) e.currentTarget.classList.remove("show");
         }}
       >
         <div className="brand">
@@ -233,7 +234,7 @@ export default function Sidebar() {
 }
 
 function exportPng() {
-  const canvas = document.querySelector("#graph canvas");
+  const canvas = document.querySelector("#graph canvas") as HTMLCanvasElement | null;
   if (!canvas) return;
   const cssRect = canvas.getBoundingClientRect();
   const labels = Array.from(document.querySelectorAll(".nodelabel"))
@@ -241,7 +242,7 @@ function exportPng() {
     .map((elm) => {
       const rect = elm.getBoundingClientRect();
       return {
-        text: elm.textContent,
+        text: elm.textContent || "",
         x: rect.left - cssRect.left + rect.width / 2,
         y: rect.top - cssRect.top + rect.height / 2,
         fontSize: parseFloat(getComputedStyle(elm).fontSize) || 11,
@@ -251,7 +252,7 @@ function exportPng() {
   const out = document.createElement("canvas");
   out.width = cssRect.width * scale;
   out.height = cssRect.height * scale;
-  const ctx = out.getContext("2d");
+  const ctx = out.getContext("2d")!;
   ctx.scale(scale, scale);
   ctx.drawImage(canvas, 0, 0, cssRect.width, cssRect.height);
   ctx.textAlign = "center";
@@ -271,6 +272,6 @@ function exportPng() {
   a.remove();
 }
 
-function viewLabel(view) {
+function viewLabel(view: string): string {
   return view === "main" ? "全图谱" : view === "ripple" ? "涟漪" : view === "author" ? "作者" : "提及链";
 }

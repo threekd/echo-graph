@@ -70,10 +70,6 @@ function syncCameraToStore() {
   onCameraChange(cam);
 }
 
-export function sceneNodeCount(): number {
-  return Object.keys(nodeGroups).length;
-}
-
 export function getCameraState(): CameraState {
   return {
     theta: cameraState.theta,
@@ -85,7 +81,7 @@ export function getCameraState(): CameraState {
   };
 }
 
-export function applyCameraState(cam: CameraState | null | undefined) {
+function applyCameraState(cam: CameraState | null | undefined) {
   if (!cam) return;
   if (typeof cam.theta === "number") cameraState.theta = cam.theta;
   if (typeof cam.phi === "number") cameraState.phi = cam.phi;

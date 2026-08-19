@@ -90,6 +90,10 @@ export default function GraphCanvas() {
   };
 
   const handlePointerLeave = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current); // 取消排队的拾取,避免离开画布后悬停残留
+      rafRef.current = 0;
+    }
     if (hoveredRef.current) {
       hoveredRef.current = null;
       setHoveredNode(null);

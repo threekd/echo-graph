@@ -97,9 +97,3 @@ export function createForceLayout(ids: string[], edges: ForceEdge[]): ForceLayou
     },
   };
 }
-
-export function computeForceLayout(ids: string[], edges: ForceEdge[]): Record<string, number[]> {
-  const layout = createForceLayout(ids, edges);
-  layout.tick(Infinity);
-  return layout.result();
-}

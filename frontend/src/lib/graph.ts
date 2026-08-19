@@ -65,7 +65,7 @@ interface ViewOpts {
   hideIslands?: boolean;
   showAuthors?: boolean;
   preserveCamera?: boolean;
-  camera?: any;
+  camera?: CameraState;
 }
 
 // 各视图的默认相机(受控化:由 React 侧决定并随 viewData 交给渲染器执行)
@@ -76,11 +76,17 @@ const DEFAULT_CAMERA: Record<string, CameraState> = {
   path: { theta: -Math.PI / 2 + 0.35, phi: Math.PI / 2 - 0.15, radius: 1250, cx: 0, cy: 0, cz: 0 },
 };
 
+// 相机解析(纯函数,便于单测):opts.camera(深链恢复) > 视图默认相机 > 保持当前相机(preserveCamera)
+export function resolveViewCamera(kind: string, opts: ViewOpts): CameraState | undefined {
+  if (opts.camera) return opts.camera;
+  if (opts.preserveCamera) return undefined;
+  return DEFAULT_CAMERA[kind];
+}
+
 // 受控化提交:视图数据与相机进 React store,渲染由 GraphCanvas 的 effect 驱动。
-// opts.camera(深链恢复) > 视图默认相机 > 保持当前相机(preserveCamera / 同视图刷新)
 function commitView(kind: string, data: GraphData, opts: ViewOpts): void {
   dispatch({ type: "SET_VIEW", view: kind });
-  const camera = opts.camera || (opts.preserveCamera ? undefined : DEFAULT_CAMERA[kind]);
+  const camera = resolveViewCamera(kind, opts);
   if (camera) {
     dispatch({ type: "SET_CAMERA", camera });
     data = { ...data, camera };
@@ -195,7 +201,6 @@ export function renderRipple(detail: any, hops?: number | string, opts?: ViewOpt
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   dispatch({ type: "SET_RIPPLE_CENTER", id: center });
   dispatch({ type: "SET_EXPAND", value: expandHops });
-  dispatch({ type: "SET_VIEW", view: "ripple" });
   const ids: Record<string, boolean> = { [center]: true };
   const nodes: GraphNode[] = [];
   const edges: any[] = [];
@@ -256,7 +261,6 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
   const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   dispatch({ type: "SET_AUTHOR", id: author.id });
-  dispatch({ type: "SET_VIEW", view: "author" });
   const nodes: GraphNode[] = [author];
   const edges: any[] = [];
   getState().fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id).forEach((w) => {
@@ -278,7 +282,6 @@ export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promi
     const edges = result.edges.map((e: any) => ({
       source: e.source, target: e.target, type: "echo", evidence: e.evidence, note: e.note,
     }));
-    dispatch({ type: "SET_VIEW", view: "path" });
     commitView("path", { nodes, edges, pathOrder: result.nodes }, opts || {});
     syncUrl({
       view: "path", from: fromId, to: toId,

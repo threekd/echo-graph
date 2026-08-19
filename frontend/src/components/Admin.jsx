@@ -34,9 +34,9 @@ const COLS = {
 // 表单字段配置
 const FIELDS = {
   authors: [
-    { key: "originalName", label: "原文名(必填)", required: true },
+    { key: "originalName", label: "原文名", required: true },
     { key: "nationality", label: "国籍", type: "countryPicker" },
-    { key: "Name_CN", label: "中文名" },
+    { key: "Name_CN", label: "中文名", required: true },
     { key: "Name_EN", label: "英文名" },
     { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
     { key: "deathYear", label: "去世年份", type: "number", min: -9999, max: 9999 },
@@ -44,8 +44,8 @@ const FIELDS = {
   ],
   works: [
     { key: "language", label: "原著语言", required: true, type: "languagePicker" },
-    { key: "originalTitle", label: "原著标题(必填)", required: true },
-    { key: "Title_CN", label: "中文名" },
+    { key: "originalTitle", label: "原著标题", required: true },
+    { key: "Title_CN", label: "中文名", required: true },
     { key: "Title_EN", label: "英文名" },
     { key: "Title_Other", label: "其他标题" },
     { key: "Author", label: "作者", type: "authorPicker" },
@@ -57,7 +57,7 @@ const FIELDS = {
   edges: [
     { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
     { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
-    { key: "evidence", label: "原文片段(必填)", required: true, type: "textarea" },
+    { key: "evidence", label: "原文片段", required: true, type: "textarea" },
     { key: "evidenceSource", label: "出处" },
     { key: "note", label: "备注" },
     { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
@@ -689,7 +689,7 @@ export default function Admin() {
                 if (f.type === "workPicker") {
                   return (
                     <label key={f.key}>
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <WorkPicker
                         value={form[f.key] || ""}
                         onChange={(v) => setForm({ ...form, [f.key]: v })}
@@ -702,7 +702,7 @@ export default function Admin() {
                 if (f.type === "authorPicker") {
                   return (
                     <label key={f.key}>
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <AuthorPicker
                         value={form[f.key] || ""}
                         onChange={(v) => setForm({ ...form, [f.key]: v })}
@@ -715,7 +715,7 @@ export default function Admin() {
                 if (f.type === "languagePicker") {
                   return (
                     <label key={f.key}>
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <CodePicker
                         value={form[f.key] || ""}
                         onChange={(v) => setForm({ ...form, [f.key]: v })}
@@ -730,7 +730,7 @@ export default function Admin() {
                 if (f.type === "countryPicker") {
                   return (
                     <label key={f.key}>
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <CodePicker
                         value={form[f.key] || ""}
                         onChange={(v) => setForm({ ...form, [f.key]: v })}
@@ -745,7 +745,7 @@ export default function Admin() {
                 if (f.type === "textarea") {
                   return (
                     <label key={f.key} className="full">
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <textarea
                         value={form[f.key] || ""}
                         onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
@@ -756,7 +756,7 @@ export default function Admin() {
                 if (f.type === "select") {
                   return (
                     <label key={f.key}>
-                      <span>{f.label}</span>
+                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <select
                         value={form[f.key] || ""}
                         onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
@@ -769,7 +769,7 @@ export default function Admin() {
                 }
                 return (
                   <label key={f.key}>
-                    <span>{f.label}</span>
+                    <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                     <input
                       type={f.type === "number" ? "number" : "text"}
                       min={f.min}

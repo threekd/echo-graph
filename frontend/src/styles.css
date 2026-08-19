@@ -669,6 +669,10 @@ button.ghost { color: var(--muted); }
   font-size: 12px;
   color: var(--muted);
 }
+#admin-form .req {
+  color: #ff6b6b;
+  margin-left: 2px;
+}
 #admin-form input, #admin-form select, #admin-form textarea {
   padding: 7px 9px;
   border-radius: 8px;

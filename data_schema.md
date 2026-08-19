@@ -23,11 +23,11 @@
 | `Title_CN` | String | 是 | 中文版标题 |
 | `Title_EN` | String | 否 | 英文版标题 |
 | `Title_Other` | String | 否 | 其他可能的标题 |
-| `Author` | String | 否 | 作者，（多人用逗号","隔开） |
+| `Author` | String | 否 | 作者，可选择多人 |
 | `publicationYear` | Integer | 否 | 出版年份 |
 | `creationYear` | Integer | 否 | 创作年份 |
-| `genre` | String | 否 | 体裁，枚举:(Fiction / Non-fiction/ Poetry / Drama) |
-| `reviewStatus` | String | 否 | 审核状态，枚举:`draft` / `reviewed` / `rejected`，默认 `draft` |
+| `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
+| `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
@@ -41,9 +41,9 @@
 | `Name_CN` | String | 是 | 中文名 |
 | `Name_EN` | String | 否 | 英文名 |
 | `nationality` | String | 否 | 国籍(ISO 3166-1 alpha-2 大写代码,如 `CN`、`US`;留空表示无/未知) |
-| `birthYear` | Integer | 否 | 出生年份 |
-| `deathYear` | Integer | 否 | 去世年份 |
-| `reviewStatus` | String | 否 | 审核状态，枚举:`draft` / `reviewed` / `rejected`，默认 `draft` |
+| `birthYear` | Integer | 否 | 出生年份(取值 -9999 ~ 9999) |
+| `deathYear` | Integer | 否 | 去世年份(取值 -9999 ~ 9999) |
+| `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
@@ -65,10 +65,10 @@
 | `id` | UUID | 是 | 唯一标识,新增时后端自动生成 UUID v7 |
 | `source_work_id` | String | 是 | 当前作品(引用 Work.id) |
 | `target_work_id` | String | 是 | 被提及作品(引用 Work.id) |
-| `evidence` | String | 是 | 摘抄文本,即正文某片段出现另一本书的名称 |
+| `evidence` | String | 是 | 原文片段(摘抄文本),即正文某片段出现另一本书的名称 |
 | `evidenceSource` | String | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | String | 否 | 备注或补充说明 |
-| `reviewStatus` | String | 是 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
+| `reviewStatus` | String | 否 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |

@@ -339,9 +339,7 @@ function updateEdgeLines(): void {
 // =============================== 布局 ===============================
 
 function layoutFor(kind: string, data: GraphData): Record<string, THREE.Vector3> {
-  if (kind === "ripple") return rippleLayout(data);
   if (kind === "path") return pathLayout(data);
-  if (kind === "author") return authorLayout(data);
   return {};
 }
 
@@ -400,85 +398,6 @@ function forceLayoutMainThread(
   }
 
   tick();
-}
-
-function rippleLayout(data: GraphData): Record<string, THREE.Vector3> {
-  const positions: Record<string, THREE.Vector3> = {};
-  const centerId = data.centerId as string;
-  const workNodes = data.nodes.filter(function (n) { return n.type === "work"; });
-
-  positions[centerId] = new THREE.Vector3(0, 0, 0);
-  const R = 300;
-  // 有涟漪连接的节点才排到涟漪球面;作者名下的额外作品(无链接)留在作者周围形成星云
-  const echoIds: Record<string, boolean> = {};
-  echoIds[centerId] = true;
-  data.edges.forEach(function (e) {
-    if (e.type !== "echo") return;
-    echoIds[e.source] = true;
-    echoIds[e.target] = true;
-  });
-  // 中点 phi 分布:避免节点落在极点,小数量时也不会排成一条线
-  const neighbors = workNodes.filter(function (n) { return n.id !== centerId && echoIds[n.id]; });
-  neighbors.forEach(function (n, i) {
-    const phi = Math.acos(1 - 2 * (i + 0.5) / Math.max(neighbors.length, 1));
-    const theta = i * 2.399963;
-    positions[n.id] = new THREE.Vector3(
-      R * Math.sin(phi) * Math.cos(theta),
-      R * Math.cos(phi),
-      R * Math.sin(phi) * Math.sin(theta)
-    );
-  });
-  // 作者星靠近其作品
-  data.edges.forEach(function (e) {
-    if (e.type !== "authored") return;
-    const wpos = positions[e.source];
-    if (wpos && !positions[e.target]) {
-      if (wpos.length() < 1) {
-        positions[e.target] = new THREE.Vector3(0, -110, 0);
-        return;
-      }
-      // 作者放到自己作品的外侧(半径略大于作品轨道),绝不会夹在两部作品之间
-      const dir = wpos.clone().normalize();
-      const perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-      if (perp.lengthSq() < 0.0001) perp.set(1, 0, 0);
-      perp.normalize();
-      positions[e.target] = dir
-        .multiplyScalar(345)
-        .add(perp.multiplyScalar(35))
-        .add(new THREE.Vector3(0, 25, 0));
-    }
-  });
-  // 额外作品:围绕各自作者形成小球状星云(位置随机,隐约环绕)
-  workNodes.forEach(function (n) {
-    if (n.id === centerId || echoIds[n.id] || positions[n.id]) return;
-    const apos = positions[n.author_id];
-    if (!apos) return;
-    const r = 110 + Math.random() * 70;
-    const u = Math.random() * 2 - 1;
-    const th = Math.random() * Math.PI * 2;
-    const s = Math.sqrt(Math.max(0, 1 - u * u));
-    positions[n.id] = new THREE.Vector3(
-      apos.x + r * s * Math.cos(th),
-      apos.y + r * u,
-      apos.z + r * s * Math.sin(th)
-    );
-  });
-  return positions;
-}
-
-function authorLayout(data: GraphData): Record<string, THREE.Vector3> {
-  const positions: Record<string, THREE.Vector3> = {};
-  const authorNode = data.nodes.filter(function (n) { return n.type === "author"; })[0];
-  const works = data.nodes.filter(function (n) { return n.type === "work"; });
-  if (authorNode) positions[authorNode.id] = new THREE.Vector3(0, 0, 0);
-  const R = 320;
-  works.forEach(function (w, i) {
-    const y = 1 - (i / Math.max(works.length - 1, 1)) * 2;
-    const rr = Math.sqrt(Math.max(0, 1 - y * y));
-    const th = i * 2.399963;
-    positions[w.id] = new THREE.Vector3(R * rr * Math.cos(th), R * y, R * rr * Math.sin(th));
-  });
-  return positions;
 }
 
 function pathLayout(data: GraphData): Record<string, THREE.Vector3> {
@@ -628,12 +547,22 @@ export function update(kind: string, data: GraphData): void {
     if (camera) applyCameraState(camera);
     lastInteraction = Date.now();
   };
+  // 主图谱 / 作者视图 / 涟漪视图共用力导向布局,观感一致;
+  // 涟漪视图额外把中心作品平移到原点,保留"中心-扩散"语义
+  const forceKinds = kind === "main" || kind === "author" || kind === "ripple";
+  const anchorRipple = (pos: Record<string, THREE.Vector3>): Record<string, THREE.Vector3> => {
+    const c = kind === "ripple" ? pos[data.centerId as string] : undefined;
+    if (c) {
+      Object.keys(pos).forEach(function (id) { pos[id].sub(c); });
+    }
+    return pos;
+  };
   if (currentKind === kind) {
     // 同视图刷新:增量同步,保持相机与已有节点(涟漪扩散 / 过滤开关切换)
-    if (kind === "main") {
+    if (forceKinds) {
       forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
         if (token !== viewToken) return;
-        positions = pos;
+        positions = anchorRipple(pos);
         syncScene(data);
         currentKind = kind;
         finalize();
@@ -647,11 +576,11 @@ export function update(kind: string, data: GraphData): void {
     return;
   }
   clearScene();
-  if (kind === "main") {
-    // 分帧布局:大数据量时不阻塞主线程
+  if (forceKinds) {
+    // 主图谱与作者视图共用力导向布局(Worker 分帧),观感一致
     forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
       if (token !== viewToken) return; // 期间已切换视图,丢弃本次布局结果
-      positions = pos;
+      positions = anchorRipple(pos);
       buildScene(data);
       currentKind = kind;
       finalize();

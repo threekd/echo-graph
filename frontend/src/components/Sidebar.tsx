@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { search } from "../lib/api";
 import { buildWorkLookups, type WorkLookups } from "../lib/graphData";
 import {
-  renderMain, renderPath, selectNode, expandRippleDebounced, reRenderRipple, syncUrl, getShareHash,
+  renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl, getShareHash,
 } from "../lib/graph";
 
 export default function Sidebar() {
@@ -52,7 +52,10 @@ export default function Sidebar() {
   const onExpand = (hops: number) => {
     dispatch({ type: "SET_EXPAND", value: hops });
     if (expandTimer.current) clearTimeout(expandTimer.current);
-    expandTimer.current = setTimeout(() => expandRippleDebounced(hops), 400);
+    expandTimer.current = setTimeout(() => {
+      if (state.currentView === "author") expandAuthorDebounced(hops);
+      else expandRippleDebounced(hops);
+    }, 400);
   };
 
   // 起点/终点作品建议列表:按输入文本过滤,点选已存在作品(可自由输入,提交时校验)
@@ -75,6 +78,8 @@ export default function Sidebar() {
       renderMain({ preserveCamera: true }, null, overrides);
     } else if (state.currentView === "ripple") {
       reRenderRipple();
+    } else if (state.currentView === "author") {
+      reRenderAuthor(overrides);
     } else {
       syncUrl({
         view: state.currentView,
@@ -198,7 +203,7 @@ export default function Sidebar() {
             </div>
             <button id="btn-path" onClick={doPath}>寻找路径</button>
           </div>
-          <div id="expand-bar" style={{ display: state.currentView === "ripple" ? "flex" : "none" }}>
+          <div id="expand-bar" style={{ display: state.currentView === "ripple" || state.currentView === "author" ? "flex" : "none" }}>
             <span className="expand-label">扩散范围</span>
             <input
               type="range" id="expand-range" min="1" max="8" step="1" value={state.expandHops}

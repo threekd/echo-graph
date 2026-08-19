@@ -74,6 +74,23 @@ export function filterIslands(data: GraphData): GraphData {
   };
 }
 
+// 作者视图的孤岛过滤:隐藏无 ECHO 提及关系的作品,但始终保留中心作者节点
+export function filterAuthorIslands(data: GraphData): GraphData {
+  const deg: Record<string, number> = {};
+  data.edges.forEach((e) => {
+    if (e.type !== "echo") return;
+    deg[e.source] = (deg[e.source] || 0) + 1;
+    deg[e.target] = (deg[e.target] || 0) + 1;
+  });
+  const nodes = data.nodes.filter((n) => n.type === "author" || (n.type === "work" && (deg[n.id] || 0) > 0));
+  const ids: Record<string, boolean> = {};
+  nodes.forEach((n) => { ids[n.id] = true; });
+  return {
+    nodes,
+    edges: data.edges.filter((e) => ids[e.source] && ids[e.target]),
+  };
+}
+
 export function filterAuthorsWith(data: GraphData, showAuthors: boolean): GraphData {
   if (showAuthors) return data;
   const ids: Record<string, boolean> = {};

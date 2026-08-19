@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildWorkLookups,
   filterAuthorsWith,
+  filterAuthorIslands,
   filterIslands,
   filterSingleWorkAuthors,
   isAnonymousAuthor,
@@ -57,6 +58,29 @@ describe("filterIslands", () => {
     expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w2"]);
     expect(out.edges.map((e) => `${e.source}->${e.target}`).sort())
       .toEqual(["w1->a1", "w1->w2", "w2->a1"]);
+  });
+});
+
+describe("filterAuthorIslands", () => {
+  const data = {
+    nodes: [
+      node("a1", "author"),
+      node("w1", "work", { author_id: "a1" }), // 有 ECHO 提及关系
+      node("w2", "work", { author_id: "a1" }), // 孤岛作品
+      node("w3", "work", { author_id: "a2" }), // 有 ECHO 提及关系
+    ],
+    edges: [
+      { source: "w1", target: "w3", type: "echo" },
+      { source: "w1", target: "a1", type: "authored" },
+      { source: "w2", target: "a1", type: "authored" },
+    ],
+  };
+
+  it("隐藏无提及关系的孤岛作品,始终保留中心作者节点", () => {
+    const out = filterAuthorIslands(data);
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w3"]);
+    expect(out.edges.some((e) => e.source === "w1" && e.target === "a1")).toBe(true);
+    expect(out.edges.some((e) => e.source === "w2" && e.target === "a1")).toBe(false);
   });
 });
 

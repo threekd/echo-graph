@@ -49,6 +49,7 @@ function AppContent() {
     const flags = {
       hideIslands: parts.islands === "1" || location.search.indexOf("hideislands") !== -1,
       showAuthors: parts.authors !== "0",
+      fullData: data, // 首载深链:显式传入刚加载的全量图,避免 state 尚未刷新
     };
     const st = stateRef.current!.state;
     // 同步过滤状态到 React store(渲染函数同时接收显式 flags,不依赖同步生效)
@@ -66,16 +67,18 @@ function AppContent() {
           workDetail(id).then((d) => {
             renderRipple(d, hops, flags);
             dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-            if (hops > 1) expandRippleDebounced(hops);
+            if (hops > 1) expandRippleDebounced(hops, id, data);
           }).catch(() => dispatch({ type: "SET_TOAST", msg: "加载作品详情失败" }));
         } else {
           renderAuthorView(node, flags);
         }
       }
     } else if (v.indexOf("author:") === 0) {
-      const id = v.slice(7);
+      const seg = v.slice(7).split(":");
+      const id = seg[0];
+      const hops = parseInt(seg[1], 10) || 1;
       const node = fullData.nodes.find((n) => n.id === id);
-      if (node) renderAuthorView(node, flags);
+      if (node) renderAuthorView(node, { ...flags, hops });
     } else if (v.indexOf("path:") === 0) {
       const seg = v.slice(5).split(",");
       renderPath(seg[0], seg[1], flags);

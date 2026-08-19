@@ -37,9 +37,8 @@ def _node_props(row: BaseModel, now: str) -> dict:
     return d
 
 
-def _echo_props(row: EchoRow, now: str, source_lang: Optional[str]) -> dict:
+def _echo_props(row: EchoRow, now: str) -> dict:
     d = row.model_dump(exclude={"source_work_id", "target_work_id", "deletedAt"})
-    d["evidenceLang"] = d.get("evidenceLang") or source_lang
     d["reviewStatus"] = d.get("reviewStatus") or "draft"
     d["createdAt"] = d.get("createdAt") or now
     d["updatedAt"] = now
@@ -61,8 +60,6 @@ def import_data(
     deleted_echoes: Optional[list[dict]] = None,
 ) -> None:
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-    work_lang = {w.id: w.language for w in works}
-
     with driver.session(database=database) as session:
         session.run("CREATE CONSTRAINT author_id IF NOT EXISTS FOR (a:Author) REQUIRE a.id IS UNIQUE").consume()
         session.run("CREATE CONSTRAINT work_id IF NOT EXISTS FOR (w:Work) REQUIRE w.id IS UNIQUE").consume()
@@ -114,7 +111,7 @@ def import_data(
                     {
                         "source": e.source_work_id,
                         "target": e.target_work_id,
-                        "props": _echo_props(e, now, work_lang.get(e.source_work_id)),
+                        "props": _echo_props(e, now),
                     }
                     for e in echoes
                 ]
@@ -126,6 +123,9 @@ def import_data(
                     "SET r += row.props",
                     {"rows": chunk},
                 )
+
+            # 清理历史遗留的 evidenceLang 属性(schema 1.1 起不再使用)
+            tx.run("MATCH ()-[r:ECHO]->() REMOVE r.evidenceLang")
 
             # 软删除同步:CSV 中 deletedAt 非空的行从图谱中移除(数据仍保留在 CSV 存档)
             if deleted_echoes:

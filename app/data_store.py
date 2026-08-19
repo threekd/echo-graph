@@ -26,7 +26,7 @@ WORK_HEADER = [
 ]
 EDGE_HEADER = [
     "id", "source_work_id", "target_work_id", "evidence", "evidenceSource",
-    "evidenceLang", "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
+    "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
 
 

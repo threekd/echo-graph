@@ -10,7 +10,7 @@
   - Work:`id`、`language`(ISO 639-1)、`originalTitle`、`Title_CN`、`Title_EN`、`publicationYear`、`creationYear`、时间戳
   - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
 - [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
-- [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`evidenceLang`、`note`、`reviewStatus` 与时间戳
+- [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`note`、`reviewStatus` 与时间戳
 - [x] 涟漪关系(边)增加 `id`(UUID v7):`edges.csv` 新增 `id` 列并回填存量 3 条;管理页新增/编辑/删除按 `id` 定位,与作者/作品一致
 - [x] 作者/作品增加 `reviewStatus` 审核状态(默认 `draft`),管理页作者/作品表格列由「删除时间」改为「审核状态」,编辑表单同步支持
 - [x] 图谱隐藏佚名(Anonymous)作者节点:每部佚名作品独立显示,不再经共享的"佚名"星连成中枢(数据层不变,搜索/详情保留)
@@ -34,7 +34,7 @@
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
 - [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j、导出 JSON(后端保留 CSV 导出接口,均需管理令牌);保存时自动版本快照(`data/versions/`)
 - [x] 软删除同步 Neo4j:导入时从图谱移除 `deletedAt` 非空的行,查询层统一过滤已删除项
-- [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft、evidenceLang 推导
+- [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`/`Author`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Work.Author → Author 匹配建 AUTHORED_BY;Echo 默认 draft
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 - [x] 涟漪视图:未勾选「隐藏孤岛星」时,展示视图中已出现作者名下的全部作品,额外作品围绕作者形成隐约星云(更小更暗、悬停显示标签);勾选后仅保留涟漪节点(即时重渲染,保持相机)

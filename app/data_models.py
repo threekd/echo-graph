@@ -20,8 +20,8 @@ class AuthorRow(BaseModel):
     Name_CN: str
     Name_EN: Optional[str] = None
     nationality: Optional[str] = None
-    birthYear: Optional[int] = None
-    deathYear: Optional[int] = None
+    birthYear: Optional[int] = Field(default=None, ge=-9999, le=9999)
+    deathYear: Optional[int] = Field(default=None, ge=-9999, le=9999)
     reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
@@ -97,7 +97,6 @@ class EchoRow(BaseModel):
     target_work_id: str = Field(min_length=1)
     evidence: str = Field(min_length=1)
     evidenceSource: Optional[str] = None
-    evidenceLang: Optional[str] = None
     note: Optional[str] = None
     reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
     createdAt: Optional[str] = None

@@ -678,6 +678,42 @@ button.ghost { color: var(--muted); }
   font-size: 12.5px;
 }
 #admin-form textarea { min-height: 90px; resize: none; overflow-y: auto; }
+#admin-form input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+#admin-form input[type="number"]::-webkit-outer-spin-button,
+#admin-form input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.author-picker .author-picker-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(138, 184, 255, 0.16);
+  border: 1px solid rgba(138, 184, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  color: #dce6ff;
+}
+.author-chip button {
+  background: none;
+  border: none;
+  padding: 0 0 0 2px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.author-chip button:hover { color: #ffb0b0; }
 
 .work-picker { position: relative; }
 .work-picker input { width: 100%; }

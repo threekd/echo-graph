@@ -67,7 +67,6 @@
 | `target_work_id` | String | 是 | 被提及作品(引用 Work.id) |
 | `evidence` | String | 是 | 摘抄文本,即正文某片段出现另一本书的名称 |
 | `evidenceSource` | String | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
-| `evidenceLang` | String | 否 | 摘抄原文语言(ISO 639-1,兜底 639-3) |
 | `note` | String | 否 | 备注或补充说明 |
 | `reviewStatus` | String | 是 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
 | `createdAt` | DateTime | 是 | 创建时间 |

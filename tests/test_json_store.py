@@ -35,7 +35,6 @@ def _chain_seed(n: int = 4) -> dict:
             "target": f"w{i + 1}",
             "evidence": "x",
             "evidenceSource": "",
-            "evidenceLang": "",
             "note": "",
             "reviewStatus": "draft",
         }

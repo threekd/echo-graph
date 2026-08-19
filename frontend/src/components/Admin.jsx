@@ -38,8 +38,8 @@ const FIELDS = {
     { key: "nationality", label: "国籍", type: "countryPicker" },
     { key: "Name_CN", label: "中文名" },
     { key: "Name_EN", label: "英文名" },
-    { key: "birthYear", label: "出生年份", type: "number" },
-    { key: "deathYear", label: "去世年份", type: "number" },
+    { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
+    { key: "deathYear", label: "去世年份", type: "number", min: -9999, max: 9999 },
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   works: [
@@ -48,7 +48,7 @@ const FIELDS = {
     { key: "Title_CN", label: "中文名" },
     { key: "Title_EN", label: "英文名" },
     { key: "Title_Other", label: "其他标题" },
-    { key: "Author", label: "作者(逗号分隔多人)" },
+    { key: "Author", label: "作者", type: "authorPicker" },
     { key: "publicationYear", label: "出版年份", type: "number" },
     { key: "creationYear", label: "创作年份", type: "number" },
     { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
@@ -57,9 +57,8 @@ const FIELDS = {
   edges: [
     { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
     { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
-    { key: "evidence", label: "摘抄(必填)", required: true, type: "textarea" },
+    { key: "evidence", label: "原文片段(必填)", required: true, type: "textarea" },
     { key: "evidenceSource", label: "出处" },
-    { key: "evidenceLang", label: "摘抄语言" },
     { key: "note", label: "备注" },
     { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
@@ -265,6 +264,138 @@ function CodePicker({ value, onChange, options, getLabel, placeholder, emptyWarn
   );
 }
 
+function authorLabelOf(a) {
+  const name = a.Name_CN || a.originalName || "";
+  return a.birthYear ? name + "-" + a.birthYear : name;
+}
+
+// 把逗号分隔的 Author 字符串解析为 [{ value: 原文名, label: 显示名 }]
+function parseAuthors(value, authorsList) {
+  return String(value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((name) => {
+      const a = authorsList.find((x) => x.originalName === name || x.Name_CN === name || x.Name_EN === name);
+      return a ? { value: a.originalName, label: authorLabelOf(a) } : { value: name, label: name };
+    });
+}
+
+// 作者多选选择器:从作者表筛选,可添加多个作者(存储为逗号分隔的原文名)
+function AuthorPicker({ value, onChange, authorsList, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [dir, setDir] = useState("down");
+  const [maxH, setMaxH] = useState(220);
+  const [selected, setSelected] = useState(() => parseAuthors(value, authorsList));
+  const wrapRef = useRef(null);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastValue.current) {
+      lastValue.current = value;
+      setSelected(parseAuthors(value, authorsList));
+    }
+  }, [value, authorsList]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? authorsList.filter((a) =>
+        (authorLabelOf(a) + " " + (a.originalName || "") + " " + (a.Name_EN || "")).toLowerCase().includes(q)
+      )
+    : authorsList;
+  const available = filtered.filter((a) => !selected.some((s) => s.value === a.originalName));
+
+  const commit = (next) => {
+    setSelected(next);
+    onChange(next.map((s) => s.value).join(", "));
+  };
+
+  const addAuthor = (a) => {
+    if (selected.some((s) => s.value === a.originalName)) return;
+    commit([...selected, { value: a.originalName, label: authorLabelOf(a) }]);
+    setQuery("");
+  };
+
+  const removeAuthor = (v) => commit(selected.filter((s) => s.value !== v));
+
+  // 按可用空间决定下拉展开方向与高度,避免溢出弹窗卡片产生滚动条
+  const openList = () => {
+    const el = wrapRef.current;
+    if (!el) {
+      setOpen(true);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const card = el.closest(".admin-modal-card");
+    const cardRect = card ? card.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const below = cardRect.bottom - rect.bottom;
+    const above = rect.top - cardRect.top;
+    const useUp = above > below;
+    setDir(useUp ? "up" : "down");
+    setMaxH(Math.max(110, Math.min(220, (useUp ? above : below) - 8)));
+    setOpen(true);
+  };
+
+  return (
+    <div className="work-picker author-picker" ref={wrapRef}>
+      {selected.length > 0 && (
+        <div className="author-picker-selected">
+          {selected.map((s) => (
+            <span key={s.value} className="author-chip">
+              {s.label}
+              <button type="button" title="移除" onClick={() => removeAuthor(s.value)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={openList}
+        onBlur={() => {
+          setQuery("");
+          setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Backspace" && !query && selected.length) removeAuthor(selected[selected.length - 1].value);
+          if (e.key === "Enter" && open && available.length) {
+            e.preventDefault();
+            addAuthor(available[0]);
+          }
+        }}
+      />
+      {open && available.length > 0 && (
+        <ul
+          className={"work-picker-results" + (dir === "up" ? " up" : "")}
+          style={{ display: "block", maxHeight: maxH }}
+        >
+          {available.map((a) => (
+            <li
+              key={a.id}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 先于 blur 触发,避免失焦关闭
+                addAuthor(a);
+              }}
+            >
+              {authorLabelOf(a)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && q && available.length === 0 && (
+        <div className="work-picker-warn">没有匹配的作者,只能选择已存在的作者</div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { state, dispatch } = useApp();
   const [kind, setKind] = useState("authors");
@@ -428,6 +559,13 @@ export default function Admin() {
         setFormError("请填写「" + f.label + "」");
         return;
       }
+      if (f.type === "number" && (f.min != null || f.max != null) && form[f.key] !== "" && form[f.key] != null) {
+        const n = Number(form[f.key]);
+        if (!Number.isInteger(n) || n < f.min || n > f.max) {
+          setFormError("「" + f.label + "」需为 " + f.min + "–" + f.max + " 之间的整数");
+          return;
+        }
+      }
     }
     setFormError("");
     const url = modal.mode === "edit"
@@ -452,6 +590,7 @@ export default function Admin() {
   };
 
   const worksList = data ? data.works || [] : [];
+  const authorsList = data ? data.authors || [] : [];
   const worksById = {};
   worksList.forEach((w) => { worksById[w.id] = w; });
 
@@ -560,6 +699,19 @@ export default function Admin() {
                     </label>
                   );
                 }
+                if (f.type === "authorPicker") {
+                  return (
+                    <label key={f.key}>
+                      <span>{f.label}</span>
+                      <AuthorPicker
+                        value={form[f.key] || ""}
+                        onChange={(v) => setForm({ ...form, [f.key]: v })}
+                        authorsList={authorsList}
+                        placeholder="输入筛选作者,可多选…"
+                      />
+                    </label>
+                  );
+                }
                 if (f.type === "languagePicker") {
                   return (
                     <label key={f.key}>
@@ -620,6 +772,9 @@ export default function Admin() {
                     <span>{f.label}</span>
                     <input
                       type={f.type === "number" ? "number" : "text"}
+                      min={f.min}
+                      max={f.max}
+                      step={f.type === "number" ? (f.step != null ? f.step : 1) : undefined}
                       value={form[f.key] ?? ""}
                       onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                     />

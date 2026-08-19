@@ -86,7 +86,6 @@ def _echo_edge(r: dict) -> dict:
         "type": "echo",
         "evidence": r.get("evidence"),
         "evidenceSource": r.get("evidenceSource"),
-        "evidenceLang": r.get("evidenceLang"),
         "note": r.get("note"),
         "reviewStatus": r.get("reviewStatus"),
     }
@@ -133,7 +132,6 @@ def _mention_row(prefix: str, e: dict, title: str, author: str) -> dict:
         f"{prefix}_author": author,
         "evidence": e.get("evidence"),
         "evidenceSource": e.get("evidenceSource"),
-        "evidenceLang": e.get("evidenceLang"),
         "note": e.get("note"),
         "reviewStatus": e.get("reviewStatus"),
     }
@@ -376,7 +374,7 @@ class Neo4jStore:
             WHERE w1.deletedAt IS NULL AND w2.deletedAt IS NULL AND r.deletedAt IS NULL
             RETURN w1.id AS source, w2.id AS target,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
-                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.note AS note,
                    r.reviewStatus AS reviewStatus
             """
         )
@@ -437,7 +435,7 @@ class Neo4jStore:
             "RETURN [x IN nodes(p) | x.id] AS node_ids, "
             "[rel IN relationships(p) | {source: startNode(rel).id, target: endNode(rel).id, "
             "evidence: rel.evidence, evidenceSource: rel.evidenceSource, "
-            "evidenceLang: rel.evidenceLang, note: rel.note, "
+            "note: rel.note, "
             "reviewStatus: rel.reviewStatus}] AS rels LIMIT 1"
         )
         rows = self._query(cypher, {"from": from_id, "to": to_id})
@@ -469,7 +467,7 @@ class Neo4jStore:
             WHERE i.deletedAt IS NULL AND r.deletedAt IS NULL AND ia.deletedAt IS NULL
             RETURN i.id AS source, i.Title_CN AS source_title, ia.Name_CN AS source_author,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
-                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.note AS note,
                    r.reviewStatus AS reviewStatus
             """,
             {"id": work_id},
@@ -481,7 +479,7 @@ class Neo4jStore:
             WHERE r.deletedAt IS NULL AND o.deletedAt IS NULL AND oa.deletedAt IS NULL
             RETURN o.id AS target, o.Title_CN AS target_title, oa.Name_CN AS target_author,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
-                   r.evidenceLang AS evidenceLang, r.note AS note,
+                   r.note AS note,
                    r.reviewStatus AS reviewStatus
             """,
             {"id": work_id},
@@ -525,7 +523,7 @@ class Neo4jStore:
             "WHERE a.id IN ids AND b.id IN ids "
             "AND a.deletedAt IS NULL AND b.deletedAt IS NULL AND r.deletedAt IS NULL "
             "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, "
-            "r.evidenceSource AS evidenceSource, r.evidenceLang AS evidenceLang, "
+            "r.evidenceSource AS evidenceSource, "
             "r.note AS note, r.reviewStatus AS reviewStatus",
             {"id": work_id},
         )

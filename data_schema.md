@@ -23,7 +23,7 @@
 | `Title_CN` | String | 是 | 中文版标题 |
 | `Title_EN` | String | 否 | 英文版标题 |
 | `Title_Other` | String | 否 | 其他可能的标题 |
-| `Author` | String | 否 | 作者，可选择多人 |
+| `author_id` | String | 否 | 作者 id(UUID,关联 `Author.id`),多人用逗号 `,` 分隔;展示名由作者表提供,改名不破坏关联 |
 | `publicationYear` | Integer | 否 | 出版年份 |
 | `creationYear` | Integer | 否 | 创作年份 |
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |

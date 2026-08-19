@@ -16,8 +16,8 @@ def _fixture() -> tuple[list[dict], list[dict], list[dict]]:
     a1, w1, w2, e1 = _u(), _u(), _u(), _u()
     authors = [{"id": a1, "originalName": "Author A", "Name_CN": "作家甲"}]
     works = [
-        {"id": w1, "language": "en", "originalTitle": "Book One", "Title_CN": "书一", "Author": "Author A"},
-        {"id": w2, "language": "fr", "originalTitle": "Livre Deux", "Title_CN": "书二", "Author": "Author A"},
+        {"id": w1, "language": "en", "originalTitle": "Book One", "Title_CN": "书一", "author_id": a1},
+        {"id": w2, "language": "fr", "originalTitle": "Livre Deux", "Title_CN": "书二", "author_id": a1},
     ]
     edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "mentions"}]
     return authors, works, edges
@@ -62,10 +62,18 @@ class ParseRowsTest(unittest.TestCase):
 
     def test_unknown_author_rejected(self) -> None:
         a, w, e = _fixture()
-        w[0]["Author"] = "Nobody"
+        w[0]["author_id"] = _u()  # 不存在的作者 id
         with self.assertRaises(ValueError) as ctx:
             parse_rows(a, w, e)
         self.assertIn("未在作者表中找到", str(ctx.exception))
+
+    def test_multi_author_ids_accepted(self) -> None:
+        a, w, e = _fixture()
+        a2 = _u()
+        a.append({"id": a2, "originalName": "Author B", "Name_CN": "作家乙"})
+        w[0]["author_id"] = f"{a[0]['id']},{a2}"
+        am, wm, em, work_authors = parse_rows(a, w, e)
+        self.assertEqual(sorted(work_authors[w[0]["id"]]), sorted([a[0]["id"], a2]))
 
     def test_bad_genre_rejected(self) -> None:
         a, w, e = _fixture()

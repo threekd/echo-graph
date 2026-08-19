@@ -60,7 +60,7 @@ export function WorkPicker({
   const q = query.trim().toLowerCase();
   const filtered = q
     ? worksList.filter((w) =>
-        [w.Title_CN, w.originalTitle, w.Title_EN, w.Author].filter(Boolean).join(" ").toLowerCase().includes(q)
+        [w.Title_CN, w.originalTitle, w.Title_EN].filter(Boolean).join(" ").toLowerCase().includes(q)
       )
     : worksList;
 
@@ -226,20 +226,20 @@ export function CodePicker({
   );
 }
 
-function authorLabelOf(a: any): string {
+export function authorLabelOf(a: any): string {
   const name = a.Name_CN || a.originalName || "";
   return a.birthYear ? name + "-" + a.birthYear : name;
 }
 
-// 把逗号分隔的 Author 字符串解析为 [{ value: 原文名, label: 显示名 }]
-function parseAuthors(value: string, authorsList: any[]): { value: string; label: string }[] {
+// 把逗号分隔的 author_id 字符串解析为 [{ value: id, label: 显示名 }]
+function parseAuthorIds(value: string, authorsList: any[]): { value: string; label: string }[] {
   return String(value || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((name) => {
-      const a = authorsList.find((x) => x.originalName === name || x.Name_CN === name || x.Name_EN === name);
-      return a ? { value: a.originalName, label: authorLabelOf(a) } : { value: name, label: name };
+    .map((id) => {
+      const a = authorsList.find((x) => x.id === id);
+      return a ? { value: a.id, label: authorLabelOf(a) } : { value: id, label: id };
     });
 }
 
@@ -259,14 +259,14 @@ export function AuthorPicker({
   const [open, setOpen] = useState(false);
   const [dir, setDir] = useState("down");
   const [maxH, setMaxH] = useState(220);
-  const [selected, setSelected] = useState(() => parseAuthors(value, authorsList));
+  const [selected, setSelected] = useState(() => parseAuthorIds(value, authorsList));
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastValue = useRef(value);
 
   useEffect(() => {
     if (value !== lastValue.current) {
       lastValue.current = value;
-      setSelected(parseAuthors(value, authorsList));
+      setSelected(parseAuthorIds(value, authorsList));
     }
   }, [value, authorsList]);
 
@@ -276,7 +276,7 @@ export function AuthorPicker({
         (authorLabelOf(a) + " " + (a.originalName || "") + " " + (a.Name_EN || "")).toLowerCase().includes(q)
       )
     : authorsList;
-  const available = filtered.filter((a) => !selected.some((s) => s.value === a.originalName));
+  const available = filtered.filter((a) => !selected.some((s) => s.value === a.id));
 
   const commit = (next: { value: string; label: string }[]) => {
     setSelected(next);
@@ -284,8 +284,8 @@ export function AuthorPicker({
   };
 
   const addAuthor = (a: any) => {
-    if (selected.some((s) => s.value === a.originalName)) return;
-    commit([...selected, { value: a.originalName, label: authorLabelOf(a) }]);
+    if (selected.some((s) => s.value === a.id)) return;
+    commit([...selected, { value: a.id, label: authorLabelOf(a) }]);
     setQuery("");
   };
 

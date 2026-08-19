@@ -111,7 +111,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`;前端「数据管理」页顶部输入令牌并保存后即可操作。
 
-真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者匹配、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
+真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 

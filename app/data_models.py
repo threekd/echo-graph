@@ -80,7 +80,7 @@ class WorkRow(BaseModel):
     Title_CN: str = Field(min_length=1)
     Title_EN: str | None = None
     Title_Other: str | None = None
-    Author: str | None = None  # 多人用逗号","隔开
+    author_id: str | None = None  # 作者 id(UUID),多人用逗号","隔开;按 id 关联,改名不再破坏
     publicationYear: int | None = None
     creationYear: int | None = None
     genre: Literal["Fiction", "Non-fiction", "Poetry", "Drama"] | None = None
@@ -169,12 +169,7 @@ def parse_rows(
     work_models: list[WorkRow] = check(works, WorkRow, "作品")
     echo_models: list[EchoRow] = check(echoes, EchoRow, "提及")
 
-    author_by_name: dict[str, str] = {}
-    for a in author_models:
-        for key in (a.originalName, a.Name_CN, a.Name_EN):
-            if key:
-                author_by_name.setdefault(key.strip().lower(), a.id)
-
+    author_ids: set[str] = {a.id for a in author_models}
     work_ids: set[str] = {w.id for w in work_models}
 
     def dup(items: list[str], label: str) -> None:
@@ -194,14 +189,13 @@ def parse_rows(
 
     work_authors: dict[str, list[str]] = {}
     for w in work_models:
-        if w.Author:
-            for raw in w.Author.split(","):
-                name = raw.strip()
-                if not name:
-                    continue
-                aid = author_by_name.get(name.lower())
+        if w.author_id:
+            for raw in w.author_id.split(","):
+                aid = raw.strip()
                 if not aid:
-                    errors.append(f"作品 {w.id} 的作者 {name!r} 未在作者表中找到")
+                    continue
+                if aid not in author_ids:
+                    errors.append(f"作品 {w.id} 的作者 id {aid} 未在作者表中找到")
                     continue
                 work_authors.setdefault(w.id, []).append(aid)
 

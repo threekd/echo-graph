@@ -31,7 +31,8 @@ def _chunks(rows: list, size: int = CHUNK):
 
 
 def _node_props(row: BaseModel, now: str) -> dict:
-    d = row.model_dump(exclude={"id", "slug", "deletedAt"})
+    # author_id 仅用于 CSV 层关联,图谱中由 AUTHORED_BY 关系表达,不写为节点属性
+    d = row.model_dump(exclude={"id", "slug", "deletedAt", "author_id"})
     d["createdAt"] = d.get("createdAt") or now
     if not d.get("updatedAt"):
         # 仅在数据自带更新时间时同步,避免每次导入把全库 updatedAt 刷成导入时间
@@ -98,7 +99,7 @@ def import_data(
                     "MERGE (w:Work {id: row.id}) "
                     "ON CREATE SET w.updatedAt = $now "
                     "SET w += row.props "
-                    "REMOVE w.slug",
+                    "REMOVE w.slug, w.Author",
                     {"rows": chunk, "now": now},
                 )
 

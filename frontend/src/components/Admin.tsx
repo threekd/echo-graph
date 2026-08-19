@@ -7,6 +7,7 @@ import {
   countryLabel,
   LANG_OPTIONS,
   langLabel,
+  authorLabelOf,
   workLabel,
   WorkPicker,
 } from "./admin/pickers";
@@ -29,7 +30,7 @@ const COLS: Record<Kind, { key: string; label: string }[]> = {
   works: [
     { key: "Title_CN", label: "中文名" },
     { key: "originalTitle", label: "原著标题" },
-    { key: "Author", label: "作者" },
+    { key: "author_id", label: "作者" },
     { key: "publicationYear", label: "年份" },
     { key: "reviewStatus", label: "审核状态" },
   ],
@@ -58,7 +59,7 @@ const FIELDS: Record<Kind, any[]> = {
     { key: "Title_CN", label: "中文名", required: true },
     { key: "Title_EN", label: "英文名" },
     { key: "Title_Other", label: "其他标题" },
-    { key: "Author", label: "作者", type: "authorPicker" },
+    { key: "author_id", label: "作者", type: "authorPicker" },
     { key: "publicationYear", label: "出版年份", type: "number" },
     { key: "creationYear", label: "创作年份", type: "number" },
     { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
@@ -321,7 +322,9 @@ export default function Admin() {
   const worksList = data ? data.works || [] : [];
   const authorsList = data ? data.authors || [] : [];
   const worksById: Record<string, any> = {};
+  const authorsById: Record<string, any> = {};
   worksList.forEach((w: any) => { worksById[w.id] = w; });
+  authorsList.forEach((a: any) => { authorsById[a.id] = a; });
 
   return (
     <div id="admin-overlay">
@@ -400,6 +403,15 @@ export default function Admin() {
                       if (kind === "edges" && (c.key === "source_work_id" || c.key === "target_work_id")) {
                         const w = worksById[r[c.key]];
                         val = w ? workLabel(w) : String(val);
+                      } else if (kind === "works" && c.key === "author_id") {
+                        val = String(r.author_id || "")
+                          .split(",")
+                          .filter(Boolean)
+                          .map((id: string) => {
+                            const a = authorsById[id];
+                            return a ? authorLabelOf(a) : id;
+                          })
+                          .join("、");
                       }
                       return <td key={c.key}>{String(val)}</td>;
                     })}

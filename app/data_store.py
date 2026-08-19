@@ -20,7 +20,7 @@ AUTHOR_HEADER = [
 ]
 WORK_HEADER = [
     "id", "language", "originalTitle", "Title_CN", "Title_EN",
-    "Title_Other", "Author", "publicationYear", "creationYear", "genre", "reviewStatus",
+    "Title_Other", "author_id", "publicationYear", "creationYear", "genre", "reviewStatus",
     "createdAt", "updatedAt", "deletedAt",
 ]
 EDGE_HEADER = [

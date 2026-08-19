@@ -15,6 +15,6 @@ uv run python scripts/import_data.py --source csv --wipe --version 1.1   # 从 C
 ```
 
 `--wipe` 会全量重建;不加则幂等更新(合并已有实体)。`deletedAt` 非空的行保留在 CSV 存档,但不会进入图谱。
-校验失败(引用不存在、重复 id、作者未匹配、genre 越界等)会整批拒绝并打印原因。
+校验失败(引用不存在、重复 id、作者 id 未匹配、genre 越界等)会整批拒绝并打印原因。
 
-列名与 `data_schema.md` 一致:`id` 使用 UUID,新增作者/作品/涟漪时后端自动生成 UUID v7;`edges.csv` 的 `id` 列必填(手工在 CSV 里新增行时需自行补齐 UUID,或通过管理页新增);`reviewStatus` 留空默认 `draft`。
+列名与 `data_schema.md` 一致:`id` 使用 UUID,新增作者/作品/涟漪时后端自动生成 UUID v7;`works.csv` 的 `author_id` 存作者 UUID(多人用逗号分隔),展示名由作者表提供;`edges.csv` 的 `id` 列必填(手工在 CSV 里新增行时需自行补齐 UUID,或通过管理页新增);`reviewStatus` 留空默认 `draft`。

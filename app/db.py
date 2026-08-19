@@ -13,7 +13,7 @@ import os
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -91,7 +91,7 @@ def _echo_edge(r: dict) -> dict:
     }
 
 
-def _authored_edge(source: str, target: Optional[str]) -> dict:
+def _authored_edge(source: str, target: str | None) -> dict:
     """作品归属边 (Work)-[:AUTHORED_BY]->(Author)。"""
     return {"source": source, "target": target, "type": "authored"}
 
@@ -157,22 +157,32 @@ class JsonStore:
         w = self.works.get(work_id)
         return w["Title_CN"] if w else work_id
 
-    def _author_name(self, author_id: Optional[str]) -> str:
+    def _author_name(self, author_id: str | None) -> str:
         a = self.authors.get(author_id or "")
         return a["Name_CN"] if a else ""
 
-    def graph(self) -> dict:
+    def graph(self, status: str | None = None) -> dict:
         nodes = []
-        for a in self.authors.values():
+        authors = [
+            a for a in self.authors.values()
+            if not status or (a.get("reviewStatus") or "draft") == status
+        ]
+        works = [
+            w for w in self.works.values()
+            if not status or (w.get("reviewStatus") or "draft") == status
+        ]
+        for a in authors:
             nodes.append(_author_node(a))
-        for w in self.works.values():
+        for w in works:
             props = dict(w)
             props["author_name"] = self._author_name(w.get("author_id"))
             nodes.append(_work_node(props))
         edges = []
         for e in self.edges:
+            if status and (e.get("reviewStatus") or "draft") != status:
+                continue
             edges.append(_echo_edge(e))
-        for w in self.works.values():
+        for w in works:
             edges.append(_authored_edge(w["id"], w.get("author_id")))
         return {"nodes": nodes, "edges": edges}
 
@@ -181,12 +191,13 @@ class JsonStore:
         hits = []
         for a in self.authors.values():
             if ql in a["Name_CN"].lower() or ql in a["Name_EN"].lower() or ql in a["originalName"].lower():
+                sub_parts = [a["originalName"], a.get("nationality") or ""]
                 hits.append(
                     {
                         "id": a["id"],
                         "type": "author",
                         "label": a["Name_CN"],
-                        "sub": f"{a['originalName']} · {a['nationality']}",
+                        "sub": " · ".join(p for p in sub_parts if p),
                     }
                 )
         for w in self.works.values():
@@ -202,7 +213,7 @@ class JsonStore:
                 )
         return hits[:limit]
 
-    def path(self, from_id: str, to_id: str, max_hops: int) -> Optional[dict]:
+    def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
         if from_id not in self.works or to_id not in self.works:
             return None
         if from_id == to_id:
@@ -241,7 +252,7 @@ class JsonStore:
         edges.reverse()
         return {"nodes": nodes, "edges": edges}
 
-    def work_detail(self, work_id: str) -> Optional[dict]:
+    def work_detail(self, work_id: str) -> dict | None:
         w = self.works.get(work_id)
         if not w:
             return None
@@ -271,7 +282,7 @@ class JsonStore:
             ],
         }
 
-    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+    def expansion(self, work_id: str, hops: int) -> dict | None:
         """以 work_id 为中心,沿 ECHO 关系(无向)向外扩散 hops 级,返回子图。"""
         if work_id not in self.works:
             return None
@@ -298,12 +309,24 @@ class JsonStore:
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
 
     def stats(self) -> dict:
+        def status_counts(items: list[dict]) -> dict[str, int]:
+            counts = {"draft": 0, "reviewed": 0, "rejected": 0}
+            for it in items:
+                key = it.get("reviewStatus") or "draft"
+                counts[key] = counts.get(key, 0) + 1
+            return counts
+
         return {
             "authors": len(self.authors),
             "works": len(self.works),
             "echo_edges": len(self.edges),
             "store": self.name,
             "demo": bool(self.seed.get("meta", {}).get("demo", False)),
+            "reviewStatus": {
+                "authors": status_counts(list(self.authors.values())),
+                "works": status_counts(list(self.works.values())),
+                "edges": status_counts(self.edges),
+            },
         }
 
 
@@ -312,7 +335,7 @@ class Neo4jStore:
 
     name = "neo4j"
 
-    def __init__(self, uri: str, username: str, password: str, database: Optional[str] = None) -> None:
+    def __init__(self, uri: str, username: str, password: str, database: str | None = None) -> None:
         from neo4j import GraphDatabase
 
         self._driver = GraphDatabase.driver(
@@ -332,33 +355,42 @@ class Neo4jStore:
     def close(self) -> None:
         self._driver.close()
 
-    def _query(self, cypher: str, params: Optional[dict] = None) -> list[dict]:
+    def _query(self, cypher: str, params: dict | None = None) -> list[dict]:
         with self._driver.session(database=self._database) as session:
             result = session.run(cypher, params or {})
             return [dict(r) for r in result]
 
-    def graph(self) -> dict:
+    def graph(self, status: str | None = None) -> dict:
+        params: dict = {}
+        if status:
+            params["status"] = status
+
+        author_q = (
+            "MATCH (a:Author) WHERE a.deletedAt IS NULL"
+        )
+        if status:
+            author_q += " AND a.reviewStatus = $status"
+        author_q += " RETURN properties(a) AS props"
         author_rows = self._query(
-            """
-            MATCH (a:Author)
-            WHERE a.deletedAt IS NULL
-            RETURN properties(a) AS props
-            """
+            author_q,
+            params,
         )
         nodes = []
         for row in author_rows:
             nodes.append(_author_node(row["props"]))
 
+        work_q = "MATCH (w:Work) WHERE w.deletedAt IS NULL"
+        if status:
+            work_q += " AND w.reviewStatus = $status"
+        work_q += " OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author) WHERE a.deletedAt IS NULL"
+        work_q += (
+            " RETURN properties(w) AS props,"
+            " collect(DISTINCT a.Name_CN) AS author_names,"
+            " collect(DISTINCT a.id) AS author_ids"
+        )
         node_rows = self._query(
-            """
-            MATCH (w:Work)
-            WHERE w.deletedAt IS NULL
-            OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author)
-            WHERE a.deletedAt IS NULL
-            RETURN properties(w) AS props,
-                   collect(DISTINCT a.Name_CN) AS author_names,
-                   collect(DISTINCT a.id) AS author_ids
-            """
+            work_q,
+            params,
         )
         for row in node_rows:
             row["props"] = dict(row["props"])
@@ -368,23 +400,33 @@ class Neo4jStore:
             row["props"]["author_id"] = ids[0] if ids else None
         nodes.extend(_work_node(row["props"]) for row in node_rows)
 
-        echo_rows = self._query(
+        echo_q = (
             """
             MATCH (w1:Work)-[r:ECHO]->(w2:Work)
             WHERE w1.deletedAt IS NULL AND w2.deletedAt IS NULL AND r.deletedAt IS NULL
-            RETURN w1.id AS source, w2.id AS target,
-                   r.evidence AS evidence, r.evidenceSource AS evidenceSource,
-                   r.note AS note,
-                   r.reviewStatus AS reviewStatus
             """
         )
+        if status:
+            echo_q += " AND r.reviewStatus = $status AND w1.reviewStatus = $status AND w2.reviewStatus = $status"
+        echo_q += (
+            " RETURN w1.id AS source, w2.id AS target,"
+            " r.evidence AS evidence, r.evidenceSource AS evidenceSource,"
+            " r.note AS note, r.reviewStatus AS reviewStatus"
+        )
+        echo_rows = self._query(echo_q, params)
         edges = [_echo_edge(r) for r in echo_rows]
-        authored_rows = self._query(
+        authored_q = (
             """
             MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)
             WHERE w.deletedAt IS NULL AND a.deletedAt IS NULL
-            RETURN w.id AS source, a.id AS target
             """
+        )
+        if status:
+            authored_q += " AND w.reviewStatus = $status AND a.reviewStatus = $status"
+        authored_q += " RETURN w.id AS source, a.id AS target"
+        authored_rows = self._query(
+            authored_q,
+            params,
         )
         edges += [_authored_edge(r["source"], r["target"]) for r in authored_rows]
         return {"nodes": nodes, "edges": edges}
@@ -404,27 +446,29 @@ class Neo4jStore:
         for r in rows:
             props = dict(r["n"])
             if r["label"] == "Author":
+                sub_parts = [props["originalName"], props.get("nationality") or ""]
                 hits.append(
                     {
                         "id": props["id"],
                         "type": "author",
                         "label": props["Name_CN"],
-                        "sub": f"{props['originalName']} · {props['nationality']}",
+                        "sub": " · ".join(p for p in sub_parts if p),
                     }
                 )
             else:
                 year = props.get("publicationYear") or props.get("creationYear")
+                sub_parts = [props.get("Title_EN") or "", str(year) if year else ""]
                 hits.append(
                     {
                         "id": props["id"],
                         "type": "work",
                         "label": props["Title_CN"],
-                        "sub": f"{props['Title_EN']} · {year}",
+                        "sub": " · ".join(p for p in sub_parts if p),
                     }
                 )
         return hits[:limit]
 
-    def path(self, from_id: str, to_id: str, max_hops: int) -> Optional[dict]:
+    def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
         hop = max(1, int(max_hops))
         cypher = (
             "MATCH p = shortestPath((a:Work {id:$from})-[r:ECHO*1.."
@@ -444,7 +488,7 @@ class Neo4jStore:
         row = rows[0]
         return {"nodes": row["node_ids"], "edges": [_echo_edge(r) for r in row["rels"]]}
 
-    def work_detail(self, work_id: str) -> Optional[dict]:
+    def work_detail(self, work_id: str) -> dict | None:
         rows = self._query(
             """
             MATCH (w:Work {id:$id})
@@ -463,36 +507,52 @@ class Neo4jStore:
         inc = self._query(
             """
             MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
-            MATCH (i)-[:AUTHORED_BY]->(ia:Author)
-            WHERE i.deletedAt IS NULL AND r.deletedAt IS NULL AND ia.deletedAt IS NULL
-            RETURN i.id AS source, i.Title_CN AS source_title, ia.Name_CN AS source_author,
+            WHERE i.deletedAt IS NULL AND r.deletedAt IS NULL
+            OPTIONAL MATCH (i)-[:AUTHORED_BY]->(ia:Author)
+            WHERE ia.deletedAt IS NULL
+            RETURN i.id AS source, i.Title_CN AS source_title,
+                   collect(DISTINCT ia.Name_CN) AS source_authors,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
                    r.note AS note,
                    r.reviewStatus AS reviewStatus
             """,
             {"id": work_id},
         )
+        mentioned_by = []
+        for r in inc:
+            rr = dict(r)
+            authors = [n for n in (rr.pop("source_authors") or []) if n]
+            rr["source_author"] = "、".join(authors)
+            mentioned_by.append(rr)
         out = self._query(
             """
             MATCH (w:Work {id:$id})-[r:ECHO]->(o:Work)
-            MATCH (o)-[:AUTHORED_BY]->(oa:Author)
-            WHERE r.deletedAt IS NULL AND o.deletedAt IS NULL AND oa.deletedAt IS NULL
-            RETURN o.id AS target, o.Title_CN AS target_title, oa.Name_CN AS target_author,
+            WHERE r.deletedAt IS NULL AND o.deletedAt IS NULL
+            OPTIONAL MATCH (o)-[:AUTHORED_BY]->(oa:Author)
+            WHERE oa.deletedAt IS NULL
+            RETURN o.id AS target, o.Title_CN AS target_title,
+                   collect(DISTINCT oa.Name_CN) AS target_authors,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
                    r.note AS note,
                    r.reviewStatus AS reviewStatus
             """,
             {"id": work_id},
         )
+        mentions = []
+        for r in out:
+            rr = dict(r)
+            authors = [n for n in (rr.pop("target_authors") or []) if n]
+            rr["target_author"] = "、".join(authors)
+            mentions.append(rr)
         return {
             "work": _work_payload(wp),
             "author": authors[0] if authors else None,
             "authors": authors,
-            "mentioned_by": [dict(r) for r in inc],
-            "mentions": [dict(r) for r in out],
+            "mentioned_by": mentioned_by,
+            "mentions": mentions,
         }
 
-    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+    def expansion(self, work_id: str, hops: int) -> dict | None:
         hop = max(1, min(int(hops), 8))
         node_rows = self._query(
             "MATCH (c:Work {id:$id}) "
@@ -531,6 +591,20 @@ class Neo4jStore:
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
 
     def stats(self) -> dict:
+        def status_counts(label: str, rel: bool = False) -> dict[str, int]:
+            if rel:
+                q = (
+                    "MATCH ()-[r:ECHO]->() "
+                    "WHERE startNode(r).deletedAt IS NULL AND endNode(r).deletedAt IS NULL AND r.deletedAt IS NULL "
+                    "RETURN coalesce(r.reviewStatus, 'draft') AS s, count(*) AS c"
+                )
+            else:
+                q = (
+                    f"MATCH (n:{label}) WHERE n.deletedAt IS NULL "
+                    "RETURN coalesce(n.reviewStatus, 'draft') AS s, count(*) AS c"
+                )
+            return {row["s"]: row["c"] for row in self._query(q)}
+
         author_count = self._query("MATCH (a:Author) WHERE a.deletedAt IS NULL RETURN count(a) AS c")[0]["c"]
         work_count = self._query("MATCH (w:Work) WHERE w.deletedAt IS NULL RETURN count(w) AS c")[0]["c"]
         edge_count = self._query(
@@ -544,6 +618,11 @@ class Neo4jStore:
             "echo_edges": edge_count,
             "store": self.name,
             "demo": False,
+            "reviewStatus": {
+                "authors": status_counts("Author"),
+                "works": status_counts("Work"),
+                "edges": status_counts("", rel=True),
+            },
         }
 
 
@@ -573,19 +652,19 @@ class ResilientStore:
                 self._last_warn_at = now
             return getattr(self.fallback, name)(*args, **kwargs)
 
-    def graph(self) -> dict:
-        return self._call("graph")
+    def graph(self, status: str | None = None) -> dict:
+        return self._call("graph", status)
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
         return self._call("search", q, limit)
 
-    def path(self, from_id: str, to_id: str, max_hops: int) -> Optional[dict]:
+    def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
         return self._call("path", from_id, to_id, max_hops)
 
-    def work_detail(self, work_id: str) -> Optional[dict]:
+    def work_detail(self, work_id: str) -> dict | None:
         return self._call("work_detail", work_id)
 
-    def expansion(self, work_id: str, hops: int) -> Optional[dict]:
+    def expansion(self, work_id: str, hops: int) -> dict | None:
         return self._call("expansion", work_id, hops)
 
     def stats(self) -> dict:

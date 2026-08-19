@@ -1,6 +1,7 @@
 /* Three.js 3D 渲染:场景、节点/边、布局、相机交互、动画 */
 
 import { el, MENTION_COLOR } from "./util.js";
+import { createForceLayout } from "./layout.js";
 
 // ---- Three.js state ----
 var scene, camera, renderer, labelRenderer, raycaster, mouse;
@@ -321,7 +322,7 @@ function layoutFor(kind, data) {
 }
 
 function forceLayoutChunked(ids, edges, callback) {
-  // 优先用 Worker 异步计算;不可用时回退到主线程分帧计算
+  // 优先用 Worker 异步计算;不可用时回退到主线程分帧计算(共用 layout.js 算法)
   if (typeof Worker !== "undefined") {
     try {
       var worker = new Worker(new URL("./layout.worker.js", import.meta.url), { type: "module" });
@@ -351,69 +352,19 @@ function forceLayoutChunked(ids, edges, callback) {
 }
 
 function forceLayoutMainThread(ids, edges, callback) {
-  var positions = {};
-  ids.forEach(function (id) {
-    var u = Math.random() * 2 - 1;
-    var th = Math.random() * Math.PI * 2;
-    var s = Math.sqrt(Math.max(0, 1 - u * u));
-    var r = 320 + Math.random() * 320;
-    positions[id] = new THREE.Vector3(r * s * Math.cos(th), r * u, r * s * Math.sin(th));
-  });
-
-  var k = 850 / Math.sqrt(ids.length || 1);
-  var temp = 0.62;
-  var iters = 260;
-  var it = 0;
+  var layout = createForceLayout(ids, edges);
 
   function tick() {
-    var start = Date.now();
-    while (it < iters && Date.now() - start < 14) { // 每帧只算一小段,避免卡顿
-      runIteration();
-      it++;
-    }
-    if (it < iters) {
+    if (!layout.tick(14)) { // 每帧只算一小段,避免卡顿
       setTimeout(tick, 0);
       return;
     }
-    var meanR = 0;
-    ids.forEach(function (id) { meanR += positions[id].length(); });
-    meanR = meanR / Math.max(ids.length, 1);
-    var scale = 520 / Math.max(meanR, 1);
-    ids.forEach(function (id) { positions[id].multiplyScalar(scale); });
-    callback(positions);
-  }
-
-  function runIteration() {
-    var disp = {};
-    ids.forEach(function (id) { disp[id] = new THREE.Vector3(); });
-    for (var i = 0; i < ids.length; i++) {
-      for (var j = i + 1; j < ids.length; j++) {
-        var a = ids[i], b = ids[j];
-        var delta = positions[a].clone().sub(positions[b]);
-        var d = Math.max(delta.length(), 0.01);
-        var force = (k * k) / d;
-        var dir = delta.normalize();
-        disp[a].add(dir.clone().multiplyScalar(force));
-        disp[b].sub(dir.clone().multiplyScalar(force));
-      }
-    }
-    edges.forEach(function (e) {
-      var pa = positions[e.source], pb = positions[e.target];
-      if (!pa || !pb) return;
-      var delta = pa.clone().sub(pb);
-      var d = Math.max(delta.length(), 0.01);
-      var force = (d * d) / k;
-      var dir = delta.normalize();
-      disp[e.source].sub(dir.clone().multiplyScalar(force));
-      disp[e.target].add(dir.clone().multiplyScalar(force));
+    var pos = {};
+    var plain = layout.result();
+    Object.keys(plain).forEach(function (id) {
+      pos[id] = new THREE.Vector3(plain[id][0], plain[id][1], plain[id][2]);
     });
-    ids.forEach(function (id) {
-      var dl = disp[id].length();
-      if (dl < 0.0001) return;
-      positions[id].add(disp[id].clone().normalize().multiplyScalar(Math.min(dl, 220) * temp));
-      positions[id].multiplyScalar(1 - 0.0035); // gentle pull to center (cluster shape)
-    });
-    temp = Math.max(0.02, temp * 0.965);
+    callback(pos);
   }
 
   tick();

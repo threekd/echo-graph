@@ -89,6 +89,48 @@ class ParseRowsTest(unittest.TestCase):
             parse_rows(a, w, e)
         self.assertIn("出生年应早于去世年", str(ctx.exception))
 
+    def test_duplicate_edge_pair_rejected(self) -> None:
+        a, w, e = _fixture()
+        dup = dict(e[0])
+        dup["id"] = str(uuid.uuid4())  # 不同 id,但同一对 source->target
+        e.append(dup)
+        with self.assertRaises(ValueError) as ctx:
+            parse_rows(a, w, e)
+        self.assertIn("涟漪对 重复", str(ctx.exception))
+
+    def test_review_status_defaults_to_draft(self) -> None:
+        am, wm, em, _ = parse_rows(*_fixture())
+        self.assertEqual(am[0].reviewStatus, "draft")
+        self.assertEqual(wm[0].reviewStatus, "draft")
+        self.assertEqual(em[0].reviewStatus, "draft")
+
+    def test_review_status_blank_value_coerced_to_draft(self) -> None:
+        a, w, e = _fixture()
+        w[0]["reviewStatus"] = ""  # CSV 空串 -> None 后归一为 draft
+        a[0]["reviewStatus"] = None
+        am, wm, em, _ = parse_rows(a, w, e)
+        self.assertEqual(am[0].reviewStatus, "draft")
+        self.assertEqual(wm[0].reviewStatus, "draft")
+
+    def test_bad_language_rejected(self) -> None:
+        a, w, e = _fixture()
+        w[0]["language"] = "e2"  # 长度合法,但不是字母代码
+        with self.assertRaises(ValueError) as ctx:
+            parse_rows(a, w, e)
+        self.assertIn("语言", str(ctx.exception))
+
+    def test_empty_chinese_title_rejected(self) -> None:
+        a, w, e = _fixture()
+        w[0]["Title_CN"] = ""
+        with self.assertRaises(ValueError):
+            parse_rows(a, w, e)
+
+    def test_empty_chinese_name_rejected(self) -> None:
+        a, w, e = _fixture()
+        a[0]["Name_CN"] = ""
+        with self.assertRaises(ValueError):
+            parse_rows(a, w, e)
+
 
 if __name__ == "__main__":
     unittest.main()

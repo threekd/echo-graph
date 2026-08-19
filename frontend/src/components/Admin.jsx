@@ -86,7 +86,7 @@ function countryLabel(code) {
   return name ? code + "-" + name : code;
 }
 
-// 提及(边)没有独立 id,用 source:target 作为复合标识
+// 边有独立 id;source:target 仅作历史数据的兜底复合标识
 function edgeKey(r) {
   return (r.source_work_id || "") + ":" + (r.target_work_id || "");
 }
@@ -528,7 +528,10 @@ export default function Admin() {
       body: JSON.stringify({ ...row, deletedAt: null }),
     })
       .then((r) => r.json())
-      .then((d) => { setStatus(d.ok ? "已恢复" : (d.detail || "恢复失败")); load(); })
+      .then((d) => {
+        setStatus(d.ok ? "已恢复,需重新导入 Neo4j 后生效" : (d.detail || "恢复失败"));
+        load();
+      })
       .catch((e) => setStatus("恢复失败: " + e.message));
   };
 

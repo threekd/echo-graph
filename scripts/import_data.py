@@ -32,11 +32,11 @@ def main() -> None:
             no_snapshot=args.no_snapshot,
         )
     except ValueError as exc:
-        raise SystemExit(f"校验失败,未导入:\n- {exc}")
+        raise SystemExit(f"校验失败,未导入:\n- {exc}") from exc
     except FileNotFoundError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from exc
     except RuntimeError as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from exc
 
     print(
         f"导入完成: version={result['version']}, wipe={result['wipe']}, "

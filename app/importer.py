@@ -9,20 +9,20 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from pydantic import BaseModel
 
-from app.data_models import EchoRow, WorkRow, AuthorRow, parse_rows
-from app.data_store import load_rows, REAL_DIR
+from app.data_models import AuthorRow, EchoRow, WorkRow, parse_rows
+from app.data_store import load_rows
 
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_DIR = ROOT / "data" / "snapshots"
 CHUNK = 500
+KEEP_SNAPSHOTS = 20
 
 
 def _chunks(rows: list, size: int = CHUNK):
@@ -33,7 +33,9 @@ def _chunks(rows: list, size: int = CHUNK):
 def _node_props(row: BaseModel, now: str) -> dict:
     d = row.model_dump(exclude={"id", "slug", "deletedAt"})
     d["createdAt"] = d.get("createdAt") or now
-    d["updatedAt"] = now
+    if not d.get("updatedAt"):
+        # 仅在数据自带更新时间时同步,避免每次导入把全库 updatedAt 刷成导入时间
+        d.pop("updatedAt", None)
     return d
 
 
@@ -41,13 +43,14 @@ def _echo_props(row: EchoRow, now: str) -> dict:
     d = row.model_dump(exclude={"source_work_id", "target_work_id", "deletedAt"})
     d["reviewStatus"] = d.get("reviewStatus") or "draft"
     d["createdAt"] = d.get("createdAt") or now
-    d["updatedAt"] = now
+    if not d.get("updatedAt"):
+        d.pop("updatedAt", None)
     return d
 
 
 def import_data(
     driver: GraphDatabase,
-    database: Optional[str],
+    database: str | None,
     authors: list[AuthorRow],
     works: list[WorkRow],
     echoes: list[EchoRow],
@@ -55,11 +58,11 @@ def import_data(
     *,
     wipe: bool,
     version: str,
-    deleted_authors: Optional[list[dict]] = None,
-    deleted_works: Optional[list[dict]] = None,
-    deleted_echoes: Optional[list[dict]] = None,
+    deleted_authors: list[dict] | None = None,
+    deleted_works: list[dict] | None = None,
+    deleted_echoes: list[dict] | None = None,
 ) -> None:
-    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     with driver.session(database=database) as session:
         session.run("CREATE CONSTRAINT author_id IF NOT EXISTS FOR (a:Author) REQUIRE a.id IS UNIQUE").consume()
         session.run("CREATE CONSTRAINT work_id IF NOT EXISTS FOR (w:Work) REQUIRE w.id IS UNIQUE").consume()
@@ -81,8 +84,10 @@ def import_data(
                 tx.run(
                     "UNWIND $rows AS row "
                     "MERGE (a:Author {id: row.id}) "
-                    "SET a += row.props, a.slug = null",
-                    {"rows": chunk},
+                    "ON CREATE SET a.updatedAt = $now "
+                    "SET a += row.props "
+                    "REMOVE a.slug",
+                    {"rows": chunk, "now": now},
                 )
 
             for chunk in _chunks(
@@ -91,8 +96,10 @@ def import_data(
                 tx.run(
                     "UNWIND $rows AS row "
                     "MERGE (w:Work {id: row.id}) "
-                    "SET w += row.props, w.slug = null",
-                    {"rows": chunk},
+                    "ON CREATE SET w.updatedAt = $now "
+                    "SET w += row.props "
+                    "REMOVE w.slug",
+                    {"rows": chunk, "now": now},
                 )
 
             authored = [
@@ -120,8 +127,9 @@ def import_data(
                     "UNWIND $rows AS row "
                     "MATCH (s:Work {id: row.source}), (t:Work {id: row.target}) "
                     "MERGE (s)-[r:ECHO]->(t) "
+                    "ON CREATE SET r.updatedAt = $now "
                     "SET r += row.props",
-                    {"rows": chunk},
+                    {"rows": chunk, "now": now},
                 )
 
             # 清理历史遗留的 evidenceLang 属性(schema 1.1 起不再使用)
@@ -165,7 +173,7 @@ def import_data(
             )
 
 
-def write_snapshot(driver: GraphDatabase, database: Optional[str], version: str) -> None:
+def write_snapshot(driver: GraphDatabase, database: str | None, version: str) -> None:
     def q(cypher: str) -> list[dict]:
         with driver.session(database=database) as session:
             return [dict(r) for r in session.run(cypher)]
@@ -180,7 +188,7 @@ def write_snapshot(driver: GraphDatabase, database: Optional[str], version: str)
         "meta": {
             "name": "echo-graph snapshot",
             "datasetVersion": version,
-            "exportedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "exportedAt": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         },
         "authors": [r["p"] for r in authors],
         "works": [r["p"] for r in works],
@@ -194,6 +202,14 @@ def write_snapshot(driver: GraphDatabase, database: Optional[str], version: str)
     (SNAPSHOT_DIR / "echo-graph-latest.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    _prune_snapshots()
+
+
+def _prune_snapshots() -> None:
+    """只保留最近 KEEP_SNAPSHOTS 份带时间戳的快照,latest 不受影响。"""
+    files = sorted(SNAPSHOT_DIR.glob("echo-graph-[0-9]*.json"))
+    for old in files[:-KEEP_SNAPSHOTS]:
+        old.unlink(missing_ok=True)
 
 
 def run_import(

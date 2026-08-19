@@ -13,9 +13,9 @@ export default function Sidebar() {
   const [to, setTo] = useState("");
   const [fromOpen, setFromOpen] = useState(false);
   const [toOpen, setToOpen] = useState(false);
-  const [expandText, setExpandText] = useState("1 级");
   const expandTimer = useRef(null);
   const lookups = useRef({ workLookup: {}, workById: {}, options: [] });
+  const expandText = state.expandHops + " 级";
 
   useEffect(() => {
     lookups.current = buildWorkLookups();
@@ -49,7 +49,6 @@ export default function Sidebar() {
   };
 
   const onExpand = (hops) => {
-    setExpandText(hops + " 级");
     dispatch({ type: "SET_EXPAND", value: hops });
     if (expandTimer.current) clearTimeout(expandTimer.current);
     expandTimer.current = setTimeout(() => expandRippleDebounced(hops), 400);

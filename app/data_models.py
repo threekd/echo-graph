@@ -5,11 +5,18 @@
 
 from __future__ import annotations
 
-import uuid
 import re
-from typing import Literal, Optional
+import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _coerce_review_status(v):
+    """CSV 空值(None / 空串)统一视为 draft,显式值保持原样。"""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return "draft"
+    return v
 
 
 class AuthorRow(BaseModel):
@@ -17,15 +24,15 @@ class AuthorRow(BaseModel):
 
     id: str = Field(min_length=1)
     originalName: str = Field(min_length=1)
-    Name_CN: str
-    Name_EN: Optional[str] = None
-    nationality: Optional[str] = None
-    birthYear: Optional[int] = Field(default=None, ge=-9999, le=9999)
-    deathYear: Optional[int] = Field(default=None, ge=-9999, le=9999)
-    reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
-    createdAt: Optional[str] = None
-    updatedAt: Optional[str] = None
-    deletedAt: Optional[str] = None
+    Name_CN: str = Field(min_length=1)
+    Name_EN: str | None = None
+    nationality: str | None = None
+    birthYear: int | None = Field(default=None, ge=-9999, le=9999)
+    deathYear: int | None = Field(default=None, ge=-9999, le=9999)
+    reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    deletedAt: str | None = None
 
     @field_validator("id")
     @classmethod
@@ -38,9 +45,14 @@ class AuthorRow(BaseModel):
             raise ValueError(f"id 需为 UUID 格式,got {v!r}") from exc
         return v
 
+    @field_validator("reviewStatus", mode="before")
+    @classmethod
+    def _review_status_default(cls, v):
+        return _coerce_review_status(v)
+
     @field_validator("nationality")
     @classmethod
-    def _nationality_ok(cls, v: Optional[str]) -> Optional[str]:
+    def _nationality_ok(cls, v: str | None) -> str | None:
         if v is None or not str(v).strip():
             return None
         v = str(v).strip()
@@ -49,7 +61,7 @@ class AuthorRow(BaseModel):
         return v.upper()
 
     @model_validator(mode="after")
-    def _years(self) -> "AuthorRow":
+    def _years(self) -> AuthorRow:
         if (
             self.birthYear is not None
             and self.deathYear is not None
@@ -65,17 +77,17 @@ class WorkRow(BaseModel):
     id: str = Field(min_length=1)
     language: str = Field(min_length=2, max_length=3)
     originalTitle: str = Field(min_length=1)
-    Title_CN: str
-    Title_EN: Optional[str] = None
-    Title_Other: Optional[str] = None
-    Author: Optional[str] = None  # 多人用逗号","隔开
-    publicationYear: Optional[int] = None
-    creationYear: Optional[int] = None
-    genre: Optional[Literal["Fiction", "Non-fiction", "Poetry", "Drama"]] = None
-    reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
-    createdAt: Optional[str] = None
-    updatedAt: Optional[str] = None
-    deletedAt: Optional[str] = None
+    Title_CN: str = Field(min_length=1)
+    Title_EN: str | None = None
+    Title_Other: str | None = None
+    Author: str | None = None  # 多人用逗号","隔开
+    publicationYear: int | None = None
+    creationYear: int | None = None
+    genre: Literal["Fiction", "Non-fiction", "Poetry", "Drama"] | None = None
+    reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    deletedAt: str | None = None
 
     @field_validator("id")
     @classmethod
@@ -87,6 +99,19 @@ class WorkRow(BaseModel):
         except ValueError as exc:
             raise ValueError(f"id 需为 UUID 格式,got {v!r}") from exc
         return v
+
+    @field_validator("language")
+    @classmethod
+    def _language_ok(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-z]{2,3}", v):
+            raise ValueError(f"语言需为 ISO 639-1/639-3 代码(如 zh、en、enm),got {v!r}")
+        return v
+
+    @field_validator("reviewStatus", mode="before")
+    @classmethod
+    def _review_status_default(cls, v):
+        return _coerce_review_status(v)
 
 
 class EchoRow(BaseModel):
@@ -96,12 +121,12 @@ class EchoRow(BaseModel):
     source_work_id: str = Field(min_length=1)
     target_work_id: str = Field(min_length=1)
     evidence: str = Field(min_length=1)
-    evidenceSource: Optional[str] = None
-    note: Optional[str] = None
-    reviewStatus: Optional[Literal["draft", "reviewed", "rejected"]] = None
-    createdAt: Optional[str] = None
-    updatedAt: Optional[str] = None
-    deletedAt: Optional[str] = None
+    evidenceSource: str | None = None
+    note: str | None = None
+    reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    deletedAt: str | None = None
 
     @field_validator("id")
     @classmethod
@@ -114,8 +139,13 @@ class EchoRow(BaseModel):
             raise ValueError(f"id 需为 UUID 格式,got {v!r}") from exc
         return v
 
+    @field_validator("reviewStatus", mode="before")
+    @classmethod
+    def _review_status_default(cls, v):
+        return _coerce_review_status(v)
+
     @model_validator(mode="after")
-    def _no_self(self) -> "EchoRow":
+    def _no_self(self) -> EchoRow:
         if self.source_work_id == self.target_work_id:
             raise ValueError("ECHO 不允许自环(source == target)")
         return self
@@ -145,7 +175,6 @@ def parse_rows(
             if key:
                 author_by_name.setdefault(key.strip().lower(), a.id)
 
-    author_ids: set[str] = {a.id for a in author_models}
     work_ids: set[str] = {w.id for w in work_models}
 
     def dup(items: list[str], label: str) -> None:
@@ -158,6 +187,10 @@ def parse_rows(
     dup([a.id for a in author_models], "作者 id")
     dup([w.id for w in work_models], "作品 id")
     dup([e.id for e in echo_models], "涟漪 id")
+    dup(
+        [(e.source_work_id, e.target_work_id) for e in echo_models],
+        "涟漪对",
+    )
 
     work_authors: dict[str, list[str]] = {}
     for w in work_models:

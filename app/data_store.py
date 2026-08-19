@@ -8,7 +8,6 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 REAL_DIR = ROOT / "data" / "real"
@@ -75,7 +74,7 @@ def save_rows(authors: list[dict], works: list[dict], edges: list[dict]) -> None
     _write_csv(REAL_DIR / "edges.csv", EDGE_HEADER, edges)
 
 
-def snapshot(prefix: str = "admin") -> Optional[str]:
+def snapshot(prefix: str = "admin") -> str | None:
     """保存前备份当前三份 CSV 到 data/versions/<时间戳>-<prefix>/。"""
     files = [REAL_DIR / "authors.csv", REAL_DIR / "works.csv", REAL_DIR / "edges.csv"]
     if not any(f.exists() for f in files):

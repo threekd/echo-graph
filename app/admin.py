@@ -12,26 +12,29 @@ import io
 import json
 import os
 import uuid
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.data_models import parse_rows
-from app.data_store import EDGE_HEADER, AUTHOR_HEADER, WORK_HEADER, load_rows, save_rows, snapshot
+from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, load_rows, save_rows, snapshot
 from app.importer import run_import
 
 _admin_bearer = HTTPBearer(auto_error=False)
 
 
 def require_admin_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_admin_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_admin_bearer),  # noqa: B008
 ) -> None:
     """管理接口鉴权:需在 .env 配置 ADMIN_TOKEN,请求头带 Authorization: Bearer <token>。"""
     token = os.getenv("ADMIN_TOKEN", "")
-    if not token:
-        raise HTTPException(status_code=503, detail="ADMIN_TOKEN 未配置,管理接口已禁用")
+    if not token or token.strip() == "change-me-to-a-long-random-token" or len(token) < 16:
+        raise HTTPException(
+            status_code=503,
+            detail="ADMIN_TOKEN 未配置或仍为示例值,管理接口已禁用",
+        )
     if credentials is None or not hmac.compare_digest(
         credentials.credentials.encode("utf-8"), token.encode("utf-8")
     ):
@@ -61,11 +64,11 @@ def _validate(a: list[dict], w: list[dict], e: list[dict]) -> None:
     try:
         parse_rows(a, w, e)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}")
+        raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}") from exc
 
 
 def _now() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
 def _new_uuid() -> str:
@@ -75,7 +78,7 @@ def _new_uuid() -> str:
         return str(uuid.uuid4())
 
 
-def _edge_pair(row: dict) -> Optional[tuple[str, str]]:
+def _edge_pair(row: dict) -> tuple[str, str] | None:
     """边的配对标识:source_work_id + target_work_id,用于查重(同一对作品只允许一条涟漪)。"""
     s = row.get("source_work_id")
     t = row.get("target_work_id")
@@ -111,9 +114,9 @@ def do_import(body: dict) -> dict:
     try:
         return {"ok": True, **run_import("csv", wipe=wipe, version=version)}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}")
+        raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}") from exc
     except (FileNotFoundError, RuntimeError) as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{kind}")
@@ -125,6 +128,9 @@ def create(kind: Kind, row: dict) -> dict:
         row["id"] = _new_uuid()  # 新增作者/作品/涟漪自动生成 UUID v7
     if not row.get("reviewStatus"):
         row["reviewStatus"] = "draft"  # 新增默认草稿(前端新增表单不展示该字段)
+    now = _now()
+    row.setdefault("createdAt", now)
+    row["updatedAt"] = now
     if any(r.get("id") == row.get("id") for r in rows):
         raise HTTPException(status_code=400, detail=f"id 已存在:{row.get('id')}")
     if kind == "edges":
@@ -146,6 +152,10 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
     if not any(r.get("id") == item_id for r in rows):
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
     row["id"] = item_id
+    existing = next(r for r in rows if r.get("id") == item_id)
+    now = _now()
+    row["createdAt"] = row.get("createdAt") or existing.get("createdAt") or now
+    row["updatedAt"] = now
     if kind == "edges":
         pair = _edge_pair(row)
         if pair and any(

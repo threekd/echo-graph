@@ -122,7 +122,7 @@ cd frontend && pnpm lint                          # 前端 lint
 | 涟漪 | 以某作品为中心的 3D 扩散球(N 级扩散) | `http://127.0.0.1:8000/#v=ripple:{workId}:2` |
 | 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:{authorId}` |
 
-URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,由"分享链接"生成)。旧格式 `#path=` / `#ripple=` / `#author=` 仍兼容,标识均为 UUID。
+URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,由"分享链接"生成)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
 
 左侧栏提供"分享链接 / 导出图片":分享链接复制含相机位置的完整 URL;导出图片为当前视图 PNG(含节点文字标签)。
 
@@ -130,12 +130,12 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作�
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/graph` | 全量图谱(节点 + 边) |
+| `GET /api/graph?status=` | 全量图谱(节点 + 边);`status` 可选 `draft` / `reviewed` / `rejected`,按审核状态过滤 |
 | `GET /api/search?q=` | 搜索作家 / 作品 |
 | `GET /api/work/{id}` | 作品详情 + 谁提及它 / 它提及谁(涟漪数据) |
 | `GET /api/path?from={workId}&to={workId}` | 有向最短提及链 |
 | `GET /api/expansion/{workId}?hops=N` | N 级涟漪扩散子图 |
-| `GET /api/stats` | 数据统计 |
+| `GET /api/stats` | 数据统计(含 `reviewStatus` 分布) |
 
 ### 重要声明
 

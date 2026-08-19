@@ -116,6 +116,18 @@ class JsonStorePathTest(unittest.TestCase):
         self.assertEqual(len(d4["mentioned_by"]), 1)
         self.assertEqual(d4["mentions"], [])
 
+    def test_search_author_without_nationality_has_no_none(self) -> None:
+        hits = self.store.search("A")
+        self.assertTrue(any(h["type"] == "author" for h in hits))
+        self.assertFalse(any("None" in (h.get("sub") or "") for h in hits))
+
+    def test_graph_status_filter_treats_missing_as_draft(self) -> None:
+        g_draft = self.store.graph(status="draft")
+        self.assertEqual(len(g_draft["nodes"]), 5)  # a1 + w1..w4,均无 reviewStatus -> draft
+        g_reviewed = self.store.graph(status="reviewed")
+        self.assertEqual(g_reviewed["nodes"], [])
+        self.assertEqual(g_reviewed["edges"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

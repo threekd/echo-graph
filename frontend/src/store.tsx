@@ -36,6 +36,9 @@ export interface PanelState {
 
 export interface AppState {
   fullData: GraphData;
+  // 当前视图的绘制数据(受控化的单一事实来源):由 graph.ts 计算后 dispatch,
+  // GraphCanvas 的 effect 驱动渲染器执行绘制
+  viewData: GraphData;
   currentView: string;
   camera: CameraState;
   rippleCenter: string | null;
@@ -56,6 +59,7 @@ export type AppAction = { type: string; [key: string]: any };
 
 export const initialState: AppState = {
   fullData: { nodes: [], edges: [] },
+  viewData: { nodes: [], edges: [] },
   currentView: "main",
   // 相机快照:渲染器在视图切换/交互结束时回传(实时相机仍以渲染器为准,分享链接读取最新值)
   camera: { theta: -Math.PI / 2 + 0.4, phi: Math.PI / 2 - 0.18, radius: 1500, cx: 0, cy: 0, cz: 0 },
@@ -77,6 +81,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_DATA":
       return { ...state, fullData: action.data };
+    case "SET_VIEW_DATA":
+      return { ...state, viewData: action.data };
     case "SET_VIEW":
       return { ...state, currentView: action.view };
     case "SET_RIPPLE_CENTER":

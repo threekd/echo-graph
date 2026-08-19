@@ -1,8 +1,10 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import { initThree, pickNode, setHoveredNode, disposeThree } from "../lib/renderer";
+import { useApp } from "../store";
+import { initThree, update as rendererUpdate, pickNode, setHoveredNode, disposeThree } from "../lib/renderer";
 import { selectNode, showNodeDetail } from "../lib/graph";
 
 export default function GraphCanvas() {
+  const { state } = useApp();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hoveredRef = useRef<string | null>(null);
   const dragRef = useRef<{ down: boolean; moved: boolean; x: number; y: number }>({
@@ -41,6 +43,11 @@ export default function GraphCanvas() {
       if (starsWrap.parentNode) starsWrap.parentNode.removeChild(starsWrap);
     };
   }, []);
+
+  // 受控渲染:React 持有 viewData/currentView,数据变化时驱动渲染器执行绘制
+  useEffect(() => {
+    rendererUpdate(state.currentView, state.viewData);
+  }, [state.currentView, state.viewData]);
 
   useEffect(() => {
     return () => {

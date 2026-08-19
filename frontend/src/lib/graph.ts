@@ -1,5 +1,5 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { renderView, getCameraState } from "./renderer";
+import { getCameraState } from "./renderer";
 import { workDetail, expansion, findPath } from "./api";
 import {
   isAnonymousAuthor,
@@ -8,7 +8,14 @@ import {
   filterAuthorsWith,
   buildWorkLookups as buildWorkLookupsPure,
 } from "./graphData";
-import { initialState, type AppAction, type AppState, type GraphData, type GraphNode } from "../store";
+import {
+  initialState,
+  type AppAction,
+  type AppState,
+  type CameraState,
+  type GraphData,
+  type GraphNode,
+} from "../store";
 
 // 纯函数统一来自 graphData.js,这里仅做转发,保证既有调用方兼容
 export {
@@ -59,6 +66,26 @@ interface ViewOpts {
   showAuthors?: boolean;
   preserveCamera?: boolean;
   camera?: any;
+}
+
+// 各视图的默认相机(受控化:由 React 侧决定并随 viewData 交给渲染器执行)
+const DEFAULT_CAMERA: Record<string, CameraState> = {
+  main: { theta: -Math.PI / 2 + 0.4, phi: Math.PI / 2 - 0.18, radius: 1500, cx: 0, cy: 0, cz: 0 },
+  ripple: { theta: -Math.PI / 2, phi: Math.PI / 2 - 0.12, radius: 1150, cx: 0, cy: 0, cz: 0 },
+  author: { theta: -Math.PI / 2 + 0.3, phi: Math.PI / 2 - 0.15, radius: 1200, cx: 0, cy: 0, cz: 0 },
+  path: { theta: -Math.PI / 2 + 0.35, phi: Math.PI / 2 - 0.15, radius: 1250, cx: 0, cy: 0, cz: 0 },
+};
+
+// 受控化提交:视图数据与相机进 React store,渲染由 GraphCanvas 的 effect 驱动。
+// opts.camera(深链恢复) > 视图默认相机 > 保持当前相机(preserveCamera / 同视图刷新)
+function commitView(kind: string, data: GraphData, opts: ViewOpts): void {
+  dispatch({ type: "SET_VIEW", view: kind });
+  const camera = opts.camera || (opts.preserveCamera ? undefined : DEFAULT_CAMERA[kind]);
+  if (camera) {
+    dispatch({ type: "SET_CAMERA", camera });
+    data = { ...data, camera };
+  }
+  dispatch({ type: "SET_VIEW_DATA", data });
 }
 
 function buildHash(opts: ViewOpts | undefined, includeCam: boolean): string {
@@ -120,8 +147,7 @@ export function renderMain(opts: any, dataOverride?: GraphData | null, overrides
   const showAuthors = overrides && typeof overrides.showAuthors === "boolean" ? overrides.showAuthors : st.showAuthors;
   if (hideIslands) data = filterIslands(data);
   data = filterAuthorsWith(data, showAuthors);
-  dispatch({ type: "SET_VIEW", view: "main" });
-  renderView("main", data, opts || {});
+  commitView("main", data, opts || {});
   syncUrl({ view: "main", hideIslands, showAuthors });
 }
 
@@ -186,7 +212,7 @@ export function renderRipple(detail: any, hops?: number | string, opts?: ViewOpt
     if (n) nodes.push(n);
   });
   const data = addAuthorsTo({ nodes, edges, centerId: center }, { hideIslands, showAuthors });
-  renderView("ripple", data, opts || {});
+  commitView("ripple", data, opts || {});
   syncUrl({
     view: "ripple", id: center, hops: expandHops,
     hideIslands, showAuthors,
@@ -211,7 +237,7 @@ export function expandRippleDebounced(hops: number) {
     .then((data: any) => {
       const st = getState();
       const viewData = addAuthorsTo(data, { hideIslands: st.hideIslands, showAuthors: st.showAuthors });
-      renderView("ripple", viewData, { preserveCamera: true });
+      dispatch({ type: "SET_VIEW_DATA", data: viewData });
       const works = viewData.nodes.filter((n) => n.type === "work").length;
       dispatch({ type: "SET_TOAST", msg: hops + " 级扩散 · " + works + " 本书" });
       syncUrl({
@@ -237,7 +263,7 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
     nodes.push(w);
     edges.push({ source: w.id, target: author.id, type: "authored" });
   });
-  renderView("author", { nodes, edges }, {});
+  commitView("author", { nodes, edges }, opts || {});
   syncUrl({
     view: "author", id: author.id,
     hideIslands, showAuthors,
@@ -253,7 +279,7 @@ export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promi
       source: e.source, target: e.target, type: "echo", evidence: e.evidence, note: e.note,
     }));
     dispatch({ type: "SET_VIEW", view: "path" });
-    renderView("path", { nodes, edges, pathOrder: result.nodes }, {});
+    commitView("path", { nodes, edges, pathOrder: result.nodes }, opts || {});
     syncUrl({
       view: "path", from: fromId, to: toId,
       hideIslands: opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands,

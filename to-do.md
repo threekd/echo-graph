@@ -102,12 +102,13 @@
 - [x] 相机状态回传 React store(`SET_CAMERA`,视图切换/交互结束时节流同步);分享链接仍读渲染器实时值
 - [x] 节点点击/悬停改为 React 事件委托(`pickNode` / `setHoveredNode` API,移除注入式 onNodeClick/onNodeHover)
 - [x] TypeScript 迁移:全部 `src` 转 `.ts`/`.tsx`(strict + tsc --noEmit),接入 typescript-eslint 与 CI typecheck;tsconfig 单一来源
-- ⬜ 部署到GitHub
+- [x] 渲染器内核完全受控化:`viewData` 重新入 store 并被 GraphCanvas effect 消费;`graph.ts` 只计算并 dispatch(SET_VIEW / SET_VIEW_DATA / SET_CAMERA),不再直接调渲染器;renderer 退化为 `update(kind, data)` 纯执行器(相机由 `data.camera` 驱动,默认相机上移到 React 侧);移除 onViewChange 注入
+- ⬜ 部署到个人VPS服务器
 
 ## 遗留与下一步建议
 
 1. **数据审核与扩充**:逐条审核真实提及并置 `reviewed`,补充出处精确性,扩充数据集
-2. ~~React 化推进~~(相机入 store、事件委托、TS 已完成):剩余可选项为把渲染器内核转成受控组件(React 持有视图数据、effect 驱动场景 diff)
+2. ~~渲染器受控化~~(已完成):剩余可选项为给渲染层补集成/快照测试、按需懒加载 three、评估高频相机动画是否值得纳入 `useSyncExternalStore` 订阅
 3. 按年代 / 语言 / 国别配色或聚类,让图谱携带更多语义
 4. 加载状态指示、管理页恢复后自动导入 Neo4j 等体验细节
 5. 发布流程:按 `reviewStatus` 过滤草稿内容的公开视图,以及快照恢复入口

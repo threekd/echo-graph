@@ -18,7 +18,7 @@ import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
 } from "./lib/graph";
-import { setOnCameraChange, setOnViewChange } from "./lib/renderer";
+import { setOnCameraChange } from "./lib/renderer";
 
 function parseCam(s: string): CameraState | null {
   const parts = String(s || "").split(",").map((x) => parseFloat(x));
@@ -86,9 +86,6 @@ function AppContent() {
 
   useEffect(() => {
     setStateRef(stateRef);
-    setOnViewChange(({ kind }) => {
-      dispatch({ type: "SET_VIEW", view: kind });
-    });
     setOnCameraChange((camera) => {
       dispatch({ type: "SET_CAMERA", camera });
     });

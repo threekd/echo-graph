@@ -38,16 +38,11 @@ let glowTexture: THREE.CanvasTexture | null = null;
 let backgroundStars: THREE.Points | null = null;
 let animFrameId: number | null = null;
 let boundCleanups: (() => void)[] = []; // dispose 时统一移除的监听
-let onViewChange: ((info: { kind: string }) => void) | null = null; // 由 React 注入
 let onCameraChange: ((cam: CameraState) => void) | null = null; // 由 React 注入
 let lastCameraSync = 0;
 let lastSyncedCam: CameraState | null = null;
 let wheelTimer: number | null = null;
 let resizeContainer: HTMLElement | null = null;
-
-export function setOnViewChange(fn: (info: { kind: string }) => void) {
-  onViewChange = fn;
-}
 
 export function setOnCameraChange(fn: (cam: CameraState) => void) {
   onCameraChange = fn;
@@ -608,28 +603,6 @@ function syncScene(data: GraphData): void {
   initFlowParticles();
 }
 
-function finishView(kind: string, opts?: any): void {
-  opts = opts || {};
-  if (opts.camera) {
-    applyCameraState(opts.camera);
-  } else if (!opts.preserveCamera) {
-    if (kind === "main") {
-      cameraState.radius = 1500; cameraState.theta = -Math.PI / 2 + 0.4; cameraState.phi = Math.PI / 2 - 0.18;
-    } else if (kind === "ripple") {
-      cameraState.radius = 1150; cameraState.theta = -Math.PI / 2; cameraState.phi = Math.PI / 2 - 0.12;
-    } else if (kind === "author") {
-      cameraState.radius = 1200; cameraState.theta = -Math.PI / 2 + 0.3; cameraState.phi = Math.PI / 2 - 0.15;
-    } else {
-      cameraState.radius = 1250; cameraState.theta = -Math.PI / 2 + 0.35; cameraState.phi = Math.PI / 2 - 0.15;
-    }
-    center.set(0, 0, 0); // 切换视图时重置平移
-  }
-  if (!opts.camera) applyCamera();
-  lastInteraction = Date.now();
-  if (onViewChange) onViewChange({ kind: kind });
-  syncCameraToStore();
-}
-
 function buildScene(data: GraphData): void {
   data.nodes.forEach(function (n) {
     if (!positions[n.id]) {
@@ -645,14 +618,21 @@ function buildScene(data: GraphData): void {
   initFlowParticles();
 }
 
-export function renderView(kind: string, data: GraphData, opts?: any): void {
+// 受控入口:React 持有 viewData/currentView/相机,渲染器只负责按传入数据绘制。
+// data.camera 存在时应用该相机(视图切换/深链恢复);不存在则保持当前相机(同视图刷新)。
+export function update(kind: string, data: GraphData): void {
   const token = ++viewToken;
+  const camera = data.camera as CameraState | undefined;
   hiddenLabelIds = kind === "main" ? isolatedWorkIds(data) : {};
   if (kind === "ripple") {
     // 额外作品默认不显示标签,悬停时再显示
     data.nodes.forEach(function (n) { if (n.__extra) hiddenLabelIds[n.id] = true; });
   }
-  if (opts && opts.preserveCamera && currentKind === kind) {
+  const finalize = () => {
+    if (camera) applyCameraState(camera);
+    lastInteraction = Date.now();
+  };
+  if (currentKind === kind) {
     // 同视图刷新:增量同步,保持相机与已有节点(涟漪扩散 / 过滤开关切换)
     if (kind === "main") {
       forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
@@ -660,13 +640,13 @@ export function renderView(kind: string, data: GraphData, opts?: any): void {
         positions = pos;
         syncScene(data);
         currentKind = kind;
-        finishView(kind, opts);
+        finalize();
       });
     } else {
       positions = layoutFor(kind, data);
       syncScene(data);
       currentKind = kind;
-      finishView(kind, opts);
+      finalize();
     }
     return;
   }
@@ -678,14 +658,14 @@ export function renderView(kind: string, data: GraphData, opts?: any): void {
       positions = pos;
       buildScene(data);
       currentKind = kind;
-      finishView(kind, opts);
+      finalize();
     });
     return;
   }
   positions = layoutFor(kind, data);
   buildScene(data);
   currentKind = kind;
-  finishView(kind, opts);
+  finalize();
 }
 
 function isolatedWorkIds(data: GraphData): Record<string, boolean> {

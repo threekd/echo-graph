@@ -92,6 +92,8 @@ export default function Admin() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
   const [deletedFilter, setDeletedFilter] = useState<"all" | "active" | "deleted">("all");
+  const [warnings, setWarnings] = useState<any>(null);
+  const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
   const [form, setForm] = useState<any>({});
   const [formError, setFormError] = useState("");
@@ -167,7 +169,13 @@ export default function Admin() {
         }
         return r.json();
       })
-      .then((d) => { if (d) { setData(d); setLoading(false); } })
+      .then((d) => {
+        if (d) {
+          setData(d);
+          setWarnings(d.warnings || null);
+          setLoading(false);
+        }
+      })
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
   }, [authFetch]);
 
@@ -249,7 +257,11 @@ export default function Admin() {
     if (!window.confirm("确认删除「" + id + "」?(软删除,可恢复)")) return;
     authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
       .then((r) => r.json())
-      .then((d) => { setStatus(d.ok ? "已软删除" : (d.detail || "删除失败")); load(); })
+      .then((d) => {
+        setStatus(d.ok ? "已软删除" : (d.detail || "删除失败"));
+        setWarnings(d.warnings || null);
+        load();
+      })
       .catch((e) => setStatus("删除失败: " + e.message));
   };
 
@@ -264,6 +276,7 @@ export default function Admin() {
       .then((r) => r.json())
       .then((d) => {
         setStatus(d.ok ? "已恢复,需重新导入 Neo4j 后生效" : (d.detail || "恢复失败"));
+        setWarnings(d.warnings || null);
         load();
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
@@ -369,6 +382,7 @@ export default function Admin() {
         }
         setModal(null);
         setStatus(modal.mode === "edit" ? "已更新" : "已新增");
+        setWarnings(res.data.warnings || null);
         load();
       })
       .catch((e) => setFormError("请求失败: " + e.message));
@@ -409,6 +423,37 @@ export default function Admin() {
     sort,
     cellValue,
   });
+
+  // ---- 去重即时提示(L2):表单字段失焦 / 涟漪对选定后本地比对 ----
+  const dupFields: Record<Kind, string[]> = {
+    authors: ["Name_CN", "originalName"],
+    works: ["Title_CN", "originalTitle"],
+    edges: [],
+  };
+  const selfId = modal?.mode === "edit" ? modal.row.id : undefined;
+  const fieldHasDup = (field: string, value: string): boolean => {
+    const list = kind === "authors" ? authorsList : worksList;
+    const v = String(value || "").trim().toLowerCase();
+    if (!v) return false;
+    return list.some((r: any) => r.id !== selfId && String(r[field] || "").trim().toLowerCase() === v);
+  };
+  const edgePairHasDup = (s: string, t: string): boolean => {
+    if (!s || !t || !data) return false;
+    return data.edges.some((r: any) => r.id !== selfId && r.source_work_id === s && r.target_work_id === t);
+  };
+  const edgeDupMsg =
+    kind === "edges" && modal && edgePairHasDup(form.source_work_id, form.target_work_id)
+      ? "该涟漪关系已存在"
+      : "";
+
+  const clearDupHint = (key: string) => {
+    setDupHints((h) => {
+      if (!h[key]) return h;
+      const next = { ...h };
+      delete next[key];
+      return next;
+    });
+  };
 
   return (
     <div id="admin-overlay">
@@ -454,6 +499,14 @@ export default function Admin() {
           </div>
         </div>
         <div id="admin-status">{status}</div>
+        {warnings && (warnings.duplicateAuthorNames?.length || warnings.duplicateWorkTitles?.length || warnings.duplicateEdgePairs?.length) && (
+          <div id="admin-warnings">
+            ⚠ 重复提醒:
+            {warnings.duplicateAuthorNames?.length ? " 作者名:" + warnings.duplicateAuthorNames.join("、") : ""}
+            {warnings.duplicateWorkTitles?.length ? " 作品标题:" + warnings.duplicateWorkTitles.join("、") : ""}
+            {warnings.duplicateEdgePairs?.length ? " 涟漪对:" + warnings.duplicateEdgePairs.join("、") : ""}
+          </div>
+        )}
         {authOpen && (
           <div id="auth-modal">
             <div className="auth-modal-card">
@@ -578,10 +631,14 @@ export default function Admin() {
                       <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                       <WorkPicker
                         value={form[f.key] || ""}
-                        onChange={(v) => setForm({ ...form, [f.key]: v })}
+                        onChange={(v) => {
+                          setForm({ ...form, [f.key]: v });
+                          clearDupHint(f.key);
+                        }}
                         worksList={worksList}
                         placeholder="输入筛选并选择…"
                       />
+                      {edgeDupMsg && <div className="dup-hint">{edgeDupMsg}</div>}
                     </label>
                   );
                 }
@@ -662,8 +719,22 @@ export default function Admin() {
                       max={f.max}
                       step={f.type === "number" ? (f.step != null ? f.step : 1) : undefined}
                       value={form[f.key] ?? ""}
-                      onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      onChange={(e) => {
+                        setForm({ ...form, [f.key]: e.target.value });
+                        clearDupHint(f.key);
+                      }}
+                      onBlur={() => {
+                        if (!dupFields[kind].includes(f.key)) return;
+                        const msg = fieldHasDup(f.key, form[f.key]) ? "该「" + f.label + "」已存在" : "";
+                        setDupHints((h) => {
+                          const next = { ...h };
+                          if (msg) next[f.key] = msg;
+                          else delete next[f.key];
+                          return next;
+                        });
+                      }}
                     />
+                    {dupHints[f.key] && <div className="dup-hint">{dupHints[f.key]}</div>}
                   </label>
                 );
               })}

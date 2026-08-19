@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.data_models import parse_rows
+from app.data_models import find_duplicates, parse_rows
 from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, clean_row, load_rows, save_rows, snapshot
 from app.importer import run_import
 
@@ -67,6 +67,10 @@ def _validate(a: list[dict], w: list[dict], e: list[dict]) -> None:
         raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}") from exc
 
 
+def _warnings(a: list[dict], w: list[dict], e: list[dict]) -> dict[str, list[str]]:
+    return find_duplicates(a, w, e)
+
+
 def _now() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
@@ -94,6 +98,7 @@ def get_data() -> dict:
         "authors": a,
         "works": w,
         "edges": e,
+        "warnings": _warnings(a, w, e),
         "counts": {
             "authors": len(a),
             "works": len(w),
@@ -142,7 +147,11 @@ def create(kind: Kind, row: dict) -> dict:
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
-    return {"ok": True, "row": row}
+    return {
+        "ok": True,
+        "row": row,
+        "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
+    }
 
 
 @router.put("/{kind}/{item_id}")
@@ -168,7 +177,11 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
-    return {"ok": True, "row": row}
+    return {
+        "ok": True,
+        "row": row,
+        "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
+    }
 
 
 @router.delete("/{kind}/{item_id}")
@@ -186,7 +199,11 @@ def delete(kind: Kind, item_id: str) -> dict:
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
-    return {"ok": True, "deletedAt": _now()}
+    return {
+        "ok": True,
+        "deletedAt": _now(),
+        "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
+    }
 
 
 @router.get("/export/json")

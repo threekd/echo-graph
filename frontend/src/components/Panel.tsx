@@ -104,6 +104,7 @@ export default function Panel() {
   const { state } = useApp();
   const panel = state.panel;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasInsideRef = useRef(false); // 鼠标是否曾经进入过面板(进过再移出 -> 立即隐藏)
 
   const cancelHide = useCallback(() => {
     if (hideTimer.current) {
@@ -117,8 +118,18 @@ export default function Panel() {
     hideTimer.current = setTimeout(() => {
       const el = document.getElementById("panel");
       // 3 秒后鼠标仍不在面板上时才隐藏
-      if (el && !el.matches(":hover")) el.classList.remove("show");
+      if (el && !el.matches(":hover")) {
+        el.classList.remove("show");
+        wasInsideRef.current = false;
+      }
     }, 3000);
+  }, [cancelHide]);
+
+  const hidePanel = useCallback(() => {
+    cancelHide();
+    const el = document.getElementById("panel");
+    if (el) el.classList.remove("show");
+    wasInsideRef.current = false;
   }, [cancelHide]);
 
   // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
@@ -130,10 +141,19 @@ export default function Panel() {
       const inside =
         e.clientX >= rect.left && e.clientX <= rect.right &&
         e.clientY >= rect.top && e.clientY <= rect.bottom;
-      if (inside) cancelHide();
-      else scheduleHide();
+      if (inside) {
+        wasInsideRef.current = true;
+        cancelHide();
+      } else if (wasInsideRef.current) {
+        hidePanel(); // 从面板内移出:立即隐藏
+      } else {
+        scheduleHide(); // 从未进入面板:维持 3 秒倒计时
+      }
     };
-    const onLeave = () => scheduleHide(); // 鼠标离开窗口时也进入倒计时
+    const onLeave = () => {
+      if (wasInsideRef.current) hidePanel();
+      else scheduleHide(); // 鼠标离开窗口时也进入倒计时
+    };
     window.addEventListener("mousemove", onMove);
     document.documentElement.addEventListener("mouseleave", onLeave);
     return () => {
@@ -141,7 +161,7 @@ export default function Panel() {
       document.documentElement.removeEventListener("mouseleave", onLeave);
       cancelHide();
     };
-  }, [cancelHide, scheduleHide]);
+  }, [cancelHide, hidePanel, scheduleHide]);
 
   useEffect(() => {
     const el = document.getElementById("panel");

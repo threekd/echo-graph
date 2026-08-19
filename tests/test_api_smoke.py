@@ -136,6 +136,29 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(row["createdAt"], "2026-01-01T00:00:00+00:00")
         self.assertTrue(row["updatedAt"])
 
+    def test_admin_get_data_includes_warnings(self) -> None:
+        import app.admin as admin
+
+        authors = [
+            {"id": "01a013e6-e885-766b-b9db-315d518adeeb", "originalName": "X", "Name_CN": "甲"},
+            {"id": "01a013e6-e885-766b-b9db-315d518adeec", "originalName": "Y", "Name_CN": "甲"},
+        ]
+        with patch("app.admin.load_rows", return_value=(authors, [], [])):
+            d = admin.get_data()
+        self.assertIn("warnings", d)
+        self.assertEqual(len(d["warnings"]["duplicateAuthorNames"]), 1)
+
+    def test_admin_create_response_has_warnings(self) -> None:
+        import app.admin as admin
+
+        with (
+            patch("app.admin.load_rows", return_value=([], [], [])),
+            patch("app.admin.save_rows"),
+            patch("app.admin.snapshot", return_value=None),
+        ):
+            res = admin.create("authors", {"originalName": "某", "Name_CN": "某"})
+        self.assertIn("warnings", res)
+
     def test_admin_token_rejects_placeholder(self) -> None:
         import app.admin as admin
 

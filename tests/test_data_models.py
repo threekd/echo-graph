@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 import uuid
 
-from app.data_models import parse_rows
+from app.data_models import find_duplicates, parse_rows
 
 
 def _u() -> str:
@@ -168,6 +168,29 @@ class ParseRowsTest(unittest.TestCase):
         w[0]["Title_CN"] = "   "
         with self.assertRaises(ValueError):
             parse_rows(a, w, e)
+
+    def test_find_duplicates_reports_names_titles_and_pairs(self) -> None:
+        a, w, e = _fixture()
+        a.append({"id": _u(), "originalName": "  AUTHOR A  ", "Name_CN": "作家乙"})
+        w.append({
+            "id": _u(), "language": "en", "originalTitle": "book one",
+            "Title_CN": "书一", "author_id": a[0]["id"],
+        })
+        e.append({"id": _u(), "source_work_id": w[0]["id"], "target_work_id": w[1]["id"], "evidence": "x"})
+        report = find_duplicates(a, w, e)
+        self.assertIn("Author A", report["duplicateAuthorNames"])  # 大小写归一后命中
+        self.assertIn("Book One", report["duplicateWorkTitles"])
+        self.assertIn("书一", report["duplicateWorkTitles"])
+        self.assertEqual(len(report["duplicateEdgePairs"]), 1)
+
+    def test_find_duplicates_ignores_same_row_and_deleted(self) -> None:
+        a, w, e = _fixture()
+        # 同一行内 originalName 与 Name_CN 相同不算重复
+        a[0]["originalName"] = a[0]["Name_CN"] = "同名作者"
+        # 软删除行不计入
+        a.append({"id": _u(), "originalName": "同名作者", "Name_CN": "乙", "deletedAt": "2026-01-01T00:00:00+00:00"})
+        report = find_duplicates(a, w, e)
+        self.assertEqual(report["duplicateAuthorNames"], [])
 
 
 if __name__ == "__main__":

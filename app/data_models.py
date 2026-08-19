@@ -247,3 +247,58 @@ def parse_rows(
     if errors:
         raise ValueError("\n- ".join(errors))
     return author_models, work_models, echo_models, work_authors
+
+
+def find_duplicates(
+    authors: list[dict], works: list[dict], echoes: list[dict]
+) -> dict[str, list[str]]:
+    """非结构性重复报告(软提示):作者重名、作品标题重复、涟漪对重复。
+
+    软删除行不计入;名称比较前 trim + casefold;同一行内(如原名列与中文名列相同)
+    不视为重复。结构性重复(id、涟漪对)仍由 parse_rows / admin 硬拒绝。
+    """
+
+    def norm(v: object) -> str:
+        return v.strip().casefold() if isinstance(v, str) else ""
+
+    def collect(rows: list[dict], fields: tuple[str, ...]) -> list[str]:
+        by_key: dict[str, tuple[str, str]] = {}  # 归一化键 -> (行 id, 原始展示串)
+        dup: list[str] = []
+        for r in rows:
+            if r.get("deletedAt"):
+                continue
+            rid = str(r.get("id") or "")
+            for f in fields:
+                raw = r.get(f)
+                key = norm(raw)
+                if not key:
+                    continue
+                if key in by_key:
+                    prev_rid, display = by_key[key]
+                    if prev_rid != rid and display not in dup:
+                        dup.append(display)
+                else:
+                    by_key[key] = (rid, str(raw).strip())
+        return dup
+
+    dup_pairs: list[str] = []
+    seen_pairs: dict[tuple[str, str], str] = {}
+    for r in echoes:
+        if r.get("deletedAt"):
+            continue
+        s, t = r.get("source_work_id"), r.get("target_work_id")
+        if not s or not t:
+            continue
+        pair = (str(s), str(t))
+        display = f"{s} -> {t}"
+        if pair in seen_pairs:
+            if seen_pairs[pair] not in dup_pairs:
+                dup_pairs.append(seen_pairs[pair])
+        else:
+            seen_pairs[pair] = display
+
+    return {
+        "duplicateAuthorNames": collect(authors, ("originalName", "Name_CN", "Name_EN")),
+        "duplicateWorkTitles": collect(works, ("Title_CN", "originalTitle")),
+        "duplicateEdgePairs": dup_pairs,
+    }

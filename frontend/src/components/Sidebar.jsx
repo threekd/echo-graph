@@ -4,7 +4,6 @@ import { search } from "../lib/api.js";
 import {
   renderMain, renderPath, selectNode, buildWorkLookups, expandRippleDebounced, reRenderRipple, syncUrl, getShareHash,
 } from "../lib/graph.js";
-import { toggleAuthorsInView } from "../lib/renderer.js";
 
 export default function Sidebar() {
   const { state, dispatch } = useApp();
@@ -59,6 +58,33 @@ export default function Sidebar() {
     navigator.clipboard.writeText(location.origin + location.pathname + "#" + hash)
       .then(() => dispatch({ type: "SET_TOAST", msg: "分享链接已复制" }))
       .catch(() => dispatch({ type: "SET_TOAST", msg: "复制失败" }));
+  };
+
+  // 过滤开关变化后按当前视图重新渲染(保持相机),主/涟漪视图由渲染函数自行同步 URL
+  const rerenderCurrentView = (overrides) => {
+    if (state.currentView === "main") {
+      renderMain({ preserveCamera: true }, null, overrides);
+    } else if (state.currentView === "ripple") {
+      reRenderRipple();
+    } else {
+      syncUrl({
+        view: state.currentView,
+        hideIslands: overrides.hideIslands != null ? overrides.hideIslands : state.hideIslands,
+        showAuthors: overrides.showAuthors != null ? overrides.showAuthors : state.showAuthors,
+      });
+    }
+  };
+
+  const onToggleAuthors = (e) => {
+    const value = e.target.checked;
+    dispatch({ type: "SET_SHOW_AUTHORS", value });
+    rerenderCurrentView({ showAuthors: value });
+  };
+
+  const onToggleIslands = (e) => {
+    const value = e.target.checked;
+    dispatch({ type: "SET_HIDE_ISLANDS", value });
+    rerenderCurrentView({ hideIslands: value });
   };
 
   const backMain = () => {
@@ -137,28 +163,14 @@ export default function Sidebar() {
           <label className="opt">
             <input
               type="checkbox" id="show-authors" checked={state.showAuthors}
-              onChange={(e) => {
-                const value = e.target.checked;
-                dispatch({ type: "SET_SHOW_AUTHORS", value });
-                toggleAuthorsInView(!value);
-                syncUrl({ view: state.currentView, hideIslands: state.hideIslands, showAuthors: value });
-              }}
+              onChange={onToggleAuthors}
             />
             <span>显示作家节点</span>
           </label>
           <label className="opt">
             <input
               type="checkbox" id="hide-islands" checked={state.hideIslands}
-              onChange={(e) => {
-                const value = e.target.checked;
-                dispatch({ type: "SET_HIDE_ISLANDS", value });
-                if (state.currentView === "main") {
-                  renderMain({ preserveCamera: true }, null, { hideIslands: value });
-                } else if (state.currentView === "ripple") {
-                  reRenderRipple();
-                }
-                syncUrl({ view: state.currentView, hideIslands: value, showAuthors: state.showAuthors });
-              }}
+              onChange={onToggleIslands}
             />
             <span>隐藏孤岛星</span>
           </label>

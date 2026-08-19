@@ -23,8 +23,6 @@ var viewToken = 0;             // 防止异步布局的旧回调覆盖新视图
 var hiddenLabelIds = {};       // 主图谱中默认隐藏标签的孤岛作品
 var glowTexture = null;
 var backgroundStars = null;
-var currentView = "main";      // 当前视图:main / ripple / path / author
-var fullData = { nodes: [], edges: [] }; // 全量数据(加载完成后由 App 注入)
 var animFrameId = null;
 var boundCleanups = [];        // dispose 时统一移除的监听
 var onNodeClick = null; // 由 main.js 注入(避免循环依赖)
@@ -42,11 +40,6 @@ export function setOnNodeClick(fn) {
 
 export function setOnNodeHover(fn) {
   onNodeHover = fn;
-}
-
-// App 在数据加载完成后注入全量数据,供"显示作家节点"恢复等场景使用
-export function setFullData(data) {
-  fullData = data || { nodes: [], edges: [] };
 }
 
 export function sceneNodeCount() {
@@ -596,7 +589,6 @@ function finishView(kind, data, opts) {
   }
   if (!opts.camera) applyCamera();
   lastInteraction = Date.now();
-  currentView = kind;
   if (onViewChange) onViewChange({ kind: kind, label: viewLabel(kind, data) });
 }
 
@@ -650,70 +642,6 @@ function isolatedWorkIds(data) {
     if (n.type === "work" && !deg[n.id]) ids[n.id] = true;
   });
   return ids;
-}
-
-function authorPosFor(wpos) {
-  if (currentView === "author") return new THREE.Vector3(0, 0, 0);
-  var isRipple = currentView === "ripple";
-  if (isRipple) {
-    if (wpos.length() < 1) return new THREE.Vector3(0, -110, 0);
-    var dir = wpos.clone().normalize();
-    var perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-    if (perp.lengthSq() < 0.0001) perp.set(1, 0, 0);
-    perp.normalize();
-    return dir.multiplyScalar(345).add(perp.multiplyScalar(35)).add(new THREE.Vector3(0, 25, 0));
-  }
-  return wpos.clone().multiplyScalar(0.82);
-}
-
-// 即时增删作者节点(不重新跑布局),让"显示作家节点"勾选立即生效
-export function toggleAuthorsInView(hidden) {
-  if (currentView === "path") return; // 提及链保持纯作品视图
-  if (hidden) {
-    Object.keys(nodeGroups).forEach(function (id) {
-      var g = nodeGroups[id];
-      var node = g.userData.core.userData.node;
-      if (node.type !== "author") return;
-      scene.remove(g);
-      g.traverse(function (obj) {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (obj.material.map) obj.material.map = null;
-          obj.material.dispose();
-        }
-      });
-      var label = nodeLabels[id];
-      if (label && label.element && label.element.parentNode) {
-        label.element.parentNode.removeChild(label.element);
-      }
-      delete nodeGroups[id];
-      delete nodeLabels[id];
-      delete positions[id];
-    });
-    edgeLines = edgeLines.filter(function (line) {
-      if (line.userData.edge.type !== "authored") return true;
-      scene.remove(line);
-      line.geometry.dispose();
-      line.material.dispose();
-      return false;
-    });
-  } else {
-    Object.keys(nodeGroups).forEach(function (id) {
-      var g = nodeGroups[id];
-      var node = g.userData.core.userData.node;
-      if (node.type !== "work") return;
-      var aid = node.author_id;
-      if (!aid || nodeGroups[aid]) return;
-      var author = fullData.nodes.filter(function (n) { return n.id === aid; })[0];
-      if (!author) return;
-      var wpos = positions[id];
-      if (!wpos) return;
-      var apos = authorPosFor(wpos);
-      createNodeGroup(author, apos);
-      positions[aid] = apos;
-      createEdgeLine({ source: id, target: aid, type: "authored" });
-    });
-  }
 }
 
 // =============================== 交互 ===============================

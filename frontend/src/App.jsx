@@ -11,7 +11,7 @@ import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
 } from "./lib/graph.js";
-import { setOnViewChange, setFullData } from "./lib/renderer.js";
+import { setOnViewChange } from "./lib/renderer.js";
 
 function parseCam(s) {
   const parts = String(s || "").split(",").map((x) => parseFloat(x));
@@ -91,7 +91,6 @@ function AppContent() {
     });
     Promise.all([loadGraphData(), loadStats()])
       .then(([data, stats]) => {
-        setFullData(data);
         dispatch({ type: "SET_DATA", data });
         dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
         if (location.hash.replace(/^#/, "")) {

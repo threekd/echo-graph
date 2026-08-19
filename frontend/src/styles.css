@@ -578,6 +578,10 @@ button.ghost { color: var(--muted); }
   cursor: pointer;
 }
 .admin-actions input { background: rgba(10, 14, 34, 0.7); width: 180px; }
+#btn-auth.authed {
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #34d399;
+}
 #admin-status {
   padding: 8px 18px;
   font-size: 12px;
@@ -660,6 +664,44 @@ button.ghost { color: var(--muted); }
   box-shadow: 0 0 50px rgba(90, 130, 255, 0.25);
 }
 .admin-modal-card h3 { margin: 0 0 14px; color: #dce6ff; }
+#auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.auth-modal-card {
+  width: min(360px, 92vw);
+  background: rgba(13, 18, 42, 0.98);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 0 50px rgba(90, 130, 255, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-modal-card h3 {
+  margin: 0;
+  color: #dce6ff;
+  font-size: 15px;
+}
+.auth-modal-card input {
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 255, 0.25);
+  background: rgba(10, 14, 34, 0.8);
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.auth-error {
+  color: #ffb0b0;
+  font-size: 12px;
+}
 #admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
 #admin-form .full { grid-column: 1 / -1; }
 #admin-form label {

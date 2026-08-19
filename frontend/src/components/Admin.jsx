@@ -406,6 +406,10 @@ export default function Admin() {
   const [modal, setModal] = useState(null); // { mode: "add" | "edit", row: {} }
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState("");
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authInput, setAuthInput] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [token, setToken] = useState(() => {
     try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch { return ""; }
   });
@@ -418,10 +422,49 @@ export default function Admin() {
 
   const handleAuthError = (r) => {
     if (r.status === 401 || r.status === 403) {
-      setStatus("管理令牌无效或缺失,请在上方输入令牌后保存");
+      setStatus("管理令牌无效或缺失,请点击「获取授权」重新授权");
       return true;
     }
     return false;
+  };
+
+  // 打开授权对话框
+  const openAuth = () => {
+    setAuthInput("");
+    setAuthError("");
+    setAuthOpen(true);
+  };
+
+  // 校验令牌:有效则保存并授权,「获取授权」变为「已授权」
+  const doAuthorize = () => {
+    const value = authInput.trim();
+    if (!value) {
+      setAuthError("请输入令牌");
+      return;
+    }
+    setAuthBusy(true);
+    fetch("/api/admin/data", { headers: { Authorization: "Bearer " + value } })
+      .then((r) => {
+        if (r.status === 401 || r.status === 403) {
+          setAuthError("令牌无效,请重试");
+          return null;
+        }
+        if (!r.ok) {
+          setAuthError("校验失败(状态码 " + r.status + ")");
+          return null;
+        }
+        return r.json();
+      })
+      .then((d) => {
+        if (!d) return;
+        try { sessionStorage.setItem("echo_graph_admin_token", value); } catch { /* ignore */ }
+        setToken(value); // token 变化后 load() 会随 useEffect 自动重新拉取数据
+        setAuthOpen(false);
+        setAuthInput("");
+        setStatus("已授权");
+      })
+      .catch((e) => setAuthError("校验失败: " + e.message))
+      .finally(() => setAuthBusy(false));
   };
 
   const load = useCallback(() => {
@@ -617,21 +660,8 @@ export default function Admin() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <input
-              type="password"
-              placeholder="管理令牌"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              style={{ width: "10em" }}
-            />
-            <button
-              onClick={() => {
-                try { sessionStorage.setItem("echo_graph_admin_token", token); } catch { /* ignore */ }
-                setStatus("令牌已保存");
-                load();
-              }}
-            >
-              保存令牌
+            <button id="btn-auth" className={token ? "authed" : ""} onClick={openAuth}>
+              {token ? "已授权" : "获取授权"}
             </button>
             <button onClick={openAdd}>＋ 新增</button>
             <button onClick={doImport}>导入到 Neo4j</button>
@@ -641,6 +671,32 @@ export default function Admin() {
           </div>
         </div>
         <div id="admin-status">{status}</div>
+        {authOpen && (
+          <div id="auth-modal">
+            <div className="auth-modal-card">
+              <h3>请输入令牌</h3>
+              <input
+                type="password"
+                placeholder="管理令牌"
+                value={authInput}
+                autoFocus
+                onChange={(e) => {
+                  setAuthInput(e.target.value);
+                  setAuthError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") doAuthorize();
+                  if (e.key === "Escape") setAuthOpen(false);
+                }}
+              />
+              {authError && <div className="auth-error">{authError}</div>}
+              <div className="admin-modal-actions">
+                <button onClick={doAuthorize} disabled={authBusy}>{authBusy ? "校验中…" : "确认"}</button>
+                <button onClick={() => setAuthOpen(false)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="admin-body">
           {loading ? <p>加载中…</p> : (
             <table id="admin-table">

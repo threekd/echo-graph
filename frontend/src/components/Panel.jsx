@@ -37,7 +37,7 @@ function WorkPanel({ d }) {
       <div className="meta">{w.originalTitle || w.title_en} · {authorName} · {w.year || "?"} · {w.language}</div>
       {d.mentioned_by.length > 0 && (
         <>
-          <h3>谁提及了这本书(回声来源)</h3>
+          <h3>回声来源</h3>
           <ul>
             {d.mentioned_by.map((e, i) => (
               <li key={i}>
@@ -53,7 +53,7 @@ function WorkPanel({ d }) {
       )}
       {d.mentions.length > 0 && (
         <>
-          <h3>这本书提及了(涟漪扩散)</h3>
+          <h3>涟漪扩散</h3>
           <ul>
             {d.mentions.map((e, i) => (
               <li key={i}>
@@ -68,7 +68,7 @@ function WorkPanel({ d }) {
         </>
       )}
       {d.mentioned_by.length === 0 && d.mentions.length === 0 && (
-        <p className="no-path">这本书没有被其他书提及,也未提及别的书(孤岛星)。</p>
+        <p className="no-path">漂浮中。</p>
       )}
     </div>
   );

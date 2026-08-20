@@ -29,11 +29,11 @@
   - `GET /api/expansion/{workId}?hops=N` N 级扩散子图
   - `GET /api/stats` 数据统计
 - [x] Neo4j Aura 数据导入与约束(index)
-- [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
+- [x] 导入管线重构:`data/export/*.csv`(原 `data/real`)为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;导入 Neo4j 已随查询层退役(Phase 4);导出 JSON/CSV 已移除(备份由自动 CSV 导出 + git 承担);保存快照已在 P3d 移除(`data/versions/` 为历史遗留)
 - [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复(「上传↑」导入与保存快照已随 Phase 4/P3d 移除)
 - [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
-- [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
+- [x] 真实数据接入:`data/export/*.csv`(原 `data/real`)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 - [x] 涟漪视图:未勾选「隐藏孤岛星」时,展示视图中已出现作者名下的全部作品,额外作品围绕作者形成隐约星云(更小更暗、悬停显示标签);勾选后仅保留涟漪节点(即时重渲染,保持相机)
@@ -42,7 +42,7 @@
 - [x] 审核状态落地:模型默认 `draft`;`GET /api/graph?status=` 按审核状态过滤;`/api/stats` 输出 `reviewStatus` 分布
 - [x] 时间戳语义:管理 API 新增/编辑维护 `createdAt`/`updatedAt`;导入不再全量刷新 `updatedAt`(仅新增时写入)
 - [x] 数据一致性:涟漪边对唯一性校验下沉到 `parse_rows`;Neo4j 详情页提及列表改用 OPTIONAL MATCH,与 JSON 兜底输出对齐;快照保留最近 20 份
-- [x] 贡献数据收件箱:SQLite 存储(`data/contributions.db`,gitignore);公开接口 `POST /api/contribute/echo`(无需令牌,基础 IP 限流,长度/清洗校验);管理接口 `/api/admin/contributions` 列表 + 通过/驳回
+- [x] 贡献数据收件箱:SQLite 存储(并入主库 `data/echo-graph.db` 的 `contributions` 表);公开接口 `POST /api/contribute/echo`(无需令牌,基础 IP 限流,长度/清洗校验);管理接口 `/api/admin/contributions` 列表 + 通过/驳回
 - [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
 - [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
 - ⬜ 贡献数据后续:AI 校正、审核通过后自动录入策展 CSV、验证码/持久化限流、按联系方式跟进用户

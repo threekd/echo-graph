@@ -1,7 +1,7 @@
 ﻿# Echo Graph 数据结构规范
 
 - `schemaVersion`: `1.1`
-- 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;`data/real/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与 JSON 兜底已退役
+- 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;`data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与 JSON 兜底已退役
 - 所有 `createdAt` / `updatedAt` 均为 UTC ISO-8601 字符串
 
 ## 通用约定
@@ -77,10 +77,10 @@
 
 - 唯一约束:`Work.id`、`Author.id`
 - 全文检索:数据量增长后可对 `Work(Title_CN, Title_EN, originalTitle)` 建 SQLite FTS5 索引;`evidence` 属长文本,当前用包含匹配,后续可拆分为独立 Evidence 表或接入 FTS5
-- 建议查询:`(Work)-[:ECHO]` 两端均命中唯一约束,路径与扩散查询走变长路径
+- 建议查询:`edges` 按 `source_work_id` / `target_work_id` 建索引(已有 `idx_edges_target`),路径与扩散查询在读取层以内存 BFS 实现,数据量增长后可加 FTS5 与进程内邻接缓存
 
 ## 说明
 
-- 早期演示数据曾为编造;现以 `data/real/*.csv` 真实策展数据为准,`evidence` 摘抄来自公开译本,审核状态按行记录,正式发布前需逐条人工审核并置为 `reviewed`。
+- 早期演示数据曾为编造;现以 SQLite 真实策展数据为准(CSV 导出在 `data/export/`),`evidence` 摘抄来自公开译本,审核状态按行记录,正式发布前需逐条人工审核并置为 `reviewed`。
 - 软删除(`deletedAt`)只在 SQLite/CSV 数据层表达:标记为删除的行保留在库与存档中,读取层一律过滤,图上只出现活跃数据。
 - 本规范为 1.1 版;数据结构演进时递增 `schemaVersion` 并保持向后兼容。

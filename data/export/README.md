@@ -1,4 +1,7 @@
-# data/real CSV 导出目录
+# data/export CSV 导出目录
+
+> 2026-08-21:目录由 `data/real`(真实数据)更名为 `data/export`,语义明确为**确定性导出产物**;
+> git 历史中的旧路径 `data/real` 即当前 `data/export`。
 
 **这里的三份 CSV 是派生产物,不是数据事实源。** 事实源是 SQLite(`data/echo-graph.db`):
 
@@ -11,7 +14,7 @@
 手动重新生成:
 
 ```bash
-uv run python scripts/export_csv.py          # 覆盖 data/real/*.csv
+uv run python scripts/export_csv.py          # 覆盖 data/export/*.csv
 uv run python scripts/export_csv.py --check  # 仅校验(CI 门禁)
 ```
 

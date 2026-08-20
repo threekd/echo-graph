@@ -6,7 +6,7 @@
 用户浏览器 → nginx(80/443, HTTPS) → uvicorn(127.0.0.1:8000, 单 worker)
                                 └─ 静态资源直接由 nginx 托管(frontend/dist)
 数据:SQLite(data/echo-graph.db)为唯一权威,公开读取直接查 SQLite;
-data/real/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)。
+data/export/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)。
 ```
 
 > 架构说明:曾使用 Neo4j Aura 作为查询层,现已退役——公开读取直接由 SQLite 提供,
@@ -64,17 +64,17 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 
 ## 4. 数据回传(重要)
 
-`data/echo-graph.db` 不在 git 中;**`data/real/*.csv` 是跨机器传输与审计通道**:
+`data/echo-graph.db` 不在 git 中;**`data/export/*.csv` 是跨机器传输与审计通道**:
 
 - 在 VPS 上通过「数据管理」页编辑时,改动写入 `/opt/echo-graph/data/echo-graph.db`,
-  并自动导出 `data/real/*.csv`(文件进 git)。
+  并自动导出 `data/export/*.csv`(文件进 git)。
 - 每次在 VPS 上改完数据,请提交并推送 CSV:
 
   ```bash
   sudo -u echograph bash -lc "cd /opt/echo-graph && \
     git config user.name 'echograph' && \
     git config user.email 'echograph@localhost' && \
-    git add data/real && \
+    git add data/export && \
     git commit -m 'data: update from VPS admin' && \
     git push"
   ```
@@ -90,7 +90,7 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 | 数据 | 位置 | 备份方式 |
 |---|---|---|
 | 策展数据 + 投稿 + 审计 `data/echo-graph.db` | VPS 本地 | `deploy.sh` 每次 `sqlite3 .backup` 到 `backups/`(保留 14 份);建议再 rsync 到异地 |
-| CSV 导出 `data/real/*.csv` | git 仓库 | push 到远端即备份 |
+| CSV 导出 `data/export/*.csv` | git 仓库 | push 到远端即备份 |
 | 编辑版本快照 `data/versions/` | VPS 本地 | `deploy.sh` 打包;建议 rsync(历史遗留,新代码不再写入) |
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
 

@@ -23,7 +23,7 @@
 4. **来源追溯**：每条关系都附有一小段原文片段。
 
 **技术架构**
-- 数据存储：SQLite(`data/echo-graph.db`)为唯一权威,**公开读取也直接由 SQLite 提供**;`data/real/*.csv` 为确定性导出产物(git 审计 / 跨机器传输)
+- 数据存储：SQLite(`data/echo-graph.db`)为唯一权威,**公开读取也直接由 SQLite 提供**;`data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输)
 - 后端：Python / FastAPI，提供查询路径、扩散计算、影响力算法
 - 前端：React + Three.js，支持大数据量图谱可视化
 
@@ -49,8 +49,8 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(1:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存**：SQLite(`data/echo-graph.db`,已 gitignore),作者/作品/涟漪与贡献收件箱同库;`data/real/*.csv` 为每次写入自动导出的确定性产物(git 跟踪,审计/回滚);
-- **存储与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,作者/作品/涟漪与贡献收件箱同库;公开接口(`/api/graph` 等)直接查 SQLite;`data/real/*.csv` 为每次写入自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存**：SQLite(`data/echo-graph.db`,已 gitignore),作者/作品/涟漪与贡献收件箱同库;`data/export/*.csv` 为每次写入自动导出的确定性产物(git 跟踪,审计/回滚);
+- **存储与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,作者/作品/涟漪与贡献收件箱同库;公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为每次写入自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
@@ -114,13 +114,13 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 注意事项:国内机房绑域名对外提供 80/443 服务需要 ICP 备案,不想备案可选香港/新加坡 VPS;
 1核2G 即可运行(systemd 单 worker);`data/echo-graph.db` 是数据事实源(备份=用 `sqlite3 .backup`
-或 deploy.sh 自动备份),`data/real/*.csv` 为导出产物配合 git 完成版本审计与跨机器传输。
+或 deploy.sh 自动备份),`data/export/*.csv` 为导出产物配合 git 完成版本审计与跨机器传输。
 
 > 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。编辑保存后立即写入 SQLite 并自动导出 CSV。
 
 > **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/echo-graph.db` 内 `contributions` 表),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(查看/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流)。
 
-策展数据以 SQLite(`data/echo-graph.db`)为准,`data/real/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、审计记录),字段说明见 `data/real/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
+策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、审计记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
 
 **软删除设计**:`deletedAt` 仅在 SQLite/CSV 数据层表达——被删除的行保留在库中与 CSV 存档(`deletedAt` 非空),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
 
@@ -150,5 +150,5 @@ URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作�
 
 ### 重要声明
 
-- 当前数据为**真实策展数据**,以 `data/real/*.csv` 为准;摘抄与出处来自 `data/real/edges.csv`;审核状态按行记录(`draft` / `reviewed`),正式发布前需逐条人工审核并置为 `reviewed`。
+- 当前数据为**真实策展数据**,以 SQLite(`data/echo-graph.db`)为准,CSV 导出位于 `data/export/*.csv`;摘抄与出处来自 `data/export/edges.csv`;审核状态按行记录(`draft` / `reviewed`),正式发布前需逐条人工审核并置为 `reviewed`。
 - 前端已迁移到 React + Vite;旧版无构建静态页已移除,前端以 `frontend/dist` 构建产物为唯一维护源(由 FastAPI 托管)。

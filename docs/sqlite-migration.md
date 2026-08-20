@@ -5,7 +5,7 @@
 
 ## 一、背景与目标
 
-当前策展数据（作者 / 作品 / 涟漪）以 `data/real/*.csv` 为事实源，管理页编辑 CSV、导入脚本同步 Neo4j。随着写入方扩展到“网页管理页 + AI agent”，CSV 整文件读改写存在并发覆盖风险，且已不需要人直接阅读/编辑 CSV。
+当前策展数据（作者 / 作品 / 涟漪）以 `data/export/*.csv`（原名 `data/real`）为事实源，管理页编辑 CSV、导入脚本同步 Neo4j。随着写入方扩展到“网页管理页 + AI agent”，CSV 整文件读改写存在并发覆盖风险，且已不需要人直接阅读/编辑 CSV。
 
 目标：
 
@@ -64,7 +64,7 @@
 - 行级 CRUD（`get_row / insert_row / update_row / set_work_authors / mark_deleted / restore_by_ts`），admin 写入不再整库重写；
 - `replace_all / rewrite_all`：单事务整库重建（迁移 / 恢复工具用）；
 - `list_all()`：返回与 CSV `load_rows` 同形状的行（works 行重组 `author_id` 逗号串）；
-- `canonical_payload(rows...)` / `sync_payload()`：规范化载荷，供同步比对（与 admin 的 CSV 侧共用同一实现）；
+- `canonical_payload(rows...)` / `sync_payload()`：规范化载荷，供 CSV <-> SQLite 往返一致性校验（`migrate_from_csv` 与测试共用）；
 - 级联软删除（作品→边、作者→作品+边）在 admin 侧单事务内执行。
 
 ## 五之二、P0-P2 优化清单（已完成）
@@ -110,7 +110,7 @@
 ## 七、确定性 CSV 导出 + git 纪律
 
 - 从 SQLite 按 `ORDER BY id` 生成三份 CSV，表头与现在完全一致、UTF-8 BOM、格式稳定；
-- 每次成功写入后自动刷新 `data/real/*.csv`（文件进 git，人工 / agent 提交）；
+- 每次成功写入后自动刷新 `data/export/*.csv`（文件进 git，人工 / agent 提交）；
 - CI 新增 `check-export` 门禁：跑导出 → `git diff --exit-code`，有差异即失败；
 - 保留审计 / 回滚 / diff 能力，同时不让文件参与运行时真相。
 

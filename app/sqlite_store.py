@@ -386,7 +386,7 @@ def sync_payload() -> dict:
 
 
 def migrate_from_csv(db_path: Path | str, check: bool = True) -> dict:
-    """校验 data/real/*.csv 并整库重建 SQLite;校验失败抛 ValueError。"""
+    """校验 data/export/*.csv 并整库重建 SQLite;校验失败抛 ValueError。"""
     from app.data_models import parse_rows
     from app.data_store import load_csv_rows
 

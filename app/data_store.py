@@ -10,7 +10,7 @@ from pathlib import Path
 from app import sqlite_store
 
 ROOT = Path(__file__).resolve().parent.parent
-REAL_DIR = ROOT / "data" / "real"
+EXPORT_DIR = ROOT / "data" / "export"
 
 AUTHOR_HEADER = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -68,18 +68,18 @@ def _write_csv(path: Path, header: list[str], rows: list[dict]) -> None:
 
 
 def load_csv_rows() -> tuple[list[dict], list[dict], list[dict]]:
-    """从 data/real/*.csv 读取(迁移 / 恢复用,权威来源是 SQLite)。"""
+    """从 data/export/*.csv 读取(迁移 / 恢复用,权威来源是 SQLite)。"""
     return (
-        _read_csv(REAL_DIR / "authors.csv"),
-        _read_csv(REAL_DIR / "works.csv"),
-        _read_csv(REAL_DIR / "edges.csv"),
+        _read_csv(EXPORT_DIR / "authors.csv"),
+        _read_csv(EXPORT_DIR / "works.csv"),
+        _read_csv(EXPORT_DIR / "edges.csv"),
     )
 
 
 def export_csv_files(target_dir: Path | None = None) -> None:
-    """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/real/。"""
+    """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/export/。"""
     data = sqlite_store.list_all()
-    out = Path(target_dir) if target_dir is not None else REAL_DIR
+    out = Path(target_dir) if target_dir is not None else EXPORT_DIR
     _write_csv(out / "authors.csv", AUTHOR_HEADER, data["authors"])
     _write_csv(out / "works.csv", WORK_HEADER, data["works"])
     _write_csv(out / "edges.csv", EDGE_HEADER, data["edges"])

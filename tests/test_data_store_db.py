@@ -36,10 +36,10 @@ class DataStoreDbTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.db = Path(self.tmp.name) / "echo-graph.db"
-        self.real = Path(self.tmp.name) / "real"
-        self.real.mkdir()
+        self.export = Path(self.tmp.name) / "export"
+        self.export.mkdir()
         patch.object(db_sqlite, "DB_PATH", self.db).start()
-        patch.object(ds, "REAL_DIR", self.real).start()
+        patch.object(ds, "EXPORT_DIR", self.export).start()
         self.addCleanup(self.tmp.cleanup)
 
     def test_save_then_load_roundtrip(self) -> None:
@@ -52,16 +52,16 @@ class DataStoreDbTest(unittest.TestCase):
         self.assertEqual(len(e2), 1)
         multi = next(r for r in w2 if r["Title_CN"] == "朝花夕拾")
         self.assertEqual(multi["author_id"], f"{a[0]['id']},{a[1]['id']}")
-        # 保存后自动导出 CSV 到 data/real
-        self.assertTrue((self.real / "authors.csv").exists())
-        self.assertTrue((self.real / "works.csv").exists())
-        self.assertTrue((self.real / "edges.csv").exists())
+        # 保存后自动导出 CSV 到 data/export
+        self.assertTrue((self.export / "authors.csv").exists())
+        self.assertTrue((self.export / "works.csv").exists())
+        self.assertTrue((self.export / "edges.csv").exists())
 
     def test_export_is_deterministic(self) -> None:
         a, w, e = _rows()
         sqlite_store.rewrite_all(a, w, e)
         ds.export_csv_files()
-        content = (self.real / "authors.csv").read_bytes()
+        content = (self.export / "authors.csv").read_bytes()
         other = Path(self.tmp.name) / "other"
         other.mkdir()
         ds.export_csv_files(other)

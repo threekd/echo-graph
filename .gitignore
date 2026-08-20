@@ -8,10 +8,14 @@ frontend/node_modules/
 frontend/dist/
 frontend/*.local
 
-# 数据:保留 data/real/*.csv 真实数据源;忽略自动生成的快照/版本备份
+# 数据:保留 data/export/*.csv 导出产物(git 审计/传输);忽略自动生成的快照/版本备份
 data/versions/
 data/snapshots/
 data/echo-graph.db*
+
+# 部署/工具产物
+backups/
+.ruff_cache/
 
 # 编辑器/系统
 .idea/

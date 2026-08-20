@@ -1,4 +1,4 @@
-"""CSV -> SQLite 重建:data/real/*.csv -> data/echo-graph.db。
+"""CSV -> SQLite 重建:data/export/*.csv -> data/echo-graph.db。
 
 用途:CI 导出新鲜度门禁、全新 VPS 初始化引导、以及部署时把远端 CSV 数据
 重建进本地 SQLite(contributions / audit_log 表不受影响)。

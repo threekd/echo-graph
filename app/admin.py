@@ -1,6 +1,6 @@
 """数据管理 API:三张表的增删改查、软删除、审计查询。
 
-存储层:SQLite(data/echo-graph.db);每次写入自动导出 CSV 至 data/real/(git 审计)。
+存储层:SQLite(data/echo-graph.db);每次写入自动导出 CSV 至 data/export/(git 审计)。
 Neo4j 导入与同步比对已随查询层退役。
 """
 

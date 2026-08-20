@@ -1,7 +1,7 @@
 """命令行导入入口:委托 app.importer.run_import。
 
 用法:
-  uv run python scripts/import_data.py                      # 默认从 data/real/*.csv 导入(幂等)
+  uv run python scripts/import_data.py                      # 从 SQLite 导入(幂等)
   uv run python scripts/import_data.py --wipe --version 1.1  # 全量重建
 """
 
@@ -18,7 +18,6 @@ from app.importer import run_import
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Echo Graph 数据导入")
-    parser.add_argument("--source", choices=["csv"], default="csv")
     parser.add_argument("--wipe", action="store_true", help="全量重建(删除旧数据)")
     parser.add_argument("--version", default="1.1", help="数据集版本号")
     parser.add_argument("--no-snapshot", action="store_true", help="跳过快照导出")
@@ -26,7 +25,6 @@ def main() -> None:
 
     try:
         result = run_import(
-            args.source,
             wipe=args.wipe,
             version=args.version,
             no_snapshot=args.no_snapshot,

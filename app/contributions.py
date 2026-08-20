@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.data_store import remove_invisible_chars
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "contributions.db"
+DB_PATH = ROOT / "data" / "echo-graph.db"
 
 # 极简进程内限流:同一 IP 每小时最多 SUBMIT_LIMIT 条(多 worker 下按进程独立计数,后续可换持久化)
 SUBMIT_LIMIT = 10
@@ -188,6 +188,48 @@ def set_status(contribution_id: str, status: str) -> bool:
             (status, _now(), contribution_id),
         )
         return cur.rowcount > 0
+
+
+def merge_legacy_db(legacy_db: Path) -> int:
+    """把旧 data/contributions.db 的行并入当前库(INSERT OR IGNORE),返回条数。
+
+    兼容旧 schema(无 source_author / target_author 列),旧库保留为备份。
+    """
+    if not Path(legacy_db).exists():
+        return 0
+    old = sqlite3.connect(legacy_db)
+    try:
+        cols = {r[1] for r in old.execute("PRAGMA table_info(contributions)")}
+        if not cols:
+            return 0
+        if {"source_author", "target_author"} <= cols:
+            rows = old.execute(
+                "SELECT id, source_work, target_work, source_author, target_author,"
+                " evidence, evidence_source, note, contact, status, created_at, reviewed_at"
+                " FROM contributions"
+            ).fetchall()
+        else:
+            rows = old.execute(
+                "SELECT id, source_work, target_work, '', '', evidence, evidence_source,"
+                " note, contact, status, created_at, reviewed_at FROM contributions"
+            ).fetchall()
+    finally:
+        old.close()
+    if not rows:
+        return 0
+    # 新表 NOT NULL 列:旧库可能为 NULL,统一归一(evidence_source 等)
+    rows = [
+        (r[0], r[1], r[2], r[3] or "", r[4] or "", r[5], r[6] or "", r[7], r[8], r[9] or "pending", r[10], r[11])
+        for r in rows
+    ]
+    with _db() as conn:
+        conn.executemany(
+            "INSERT OR IGNORE INTO contributions (id, source_work, target_work, source_author,"
+            " target_author, evidence, evidence_source, note, contact, status, created_at, reviewed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return len(rows)
 
 
 def _rate_limited(client_ip: str) -> bool:

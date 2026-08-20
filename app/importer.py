@@ -219,13 +219,11 @@ def _prune_snapshots() -> None:
 
 
 def run_import(
-    source: str,
-    *,
     wipe: bool = False,
-    version: str = "1.0",
+    version: str = "1.1",
     no_snapshot: bool = False,
 ) -> dict:
-    """加载 CSV → 校验 → 写入 Neo4j → 快照。返回统计。"""
+    """从 SQLite 读取策展数据 → 校验 → 写入 Neo4j → 快照。返回统计。"""
     uri = os.getenv("NEO4J_URI")
     username = os.getenv("NEO4J_USERNAME")
     password = os.getenv("NEO4J_PASSWORD")

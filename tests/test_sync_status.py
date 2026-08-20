@@ -87,7 +87,7 @@ def _neo_fixture():
 class SyncStatusTest(unittest.TestCase):
     def test_csv_payload_normalizes(self) -> None:
         with patch("app.admin.load_rows", return_value=_csv_fixture()):
-            p = admin._csv_sync_payload()
+            p = admin._source_sync_payload()
         self.assertEqual(p["authors"][0]["nationality"], "FR")
         self.assertEqual(p["authors"][0]["birthYear"], 1913)
         self.assertEqual(p["works"][0]["language"], "fr")

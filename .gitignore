@@ -12,6 +12,7 @@ frontend/*.local
 data/versions/
 data/snapshots/
 data/contributions.db*
+data/echo-graph.db*
 data/seed.json
 
 # 编辑器/系统

@@ -1,7 +1,7 @@
 ﻿# Echo Graph 数据结构规范
 
 - `schemaVersion`: `1.1`
-- 存储:Neo4j 图数据库(演示环境同时提供 JSON 兜底数据)
+- 存储:策展数据主存 SQLite(`data/echo-graph.db`);查询层 Neo4j 图数据库;`data/real/*.csv` 为确定性导出产物;演示环境同时提供 JSON 兜底数据
 - 所有 `createdAt` / `updatedAt` 均为 UTC ISO-8601 字符串
 
 ## 通用约定
@@ -82,5 +82,5 @@
 ## 说明
 
 - 早期演示数据曾为编造;现以 `data/real/*.csv` 真实策展数据为准,`evidence` 摘抄来自公开译本,审核状态按行记录,正式发布前需逐条人工审核并置为 `reviewed`。
-- 软删除(`deletedAt`)只在 CSV/JSON 数据层表达:标记为删除的行保留在存档中,但导入 Neo4j 时会从图中物理移除,图上不写入该属性。
+- 软删除(`deletedAt`)只在 SQLite/CSV/JSON 数据层表达:标记为删除的行保留在库与存档中,但导入 Neo4j 时会从图中物理移除,图上不写入该属性。
 - 本规范为 1.1 版;数据结构演进时递增 `schemaVersion` 并保持向后兼容。

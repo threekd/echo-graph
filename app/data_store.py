@@ -1,4 +1,4 @@
-"""数据文件存储层:data/real/*.csv 的读取、原子写入与版本快照。"""
+"""数据访问层:SQLite 为策展数据唯一权威,CSV 为确定性导出产物(git 审计)。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,11 @@ import csv
 import datetime as dt
 import os
 import shutil
+import sqlite3
 import tempfile
 from pathlib import Path
+
+from app import sqlite_store
 
 ROOT = Path(__file__).resolve().parent.parent
 REAL_DIR = ROOT / "data" / "real"
@@ -69,7 +72,8 @@ def _write_csv(path: Path, header: list[str], rows: list[dict]) -> None:
             os.unlink(tmp)
 
 
-def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
+def load_csv_rows() -> tuple[list[dict], list[dict], list[dict]]:
+    """从 data/real/*.csv 读取(迁移 / 恢复用,权威来源是 SQLite)。"""
     return (
         _read_csv(REAL_DIR / "authors.csv"),
         _read_csv(REAL_DIR / "works.csv"),
@@ -77,23 +81,44 @@ def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
     )
 
 
+def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
+    """读取策展数据(权威来源:SQLite)。"""
+    data = sqlite_store.list_all()
+    return data["authors"], data["works"], data["edges"]
+
+
 def save_rows(authors: list[dict], works: list[dict], edges: list[dict]) -> None:
-    _write_csv(REAL_DIR / "authors.csv", AUTHOR_HEADER, authors)
-    _write_csv(REAL_DIR / "works.csv", WORK_HEADER, works)
-    _write_csv(REAL_DIR / "edges.csv", EDGE_HEADER, edges)
+    """事务写入 SQLite 并刷新确定性 CSV 导出。"""
+    sqlite_store.rewrite_all(authors, works, edges)
+    export_csv_files()
+
+
+def export_csv_files(target_dir: Path | None = None) -> None:
+    """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/real/。"""
+    data = sqlite_store.list_all()
+    out = Path(target_dir) if target_dir is not None else REAL_DIR
+    _write_csv(out / "authors.csv", AUTHOR_HEADER, data["authors"])
+    _write_csv(out / "works.csv", WORK_HEADER, data["works"])
+    _write_csv(out / "edges.csv", EDGE_HEADER, data["edges"])
 
 
 def snapshot(prefix: str = "admin") -> str | None:
-    """保存前备份当前三份 CSV 到 data/versions/<时间戳>-<prefix>/。"""
-    files = [REAL_DIR / "authors.csv", REAL_DIR / "works.csv", REAL_DIR / "edges.csv"]
-    if not any(f.exists() for f in files):
+    """保存前备份:SQLite 备份 + CSV 导出到 data/versions/<时间戳>-<prefix>/。"""
+    if not sqlite_store.DB_PATH.exists():
         return None
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     target = VERSIONS_DIR / f"{ts}-{prefix}"
     target.mkdir(parents=True, exist_ok=True)
-    for f in files:
-        if f.exists():
-            (target / f.name).write_bytes(f.read_bytes())
+    src = sqlite3.connect(sqlite_store.DB_PATH)
+    try:
+        dst = sqlite3.connect(target / "echo-graph.db")
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    export_csv_files(target)
     _prune_snapshots(prefix)
     return str(target)
 

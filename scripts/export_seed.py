@@ -3,7 +3,7 @@
 JsonStore(Neo4j 不可用时的内存兜底)读取该文件;部署脚本在初始化/更新时
 执行,保证线上 Neo4j 抖动或短暂不可用时站点不显示空图。
 
-种子文件是派生产物(data/seed.json 已 gitignore),数据事实源仍是 CSV;
+种子文件是派生产物(data/seed.json 已 gitignore),数据事实源为 SQLite(data/echo-graph.db);
 导出前复用与导入相同的校验规则(parse_rows),校验失败则拒绝生成。
 """
 

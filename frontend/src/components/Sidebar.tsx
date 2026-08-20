@@ -304,6 +304,7 @@ export default function Sidebar() {
             />
             <span>隐藏孤岛星</span>
           </label>
+          <button id="btn-contribute" className="side-btn" onClick={() => dispatch({ type: "SET_CONTRIBUTE", open: true })}>贡献数据</button>
           {state.adminReady && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
           )}

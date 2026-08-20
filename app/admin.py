@@ -14,10 +14,11 @@ import os
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.contributions import list_contributions, set_status
 from app.data_models import find_duplicates, parse_rows
 from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, clean_row, load_rows, save_rows, snapshot
 from app.importer import run_import
@@ -311,6 +312,30 @@ def restore(kind: Kind, item_id: str) -> dict:
         "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
         "cascade": cascade,
     }
+
+
+@router.get("/contributions")
+def admin_contributions(
+    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """贡献收件箱列表(按审核状态过滤)。"""
+    return list_contributions(status, limit, offset)
+
+
+@router.post("/contributions/{item_id}/approve")
+def approve_contribution(item_id: str) -> dict:
+    if not set_status(item_id, "approved"):
+        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+    return {"ok": True}
+
+
+@router.post("/contributions/{item_id}/reject")
+def reject_contribution(item_id: str) -> dict:
+    if not set_status(item_id, "rejected"):
+        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+    return {"ok": True}
 
 
 @router.get("/export/json")

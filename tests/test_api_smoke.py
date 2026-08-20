@@ -37,6 +37,13 @@ class ApiSmokeTest(unittest.TestCase):
         ):
             self.assertIn(expected, paths)
 
+    def test_contribute_and_admin_routes_registered(self) -> None:
+        """贡献与管理的路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
+        paths = main.app.openapi()["paths"]
+        self.assertIn("/api/contribute/echo", paths)
+        self.assertIn("/api/admin/contributions", paths)
+        self.assertIn("/api/admin/data", paths)
+
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
         with pyproject.open("rb") as fh:

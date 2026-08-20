@@ -14,7 +14,7 @@ import {
 } from "./admin/pickers";
 import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./admin/query";
 
-type Kind = "authors" | "works" | "edges";
+type Kind = "authors" | "works" | "edges" | "contributions";
 
 // 从 URL 中移除 admin 入口参数/片段,恢复到普通页面状态
 function stripAdminFromUrl(): void {
@@ -30,13 +30,14 @@ const KINDS: { key: Kind; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
+  { key: "contributions", label: "贡献" },
 ];
 
 const COLS: Record<Kind, { key: string; label: string }[]> = {
   authors: [
     { key: "Name_CN", label: "中文名" },
     { key: "originalName", label: "原文名" },
-    { key: "nationality", label: "国籍" },
+    { key: "nationality", label: "国家" },
     { key: "reviewStatus", label: "审核状态" },
   ],
   works: [
@@ -52,13 +53,14 @@ const COLS: Record<Kind, { key: string; label: string }[]> = {
     { key: "reviewStatus", label: "审核" },
     { key: "evidenceSource", label: "出处" },
   ],
+  contributions: [],
 };
 
 // 表单字段配置
 const FIELDS: Record<Kind, any[]> = {
   authors: [
     { key: "originalName", label: "原文名", required: true },
-    { key: "nationality", label: "国籍", type: "countryPicker" },
+    { key: "nationality", label: "国家", type: "countryPicker" },
     { key: "Name_CN", label: "中文名", required: true },
     { key: "Name_EN", label: "英文名" },
     { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
@@ -85,11 +87,16 @@ const FIELDS: Record<Kind, any[]> = {
     { key: "note", label: "备注" },
     { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
+  contributions: [],
 };
 
 // 边有独立 id;source:target 仅作历史数据的兜底复合标识
 function edgeKey(r: any): string {
   return (r.source_work_id || "") + ":" + (r.target_work_id || "");
+}
+
+function truncate(s: string, n: number): string {
+  return s && s.length > n ? s.slice(0, n) + "…" : (s || "");
 }
 
 export default function Admin() {
@@ -98,6 +105,10 @@ export default function Admin() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [contribs, setContribs] = useState<any[]>([]);
+  const [contribStatus, setContribStatus] = useState("pending");
+  const [contribsLoading, setContribsLoading] = useState(false);
+  const [contribCount, setContribCount] = useState(0);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
@@ -217,6 +228,33 @@ export default function Admin() {
 
   useEffect(() => { load(); }, [load]);
 
+  // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
+  const loadContribs = useCallback((status: string) => {
+    setContribsLoading(true);
+    authFetch("/api/admin/contributions?status=" + encodeURIComponent(status) + "&limit=500")
+      .then((r) => r.json())
+      .then((d) => {
+        setContribs(d.items || []);
+        if (status === "pending") setContribCount(d.total != null ? d.total : (d.items || []).length);
+        setContribsLoading(false);
+      })
+      .catch((e) => { setStatus("加载贡献失败: " + e.message); setContribsLoading(false); });
+  }, [authFetch]);
+
+  useEffect(() => {
+    if (kind === "contributions") loadContribs(contribStatus);
+  }, [kind, contribStatus, loadContribs]);
+
+  const reviewContrib = (id: string, action: "approve" | "reject") => {
+    authFetch("/api/admin/contributions/" + encodeURIComponent(id) + "/" + action, { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => {
+        setStatus(d.ok ? (action === "approve" ? "已通过" : "已驳回") : (d.detail || "操作失败"));
+        loadContribs(contribStatus);
+      })
+      .catch((e) => setStatus("操作失败: " + e.message));
+  };
+
   // 固定筛选行:实测表头行高度,作为筛选行的 sticky 吸附偏移
   const tableRef = useRef<HTMLTableElement | null>(null);
   useEffect(() => {
@@ -256,6 +294,7 @@ export default function Admin() {
       { key: "target_work_id", type: "text" },
       { key: "evidenceSource", type: "text" },
     ],
+    contributions: [],
   };
   const uniqueValues = (key: string): string[] =>
     Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -429,6 +468,7 @@ export default function Admin() {
     authors: ["Name_CN", "originalName"],
     works: ["Title_CN", "originalTitle"],
     edges: [],
+    contributions: [],
   };
   const selfId = modal?.mode === "edit" ? modal.row.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {
@@ -475,14 +515,14 @@ export default function Admin() {
                   data-kind={k.key}
                   onClick={() => switchKind(k.key)}
                 >
-                  {k.label} <span className="cnt">{counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : "")}</span>
+                  {k.label} <span className="cnt">{k.key === "contributions" ? contribCount : (counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : ""))}</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="admin-actions">
-            <button onClick={openAdd}>＋ 新增</button>
-            <button onClick={doImport}>上传↑</button>
+            {kind !== "contributions" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "contributions" && <button onClick={doImport}>上传↑</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -525,16 +565,71 @@ export default function Admin() {
           <div id="auth-modal">
             <div className="auth-modal-card">
               <h3>退出授权</h3>
-              <p>确定退出授权吗?退出后「数据管理」按钮将隐藏,需要时可通过 <code>?admin</code> 或 <code>#v=admin</code> 重新授权。</p>
+              <p>确定退出授权吗?</p>
               <div className="admin-modal-actions">
-                <button className="del" onClick={doLogout}>确认退出</button>
+                <button className="del" onClick={doLogout}>确认</button>
                 <button onClick={() => setLogoutOpen(false)}>取消</button>
               </div>
             </div>
           </div>
         )}
         <div className="admin-body">
-          {loading ? <p>加载中…</p> : (
+          {kind === "contributions" ? (
+            <div className="contrib-body">
+              <div className="contrib-toolbar">
+                <select value={contribStatus} onChange={(e) => setContribStatus(e.target.value)} title="按审核状态筛选">
+                  <option value="pending">待审核</option>
+                  <option value="approved">已通过</option>
+                  <option value="rejected">已驳回</option>
+                  <option value="">全部</option>
+                </select>
+                <span className="contrib-count">{contribsLoading ? "加载中…" : contribs.length + " 条"}</span>
+              </div>
+              <table id="admin-table">
+                <thead>
+                  <tr>
+                    <th>源作品</th>
+                    <th>源作品作者</th>
+                    <th>目标作品</th>
+                    <th>目标作品作者</th>
+                    <th>原文片段</th>
+                    <th>出处</th>
+                    <th>联系方式</th>
+                    <th>提交时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contribs.length === 0 ? (
+                    <tr><td className="empty-cell" colSpan={9}>暂无提交</td></tr>
+                  ) : contribs.map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.source_work}</td>
+                      <td>{c.source_author}</td>
+                      <td>{c.target_work}</td>
+                      <td>{c.target_author}</td>
+                      <td className="contrib-evidence" title={c.evidence}>{truncate(c.evidence, 60)}</td>
+                      <td>{c.evidence_source || ""}</td>
+                      <td>{c.contact || ""}</td>
+                      <td>{c.created_at}</td>
+                      <td>
+                        {c.status === "pending" ? (
+                          <>
+                            <button onClick={() => reviewContrib(c.id, "approve")}>通过</button>
+                            <button className="del" onClick={() => reviewContrib(c.id, "reject")}>驳回</button>
+                          </>
+                        ) : (
+                          <span className={c.status === "approved" ? "badge-reviewed" : "badge-rejected"}>
+                            {c.status === "approved" ? "已通过" : "已驳回"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : loading ? <p>加载中…</p> : (
             <table id="admin-table" ref={tableRef}>
               <thead>
                 <tr>

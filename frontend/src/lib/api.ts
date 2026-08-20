@@ -40,6 +40,15 @@ export interface PathResponse {
   edges: Record<string, any>[];
 }
 
+export interface ContributePayload {
+  source_work: string;
+  target_work: string;
+  evidence: string;
+  evidence_source?: string;
+  note?: string;
+  contact?: string;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
   return r.json() as Promise<T>;
@@ -69,4 +78,12 @@ export function expansion(id: string, hops: number): Promise<GraphData & { cente
 
 export function findPath(from: string, to: string): Promise<PathResponse> {
   return getJson<PathResponse>("/api/path?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to));
+}
+
+export function submitContribution(payload: ContributePayload): Promise<any> {
+  return fetch("/api/contribute/echo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then((r) => r.json());
 }

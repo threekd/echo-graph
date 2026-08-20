@@ -13,6 +13,7 @@ import Panel from "./components/Panel";
 import Toast from "./components/Toast";
 import Guide from "./components/Guide";
 import Admin from "./components/Admin";
+import Contribute from "./components/Contribute";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
 import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
 import {
@@ -184,6 +185,7 @@ function AppContent() {
       <Toast />
       <Guide />
       {state.adminOpen && <Admin />}
+      {state.contributeOpen && <Contribute />}
     </div>
   );
 }

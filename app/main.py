@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.admin import router as admin_router
+from app.contributions import router as contributions_router
 from app.db import get_store
 
 logging.basicConfig(level=logging.INFO)
@@ -134,6 +135,7 @@ def path(
 
 
 app.include_router(admin_router)
+app.include_router(contributions_router)
 
 
 if __name__ == "__main__":

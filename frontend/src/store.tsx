@@ -55,6 +55,7 @@ export interface AppState {
   toast: string | null;
   adminOpen: boolean;
   adminReady: boolean; // 令牌有效时置 true,驱动"数据管理"按钮显隐
+  contributeOpen: boolean; // "贡献数据"弹窗
   guideVisible: boolean;
 }
 
@@ -79,6 +80,7 @@ export const initialState: AppState = {
   toast: null,
   adminOpen: false,
   adminReady: false,
+  contributeOpen: false,
   guideVisible: false,
 };
 
@@ -116,6 +118,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, adminOpen: action.open };
     case "SET_ADMIN_READY":
       return { ...state, adminReady: action.value };
+    case "SET_CONTRIBUTE":
+      return { ...state, contributeOpen: action.open };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

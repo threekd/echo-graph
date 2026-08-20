@@ -42,6 +42,10 @@
 - [x] 审核状态落地:模型默认 `draft`;`GET /api/graph?status=` 按审核状态过滤;`/api/stats` 输出 `reviewStatus` 分布
 - [x] 时间戳语义:管理 API 新增/编辑维护 `createdAt`/`updatedAt`;导入不再全量刷新 `updatedAt`(仅新增时写入)
 - [x] 数据一致性:涟漪边对唯一性校验下沉到 `parse_rows`;Neo4j 详情页提及列表改用 OPTIONAL MATCH,与 JSON 兜底输出对齐;快照保留最近 20 份
+- [x] 贡献数据收件箱:SQLite 存储(`data/contributions.db`,gitignore);公开接口 `POST /api/contribute/echo`(无需令牌,基础 IP 限流,长度/清洗校验);管理接口 `/api/admin/contributions` 列表 + 通过/驳回
+- [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
+- [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
+- ⬜ 贡献数据后续:AI 校正、审核通过后自动录入策展 CSV、验证码/持久化限流、按联系方式跟进用户
 
 ## 3. 可视化效果
 

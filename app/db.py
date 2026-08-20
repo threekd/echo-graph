@@ -216,8 +216,8 @@ class JsonStore:
         ql = q.lower()
         hits = []
         for a in self.authors.values():
-            if ql in a["Name_CN"].lower() or ql in (a.get("Name_EN") or "").lower() or ql in a["originalName"].lower():
-                sub_parts = [a["originalName"], a.get("nationality") or ""]
+            if ql in a["Name_CN"].lower() or ql in (a.get("Name_EN") or "").lower() or ql in (a.get("originalName") or "").lower():
+                sub_parts = [a.get("originalName") or "", a.get("nationality") or ""]
                 hits.append(
                     {
                         "id": a["id"],
@@ -227,7 +227,7 @@ class JsonStore:
                     }
                 )
         for w in self.works.values():
-            if ql in w["Title_CN"].lower() or ql in (w.get("Title_EN") or "").lower() or ql in w["originalTitle"].lower():
+            if ql in w["Title_CN"].lower() or ql in (w.get("Title_EN") or "").lower() or ql in (w.get("originalTitle") or "").lower():
                 year = w.get("publicationYear") or w.get("creationYear")
                 sub_parts = [self._author_names(_split_author_ids(w.get("author_id"))), str(year) if year else ""]
                 hits.append(

@@ -23,7 +23,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 4. **来源追溯**：每条关系都附有一小段原文片段。
 
 **技术架构**
-- 数据存储：Neo4j 图数据库
+- 数据存储：Neo4j 图数据库 + SQLite
 - 后端：Python / FastAPI，提供查询路径、扩散计算、影响力算法
 - 前端：React + Three.js，支持大数据量图谱可视化
 
@@ -45,9 +45,9 @@ The Echo Graph — A Ripple Atlas of World Literature
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,已全量导入 Neo4j;示例数据已删除。
-- **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(未内置数据集时为空图)。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(1:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **真实数据**：来自 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份 CSV,已全量导入 Neo4j;
+- **Neo4j**：`scripts/import_data.py` 将真实数据导入 Aura(凭据在 `.env`,已 gitignore);若 Neo4j 不可用,后端自动回退到 JSON 内存数据(部署时由 `scripts/export_seed.py` 从 CSV 生成 `data/seed.json` 兜底,本地未生成时为空图)。
 - **后端**：FastAPI,接口见下方;路径查询使用 Cypher 最短路径(有向,ECHO);Neo4j 查询失败时自动回退 JSON 数据。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
@@ -76,11 +76,12 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 ### 部署到自己的 VPS(Ubuntu)
 
 架构:`nginx(80/443) → uvicorn(127.0.0.1:8000) → Neo4j Aura`,前端构建产物由 nginx 直接托管。
+上线前清单、运维手册与常见问题见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
 
 `deploy/` 目录提供开箱模板:
 
 - `setup-vps.sh` — 一键初始化:装系统依赖、建应用用户、拉代码、由 uv 托管 Python 3.14、构建前端、配置 systemd + nginx + HTTPS
-- `deploy.sh` — 日常更新:拉代码 → 装依赖 → 构建前端 → 重启服务
+- `deploy.sh` — 日常更新:备份数据 → 拉代码 → 装依赖 → 生成兜底种子 → 构建前端 → 重启服务
 - `echo-graph.service` — systemd 单元模板
 - `nginx.conf` — nginx 站点模板(手动部署用)
 
@@ -101,7 +102,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
    curl https://<你的域名>/api/health
    ```
 
-5. 之后每次更新代码:
+5. 之后每次更新代码(`deploy.sh` 会自动备份数据、重新生成 JSON 兜底种子、构建前端并重启):
 
    ```bash
    sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
@@ -109,7 +110,11 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 注意事项:国内机房绑域名对外提供 80/443 服务需要 ICP 备案,不想备案可选香港/新加坡 VPS;Neo4j 继续用 Aura,不在 VPS 上自建图库;`data/real/*.csv` 是数据事实源,配合 git 即完成备份。
 
-> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。
+> **兜底数据**:`setup-vps.sh` / `deploy.sh` 会自动从 CSV 生成 `data/seed.json`(已 gitignore),
+> Neo4j 短暂不可用时站点自动回退到该数据,而不是空图;回退状态可通过 `/api/health` 的
+> `store` 与 `fallbacks` 字段观察。
+
+> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。CSV 与 Neo4j 内容不一致时(新增/修改/删除后未上传),管理页会显示「数据未上传」小字提示。
 
 > **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/contributions.db`,已 gitignore),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(通过/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流)。
 

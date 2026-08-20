@@ -163,8 +163,10 @@ class JsonStorePathTest(unittest.TestCase):
         """可选字段为空(None)或键缺失(Neo4j null 属性不落盘)时搜索不应崩溃。"""
         seed = _chain_seed(2)
         seed["authors"][0].pop("Name_EN", None)
+        seed["authors"][0].pop("originalName", None)
         for w in seed["works"]:
             w.pop("Title_EN", None)
+            w.pop("originalTitle", None)
             w.pop("publicationYear", None)
             w.pop("creationYear", None)
         seed_file = Path(self.tmp.name) / "seed-none.json"

@@ -14,28 +14,32 @@ fi
 APP_USER="echograph"
 APP_DIR="/opt/echo-graph"
 REPO_URL="<你的仓库地址,例如 git@github.com:user/echo-graph.git>"
+if [[ "$REPO_URL" == *"你的仓库地址"* ]]; then
+  echo "!! 请先修改本脚本顶部的 REPO_URL(仓库地址),再运行初始化" >&2
+  exit 1
+fi
 
-echo "==> 1/9 安装系统依赖"
+echo "==> 1/10 安装系统依赖"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y git curl ca-certificates nginx certbot python3-certbot-nginx
 
-echo "==> 2/9 安装 Node.js 24 + pnpm"
+echo "==> 2/10 安装 Node.js 24 + pnpm"
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
   apt-get install -y nodejs
 fi
 npm install -g pnpm@11
 
-echo "==> 3/9 创建应用用户 $APP_USER"
+echo "==> 3/10 创建应用用户 $APP_USER"
 if ! id "$APP_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$APP_USER"
 fi
 
-echo "==> 4/9 安装 uv(Python 3.14 由 uv 托管下载)"
+echo "==> 4/10 安装 uv(Python 3.14 由 uv 托管下载)"
 sudo -u "$APP_USER" bash -lc 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 
-echo "==> 5/9 拉取代码"
+echo "==> 5/10 拉取代码"
 if [[ ! -d "$APP_DIR/.git" ]]; then
   git clone "$REPO_URL" "$APP_DIR"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -43,19 +47,22 @@ else
   sudo -u "$APP_USER" git -C "$APP_DIR" pull --ff-only
 fi
 
-echo "==> 6/9 安装后端依赖(自动下载 Python 3.14)"
+echo "==> 6/10 安装后端依赖(自动下载 Python 3.14)"
 sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv sync --frozen"
 
-echo "==> 7/9 配置 .env"
+echo "==> 7/10 生成 JSON 兜底种子(Neo4j 不可用时使用)"
+sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv run python scripts/export_seed.py"
+
+echo "==> 8/10 配置 .env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   sudo -u "$APP_USER" cp "$APP_DIR/.env.example" "$APP_DIR/.env"
   echo "!! 已生成 $APP_DIR/.env,请先填入 NEO4J_* 与 ADMIN_TOKEN 后再启动服务"
 fi
 
-echo "==> 8/9 构建前端"
+echo "==> 9/10 构建前端"
 sudo -u "$APP_USER" bash -lc "cd '$APP_DIR/frontend' && pnpm install --frozen-lockfile && pnpm build"
 
-echo "==> 9/9 安装 systemd 服务 + nginx + HTTPS"
+echo "==> 10/10 安装 systemd 服务 + nginx + HTTPS"
 install -m 644 "$APP_DIR/deploy/echo-graph.service" /etc/systemd/system/echo-graph.service
 systemctl daemon-reload
 systemctl enable echo-graph
@@ -108,3 +115,5 @@ echo "  1) 编辑 $APP_DIR/.env,填入 NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWO
 echo "  2) sudo systemctl start echo-graph"
 echo "  3) 验证: curl https://$DOMAIN/api/health"
 echo "  4) 如需防火墙: sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw --force enable"
+echo "  5) 私有仓库若用 SSH 克隆,需为 $APP_USER 配置 deploy key:"
+echo "     sudo -u $APP_USER ssh-keygen -t ed25519 && sudo cat /home/$APP_USER/.ssh/id_ed25519.pub(加入仓库 Deploy keys)"

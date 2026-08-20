@@ -20,8 +20,8 @@ interface SwipeState {
   opened: boolean; // 本次手势已触发上划
 }
 
-// 底部手势区触摸标记:渲染器据此暂停图谱平移/旋转/缩放,
-// 避免"呼出栏的同时页面跟着平移"
+// 底部手势区触摸标记:渲染器据此抑制该区域"纵向向上"的单指平移,
+// 避免"呼出栏的同时页面跟着平移";横向平移、双指旋转/缩放不受影响
 let bottomGestureTouch = false;
 
 export function isBottomGestureTouch(): boolean {

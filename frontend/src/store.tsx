@@ -58,6 +58,7 @@ export interface AppState {
   hideIslands: boolean;
   showAuthors: boolean;
   expandHops: number;
+  expandMax: number; // 当前节点视图的扩散上限(动态:该节点实际可达的最远跳数,无人工上限)
   panel: PanelState;
   toast: ToastPayload | null;
   adminOpen: boolean;
@@ -83,6 +84,7 @@ export const initialState: AppState = {
   hideIslands: false,
   showAuthors: true,
   expandHops: 1,
+  expandMax: 8, // 初始兜底(数据未就绪/非节点视图时,进入视图后按实际可达跳数更新)
   panel: { type: "empty" },
   toast: null,
   adminOpen: false,
@@ -117,6 +119,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, showAuthors: action.value };
     case "SET_EXPAND":
       return { ...state, expandHops: action.value };
+    case "SET_EXPAND_MAX":
+      return { ...state, expandMax: action.value };
     case "SET_PANEL":
       return { ...state, panel: action.panel };
     case "SET_TOAST":

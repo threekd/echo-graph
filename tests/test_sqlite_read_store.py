@@ -150,6 +150,18 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(s["works"], 1)
         self.assertEqual(s["echo_edges"], 1)
 
+    def test_expansion_skips_invisible_neighbors(self) -> None:
+        """已审核边指向草稿作品时,扩散不应报错,且跳过被过滤的草稿节点。"""
+        a, w, e = _fixture()
+        for row in a:
+            row["reviewStatus"] = "reviewed"
+        w[0]["reviewStatus"] = "reviewed"  # W1 reviewed;e1(W2->W1) reviewed,但 W2 是 draft
+        sqlite_store.rewrite_all(a, w, e)
+        store = db.SqliteStore(reviewed_only=True)
+        out = store.expansion(W1, 2)
+        self.assertIsNotNone(out)
+        self.assertEqual([n["id"] for n in out["nodes"]], [W1])
+
     def test_env_controls_reviewed_only_default(self) -> None:
         """PUBLIC_REVIEWED_ONLY 环境变量决定默认过滤开关。"""
         with patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "1"}, clear=False):

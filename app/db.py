@@ -276,7 +276,8 @@ class SqliteStore:
                 continue
             for e in out.get(cur, []):
                 nxt = e["target"]
-                if nxt not in prev:
+                # 只经过可见(未软删除且通过状态过滤)的作品,避免路径绕行被过滤的草稿
+                if nxt in work_ids and nxt not in prev:
                     prev[nxt] = {"node": nxt, "edge": e, "prev": cur, "depth": prev[cur]["depth"] + 1}
                     if nxt == to_id:
                         found = True
@@ -372,7 +373,8 @@ class SqliteStore:
             for wid in frontier:
                 for e in out.get(wid, []) + inc.get(wid, []):
                     other = e["target"] if e["source"] == wid else e["source"]
-                    if other not in visited:
+                    # 只扩散到可见(未软删除且通过状态过滤)的作品,跳过被过滤的草稿
+                    if other in works_by_id and other not in visited:
                         visited.add(other)
                         nxt.append(other)
             frontier = nxt

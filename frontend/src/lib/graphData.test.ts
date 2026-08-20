@@ -7,6 +7,7 @@ import {
   filterSingleWorkAuthors,
   islandWorkCount,
   isAnonymousAuthor,
+  maxEchoHops,
   workAuthorIds,
 } from "./graphData";
 
@@ -176,5 +177,37 @@ describe("buildWorkLookups", () => {
     expect(workLookup["唯一 - 乙"]).toBe("x3");
     expect(workById.x2.label).toBe("同名");
     expect(options).toHaveLength(3);
+  });
+});
+
+describe("maxEchoHops", () => {
+  it("从单个作品出发返回可达最远跳数(链 w1->w2->w3->w4)", () => {
+    const d = {
+      nodes: [node("w1", "work"), node("w2", "work"), node("w3", "work"), node("w4", "work")],
+      edges: [
+        { source: "w1", target: "w2", type: "echo" },
+        { source: "w2", target: "w3", type: "echo" },
+        { source: "w3", target: "w4", type: "echo" },
+        { source: "w1", target: "a1", type: "authored" }, // 非 echo 边不参与
+      ],
+    };
+    expect(maxEchoHops(d, ["w1"])).toBe(3);
+    expect(maxEchoHops(d, ["w4"])).toBe(3);
+    expect(maxEchoHops(d, ["w2"])).toBe(2);
+  });
+
+  it("多 seed 取并集的最远距离(作者名下多部作品)", () => {
+    const d = {
+      nodes: [node("w1", "work"), node("w2", "work"), node("w3", "work")],
+      edges: [
+        { source: "w1", target: "w2", type: "echo" },
+        { source: "w2", target: "w3", type: "echo" },
+      ],
+    };
+    expect(maxEchoHops(d, ["w1", "w2"])).toBe(1); // w3 距 seed 集合 1 跳
+  });
+
+  it("无边/孤立节点返回 0", () => {
+    expect(maxEchoHops({ nodes: [node("x", "work")], edges: [] }, ["x"])).toBe(0);
   });
 });

@@ -8,6 +8,7 @@ import {
   filterAuthorsWith,
   buildWorkLookups as buildWorkLookupsPure,
   workAuthorIds,
+  maxEchoHops,
 } from "./graphData";
 import { isMobileLayout } from "./mobileGestures";
 import {
@@ -206,11 +207,14 @@ function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
 
 export function renderRipple(detail: any, hops?: number | string, opts?: ViewOpts) {
   const center = detail.work.id;
-  const expandHops = Math.max(1, parseInt(String(hops || 1), 10) || 1);
   const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   const fullData = opts?.fullData || getState().fullData;
+  // 动态上限:该作品实际可达的最远跳数(无人工上限,后端同样不限)
+  const expandMax = Math.max(1, maxEchoHops(fullData, [center]));
+  const expandHops = Math.min(Math.max(1, parseInt(String(hops || 1), 10) || 1), expandMax);
   dispatch({ type: "SET_RIPPLE_CENTER", id: center });
+  dispatch({ type: "SET_EXPAND_MAX", value: expandMax });
   dispatch({ type: "SET_EXPAND", value: expandHops });
   const ids: Record<string, boolean> = { [center]: true };
   const nodes: GraphNode[] = [];
@@ -307,10 +311,16 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
     dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
     return;
   }
-  const hops = opts && typeof opts.hops === "number" ? opts.hops : getState().expandHops;
   const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   const fullData = opts?.fullData || getState().fullData;
+  // 作者视图:上限 = 该作者名下作品沿 ECHO 可达的最远跳数 + 1(作者层)
+  const seeds = fullData.nodes
+    .filter((n) => n.type === "work" && workAuthorIds(n).includes(author.id))
+    .map((n) => n.id);
+  const expandMax = Math.max(1, maxEchoHops(fullData, seeds) + 1);
+  const hops = Math.min(opts && typeof opts.hops === "number" ? opts.hops : getState().expandHops, expandMax);
+  dispatch({ type: "SET_EXPAND_MAX", value: expandMax });
   dispatch({ type: "SET_EXPAND", value: hops });
   dispatch({ type: "SET_AUTHOR", id: author.id });
   let data = authorViewData(author, hops, fullData);

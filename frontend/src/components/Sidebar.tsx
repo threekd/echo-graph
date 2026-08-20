@@ -284,7 +284,7 @@ export default function Sidebar() {
           <div id="expand-bar" style={{ display: state.currentView === "ripple" || state.currentView === "author" ? "flex" : "none" }}>
             <span className="expand-label">扩散范围</span>
             <input
-              type="range" id="expand-range" min="1" max="8" step="1" value={state.expandHops}
+              type="range" id="expand-range" min="1" max={state.expandMax} step="1" value={state.expandHops}
               onChange={(e) => onExpand(parseInt(e.target.value, 10) || 1)}
             />
             <span id="expand-value">{expandText}</span>

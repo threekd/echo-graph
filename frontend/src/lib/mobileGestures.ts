@@ -11,7 +11,10 @@ const SWIPE_THRESHOLD = 50;
 const BOTTOM_ZONE = 140; // 底部手势区高度(上划打开功能栏/详情栏)
 
 export function isMobileLayout(): boolean {
-  return window.matchMedia(MOBILE_QUERY).matches;
+  // 非浏览器环境(单测/SSR)没有 matchMedia,按桌面处理
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(MOBILE_QUERY).matches
+    : false;
 }
 
 interface SwipeState {

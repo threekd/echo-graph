@@ -122,6 +122,38 @@ export function filterAuthorsWith(data: GraphData, showAuthors: boolean): GraphD
   };
 }
 
+// 从 seed 作品沿 ECHO(无向)扩散能到达的最远跳数(用于节点视图的动态扩散上限)
+export function maxEchoHops(data: GraphData, seedIds: string[]): number {
+  const adj: Record<string, string[]> = {};
+  data.edges.forEach((e) => {
+    if (e.type !== "echo") return;
+    (adj[e.source] ||= []).push(e.target);
+    (adj[e.target] ||= []).push(e.source);
+  });
+  const dist = new Map<string, number>();
+  const queue: string[] = [];
+  seedIds.forEach((id) => {
+    if (!dist.has(id)) {
+      dist.set(id, 0);
+      queue.push(id);
+    }
+  });
+  let farthest = 0;
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    const d = dist.get(cur) ?? 0;
+    if (d > farthest) farthest = d;
+    (adj[cur] || []).forEach((nb) => {
+      if (!dist.has(nb)) {
+        dist.set(nb, d + 1);
+        queue.push(nb);
+      }
+    });
+  }
+  return farthest;
+}
+
 // 没有任何 ECHO 提及关系的作品数(用于"隐藏孤岛星"开关的 toast 提示)
 export function islandWorkCount(data: GraphData): number {
   const deg: Record<string, number> = {};

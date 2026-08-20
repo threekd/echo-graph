@@ -110,7 +110,7 @@ def work_detail(work_id: str) -> dict:
 @app.get("/api/expansion/{work_id}")
 def expansion(
     work_id: str,
-    hops: int = Query(1, ge=1, le=8, description="向外扩散的级数"),
+    hops: int = Query(1, ge=1, description="向外扩散的级数(无上限,BFS 无更多节点时自动终止)"),
 ) -> dict:
     data = store.expansion(work_id, hops)
     if data is None:

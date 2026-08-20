@@ -87,7 +87,6 @@ export default function Admin() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
@@ -232,7 +231,6 @@ export default function Admin() {
 
   const switchKind = (k: Kind) => {
     setKind(k);
-    setSearch("");
     setModal(null);
     setFilters({});
     setTextFilters({});
@@ -294,52 +292,6 @@ export default function Admin() {
         setTimeout(() => window.location.reload(), 1200);
       })
       .catch((e) => setStatus("导入失败: " + e.message));
-  };
-
-  const exportJson = () => {
-    authFetch("/api/admin/export/json")
-      .then((r) => {
-        if (!r.ok) {
-          handleAuthError(r);
-          return null;
-        }
-        return r.blob();
-      })
-      .then((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "echo-graph-data.json";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setStatus("导出失败: " + e.message));
-  };
-
-  const exportCsv = () => {
-    authFetch("/api/admin/export/csv/" + kind)
-      .then((r) => {
-        if (!r.ok) {
-          handleAuthError(r);
-          return null;
-        }
-        return r.blob();
-      })
-      .then((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = kind + ".csv";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setStatus("导出失败: " + e.message));
   };
 
   const saveForm = () => {
@@ -414,7 +366,6 @@ export default function Admin() {
   };
 
   const rows = applyAdminQuery(allRows, {
-    search,
     filters,
     textFilters,
     sort,
@@ -456,32 +407,27 @@ export default function Admin() {
     <div id="admin-overlay">
       <div className="admin-shell">
         <div className="admin-head">
-          <h2>数据管理</h2>
-          <div className="admin-tabs">
-            {KINDS.map((k) => (
-              <button
-                key={k.key}
-                className={"admin-tab" + (kind === k.key ? " active" : "")}
-                data-kind={k.key}
-                onClick={() => switchKind(k.key)}
-              >
-                {k.label} <span className="cnt">{counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : "")}</span>
-              </button>
-            ))}
+          <div className="admin-head-left">
+            <h2>数据管理</h2>
+            <div className="admin-tabs">
+              {KINDS.map((k) => (
+                <button
+                  key={k.key}
+                  className={"admin-tab" + (kind === k.key ? " active" : "")}
+                  data-kind={k.key}
+                  onClick={() => switchKind(k.key)}
+                >
+                  {k.label} <span className="cnt">{counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : "")}</span>
+                </button>
+              ))}
+            </div>
           </div>
           <div className="admin-actions">
-            <input
-              placeholder="搜索…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
             <button id="btn-auth" className={token ? "authed" : ""} onClick={openAuth}>
               {token ? "已授权" : "获取授权"}
             </button>
             <button onClick={openAdd}>＋ 新增</button>
-            <button onClick={doImport}>导入到 Neo4j</button>
-            <button onClick={exportJson}>导出 JSON</button>
-            <button onClick={exportCsv}>导出 CSV</button>
+            <button onClick={doImport}>提交</button>
             <button id="admin-close" onClick={() => dispatch({ type: "SET_ADMIN", open: false })}>关闭</button>
           </div>
         </div>

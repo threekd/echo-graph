@@ -51,6 +51,17 @@ def _env_int(name: str, default: int) -> int:
 # ---- 共享序列化(JsonStore / Neo4jStore 共用,保证两套后端输出一致) ----
 
 
+def _split_author_ids(value) -> list[str]:
+    """把 CSV 的逗号分隔 author_id(如 'a1, a2')或 id 列表归一为去重保序的 id 列表。"""
+    if not value:
+        return []
+    if isinstance(value, list):
+        raw = [str(v) for v in value if v]
+    else:
+        raw = [v.strip() for v in str(value).split(",") if v.strip()]
+    return list(dict.fromkeys(raw))
+
+
 def _author_node(p: dict) -> dict:
     """作者图谱节点。"""
     return {
@@ -66,7 +77,8 @@ def _author_node(p: dict) -> dict:
 
 
 def _work_node(p: dict) -> dict:
-    """作品图谱节点。调用方需在 p 中注入 author_id / author_name。"""
+    """作品图谱节点。调用方需在 p 中注入 author_name / author_ids(或逗号串 author_id)。"""
+    author_ids = p.get("author_ids") or _split_author_ids(p.get("author_id"))
     return {
         "id": p.get("id"),
         "type": "work",
@@ -78,7 +90,8 @@ def _work_node(p: dict) -> dict:
         "creationYear": p.get("creationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
-        "author_id": p.get("author_id"),
+        "author_id": author_ids[0] if author_ids else None,
+        "author_ids": author_ids,
         "author": p.get("author_name", ""),
     }
 
@@ -166,6 +179,10 @@ class JsonStore:
         a = self.authors.get(author_id or "")
         return a["Name_CN"] if a else ""
 
+    def _author_names(self, author_ids: list[str]) -> str:
+        names = [self._author_name(aid) for aid in author_ids]
+        return "、".join(n for n in names if n)
+
     def graph(self, status: str | None = None) -> dict:
         nodes = []
         authors = [
@@ -180,7 +197,9 @@ class JsonStore:
             nodes.append(_author_node(a))
         for w in works:
             props = dict(w)
-            props["author_name"] = self._author_name(w.get("author_id"))
+            author_ids = _split_author_ids(w.get("author_id"))
+            props["author_ids"] = author_ids
+            props["author_name"] = self._author_names(author_ids)
             nodes.append(_work_node(props))
         edges = []
         for e in self.edges:
@@ -188,14 +207,15 @@ class JsonStore:
                 continue
             edges.append(_echo_edge(e))
         for w in works:
-            edges.append(_authored_edge(w["id"], w.get("author_id")))
+            for aid in _split_author_ids(w.get("author_id")):
+                edges.append(_authored_edge(w["id"], aid))
         return {"nodes": nodes, "edges": edges}
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
         ql = q.lower()
         hits = []
         for a in self.authors.values():
-            if ql in a["Name_CN"].lower() or ql in a["Name_EN"].lower() or ql in a["originalName"].lower():
+            if ql in a["Name_CN"].lower() or ql in (a.get("Name_EN") or "").lower() or ql in a["originalName"].lower():
                 sub_parts = [a["originalName"], a.get("nationality") or ""]
                 hits.append(
                     {
@@ -206,14 +226,15 @@ class JsonStore:
                     }
                 )
         for w in self.works.values():
-            if ql in w["Title_CN"].lower() or ql in w["Title_EN"].lower() or ql in w["originalTitle"].lower():
-                year = w["publicationYear"] or w["creationYear"]
+            if ql in w["Title_CN"].lower() or ql in (w.get("Title_EN") or "").lower() or ql in w["originalTitle"].lower():
+                year = w.get("publicationYear") or w.get("creationYear")
+                sub_parts = [self._author_names(_split_author_ids(w.get("author_id"))), str(year) if year else ""]
                 hits.append(
                     {
                         "id": w["id"],
                         "type": "work",
                         "label": w["Title_CN"],
-                        "sub": f"{self._author_name(w.get('author_id'))} · {year}",
+                        "sub": " · ".join(p for p in sub_parts if p),
                     }
                 )
         return hits[:limit]
@@ -261,8 +282,8 @@ class JsonStore:
         w = self.works.get(work_id)
         if not w:
             return None
-        author = self.authors.get(w.get("author_id"))
-        authors = [_author_payload(author)] if author else []
+        author_ids = _split_author_ids(w.get("author_id"))
+        authors = [_author_payload(self.authors[aid]) for aid in author_ids if aid in self.authors]
         return {
             "work": _work_payload(w),
             "author": authors[0] if authors else None,
@@ -272,7 +293,7 @@ class JsonStore:
                     "source",
                     e,
                     self._work_title(e["source"]),
-                    self._author_name(self.works.get(e["source"], {}).get("author_id")),
+                    self._author_names(_split_author_ids(self.works.get(e["source"], {}).get("author_id"))),
                 )
                 for e in self.inc.get(work_id, [])
             ],
@@ -281,7 +302,7 @@ class JsonStore:
                     "target",
                     e,
                     self._work_title(e["target"]),
-                    self._author_name(self.works.get(e["target"], {}).get("author_id")),
+                    self._author_names(_split_author_ids(self.works.get(e["target"], {}).get("author_id"))),
                 )
                 for e in self.out.get(work_id, [])
             ],
@@ -308,7 +329,9 @@ class JsonStore:
         for wid in visited:
             w = self.works[wid]
             props = dict(w)
-            props["author_name"] = self._author_name(w.get("author_id"))
+            author_ids = _split_author_ids(w.get("author_id"))
+            props["author_ids"] = author_ids
+            props["author_name"] = self._author_names(author_ids)
             nodes.append(_work_node(props))
         edges = [_echo_edge(e) for e in self.edges if e["source"] in visited and e["target"] in visited]
         return {"nodes": nodes, "edges": edges, "centerId": work_id}
@@ -400,7 +423,7 @@ class Neo4jStore:
             names = [n for n in (row["author_names"] or []) if n]
             ids = [i for i in (row["author_ids"] or []) if i]
             row["props"]["author_name"] = "、".join(names)
-            row["props"]["author_id"] = ids[0] if ids else None
+            row["props"]["author_ids"] = ids
         nodes.extend(_work_node(row["props"]) for row in node_rows)
 
         echo_q = "MATCH (w1:Work)-[r:ECHO]->(w2:Work)"
@@ -464,6 +487,15 @@ class Neo4jStore:
         return hits[:limit]
 
     def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
+        # 起点与终点相同:shortestPath 不支持自环查询,直接返回单节点路径(与 JsonStore 对齐)
+        if from_id == to_id:
+            exists = self._query(
+                "MATCH (w:Work {id:$id}) RETURN count(w) AS c",
+                {"id": from_id},
+            )[0]["c"]
+            if not exists:
+                return None
+            return {"nodes": [from_id], "edges": []}
         hop = max(1, int(max_hops))
         cypher = (
             "MATCH p = shortestPath((a:Work {id:$from})-[r:ECHO*1.."
@@ -559,7 +591,7 @@ class Neo4jStore:
             names = [n for n in (row["author_names"] or []) if n]
             auth_ids = [i for i in (row["author_ids"] or []) if i]
             props["author_name"] = "、".join(names)
-            props["author_id"] = auth_ids[0] if auth_ids else None
+            props["author_ids"] = auth_ids
             nodes.append(_work_node(props))
             ids.append(props["id"])
         edge_rows = self._query(

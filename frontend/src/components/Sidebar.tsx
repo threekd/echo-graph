@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { search } from "../lib/api";
 import { buildWorkLookups, type WorkLookups } from "../lib/graphData";
 import {
-  renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl, getShareHash,
+  renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
 } from "../lib/graph";
 
 export default function Sidebar() {
@@ -63,13 +63,6 @@ export default function Sidebar() {
     const q = query.trim().toLowerCase();
     const all = lookups.current.options;
     return q ? all.filter((o) => o.value.toLowerCase().includes(q)).slice(0, 50) : all.slice(0, 50);
-  };
-
-  const shareLink = () => {
-    const hash = getShareHash();
-    navigator.clipboard.writeText(location.origin + location.pathname + "#" + hash)
-      .then(() => dispatch({ type: "SET_TOAST", msg: "分享链接已复制" }))
-      .catch(() => dispatch({ type: "SET_TOAST", msg: "复制失败" }));
   };
 
   // 过滤开关变化后按当前视图重新渲染(保持相机),主/涟漪视图由渲染函数自行同步 URL
@@ -211,10 +204,6 @@ export default function Sidebar() {
             />
             <span id="expand-value">{expandText}</span>
           </div>
-          <div className="tool-row">
-            <button id="btn-share" onClick={shareLink}>分享链接</button>
-            <button id="btn-export-png" onClick={exportPng}>导出图片</button>
-          </div>
         </nav>
         <div className="sidebar-bottom">
           <label className="opt">
@@ -236,45 +225,6 @@ export default function Sidebar() {
       </aside>
     </>
   );
-}
-
-function exportPng() {
-  const canvas = document.querySelector("#graph canvas") as HTMLCanvasElement | null;
-  if (!canvas) return;
-  const cssRect = canvas.getBoundingClientRect();
-  const labels = Array.from(document.querySelectorAll(".nodelabel"))
-    .filter((elm) => getComputedStyle(elm).display !== "none")
-    .map((elm) => {
-      const rect = elm.getBoundingClientRect();
-      return {
-        text: elm.textContent || "",
-        x: rect.left - cssRect.left + rect.width / 2,
-        y: rect.top - cssRect.top + rect.height / 2,
-        fontSize: parseFloat(getComputedStyle(elm).fontSize) || 11,
-      };
-    });
-  const scale = 2;
-  const out = document.createElement("canvas");
-  out.width = cssRect.width * scale;
-  out.height = cssRect.height * scale;
-  const ctx = out.getContext("2d")!;
-  ctx.scale(scale, scale);
-  ctx.drawImage(canvas, 0, 0, cssRect.width, cssRect.height);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  labels.forEach((lab) => {
-    ctx.font = lab.fontSize + "px sans-serif";
-    ctx.shadowColor = "rgba(0,0,0,0.95)";
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = "#dbe9ff";
-    ctx.fillText(lab.text, lab.x, lab.y);
-  });
-  const a = document.createElement("a");
-  a.href = out.toDataURL("image/png");
-  a.download = "echo-graph-" + Date.now() + ".png";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
 
 function viewLabel(view: string): string {

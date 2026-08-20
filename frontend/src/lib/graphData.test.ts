@@ -6,6 +6,7 @@ import {
   filterIslands,
   filterSingleWorkAuthors,
   isAnonymousAuthor,
+  workAuthorIds,
 } from "./graphData";
 
 function node(id: string, type: string, extra: any = {}): any {
@@ -41,6 +42,20 @@ describe("isAnonymousAuthor", () => {
   });
 });
 
+describe("workAuthorIds", () => {
+  it("兼容 author_ids 数组、author_id 单值与逗号分隔串", () => {
+    expect(workAuthorIds(node("x", "work", { author_ids: ["a1", "a2"] }))).toEqual(["a1", "a2"]);
+    expect(workAuthorIds(node("x", "work", { author_id: "a1, a2" }))).toEqual(["a1", "a2"]);
+    expect(workAuthorIds(node("x", "work", { author_id: "a1" }))).toEqual(["a1"]);
+    expect(workAuthorIds(node("x", "work"))).toEqual([]);
+    expect(workAuthorIds(null)).toEqual([]);
+  });
+
+  it("过滤空值,重复值保留(去重由后端保证)", () => {
+    expect(workAuthorIds(node("x", "work", { author_ids: ["a1", "", "a1"] }))).toEqual(["a1", "a1"]);
+  });
+});
+
 describe("filterSingleWorkAuthors", () => {
   it("隐藏只有一部作品且无提及关系的作者及其作品,并排除佚名节点", () => {
     const out = filterSingleWorkAuthors(data);
@@ -50,6 +65,21 @@ describe("filterSingleWorkAuthors", () => {
     expect(out.edges.every((e) => kept.has(e.source) && kept.has(e.target))).toBe(true);
     expect(out.edges).toHaveLength(3);
   });
+
+  it("多作者作品:任一作者可见即保留,单作品无提及的合著作者被隐藏", () => {
+    const data = {
+      nodes: [
+        node("a1", "author"),
+        node("a2", "author"),
+        node("w1", "work", { author_id: "a1" }),
+        node("w2", "work", { author_ids: ["a1", "a2"] }),
+      ],
+      edges: [],
+    };
+    const out = filterSingleWorkAuthors(data);
+    // a1 有 2 部作品 -> 可见;a2 仅合著 w2 一部且无提及 -> 隐藏;w2 因 a1 可见而保留
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w2"]);
+  });
 });
 
 describe("filterIslands", () => {
@@ -58,6 +88,26 @@ describe("filterIslands", () => {
     expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w2"]);
     expect(out.edges.map((e) => `${e.source}->${e.target}`).sort())
       .toEqual(["w1->a1", "w1->w2", "w2->a1"]);
+  });
+
+  it("多作者作品:作者仅在无提及的合著作品中时被隐藏", () => {
+    const data = {
+      nodes: [
+        node("a1", "author"),
+        node("a2", "author"),
+        node("w1", "work", { author_ids: ["a1"] }),
+        node("w2", "work", { author_ids: ["a1", "a2"] }),
+        node("w3", "work", { author_ids: ["a2"] }),
+        node("w4", "work", { author_ids: ["a1"] }),
+      ],
+      edges: [
+        { source: "w1", target: "w4", type: "echo" },
+        { source: "w1", target: "a1", type: "authored" },
+      ],
+    };
+    // w1/w4 有提及 -> a1 可见;w2(合著)/w3 无提及 -> 隐藏,连带 a2 无可见作品 -> 隐藏
+    const out = filterIslands(data);
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w4"]);
   });
 });
 

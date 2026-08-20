@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.data_store import remove_invisible_chars
+
 
 def _coerce_review_status(v):
     """CSV 空值(None / 空串)统一视为 draft,显式值保持原样。"""
@@ -27,9 +29,9 @@ def _coerce_int(v):
 
 
 def _strip_strings(v):
-    """自由文本字段基础清洗:去首尾空白(内部空白与换行保留)。"""
+    """自由文本字段基础清洗:去首尾空白、移除零宽/不可见字符(内部空白与换行保留)。"""
     if isinstance(v, dict):
-        return {k: (x.strip() if isinstance(x, str) else x) for k, x in v.items()}
+        return {k: (remove_invisible_chars(x).strip() if isinstance(x, str) else x) for k, x in v.items()}
     return v
 
 

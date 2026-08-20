@@ -8,14 +8,28 @@ export function isAnonymousAuthor(n: GraphNode | null | undefined): boolean {
   return !!n && n.type === "author" && (n.originalName === "Anonymous" || n.label === "佚名");
 }
 
+// 作品的作者 id 列表:兼容新格式 author_ids(数组)与旧格式 author_id(单 id 或逗号分隔串)
+export function workAuthorIds(n: GraphNode | null | undefined): string[] {
+  if (!n) return [];
+  if (Array.isArray(n.author_ids)) {
+    return n.author_ids.filter((x: unknown): x is string => typeof x === "string" && x.length > 0);
+  }
+  const single = n.author_id;
+  return single
+    ? String(single).split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+}
+
 // 默认规则:隐藏名下作品不超过 1 部、且无提及关系的孤岛作者(连同作品)
 export function filterSingleWorkAuthors(data: GraphData): GraphData {
   const workCount: Record<string, number> = {};
   const deg: Record<string, number> = {};
   const authorHasEcho: Record<string, boolean> = {};
   data.nodes.forEach((n) => {
-    if (n.type !== "work" || !n.author_id) return;
-    workCount[n.author_id] = (workCount[n.author_id] || 0) + 1;
+    if (n.type !== "work") return;
+    workAuthorIds(n).forEach((aid) => {
+      workCount[aid] = (workCount[aid] || 0) + 1;
+    });
   });
   data.edges.forEach((e) => {
     if (e.type !== "echo") return;
@@ -23,9 +37,10 @@ export function filterSingleWorkAuthors(data: GraphData): GraphData {
     deg[e.target] = (deg[e.target] || 0) + 1;
   });
   data.nodes.forEach((n) => {
-    if (n.type === "work" && n.author_id && (deg[n.id] || 0) > 0) {
-      authorHasEcho[n.author_id] = true;
-    }
+    if (n.type !== "work" || (deg[n.id] || 0) <= 0) return;
+    workAuthorIds(n).forEach((aid) => {
+      authorHasEcho[aid] = true;
+    });
   });
   const hidden: Record<string, boolean> = {};
   data.nodes.forEach((n) => {
@@ -38,7 +53,9 @@ export function filterSingleWorkAuthors(data: GraphData): GraphData {
     if (n.type === "author") {
       if (!hidden[n.id] && !isAnonymousAuthor(n)) ids[n.id] = true;
     } else if (n.type === "work") {
-      if (!hidden[n.author_id]) ids[n.id] = true;
+      const aids = workAuthorIds(n);
+      // 无作者(佚名/未关联)的作品始终保留;有作者时任一作者可见即保留
+      if (aids.length === 0 || aids.some((aid) => !hidden[aid])) ids[n.id] = true;
     }
   });
   return {
@@ -63,7 +80,9 @@ export function filterIslands(data: GraphData): GraphData {
   data.nodes.forEach((a) => {
     if (a.type !== "author") return;
     if (isAnonymousAuthor(a)) return; // 佚名节点不显示
-    visibleAuthor[a.id] = data.nodes.some((w) => w.type === "work" && w.author_id === a.id && visibleWork[w.id]);
+    visibleAuthor[a.id] = data.nodes.some(
+      (w) => w.type === "work" && workAuthorIds(w).includes(a.id) && visibleWork[w.id]
+    );
   });
   const nodes = data.nodes.filter((n) => (n.type === "work" ? !!visibleWork[n.id] : !!visibleAuthor[n.id]));
   const ids: Record<string, boolean> = {};

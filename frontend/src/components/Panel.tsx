@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useApp, type GraphData } from "../store";
 import { selectNode } from "../lib/graph";
+import { workAuthorIds } from "../lib/graphData";
 import iso3166 from "../lib/iso3166-1.json";
 
 const iso3166Map = iso3166 as Record<string, string>;
 
 function AuthorPanel({ author, fullData }: { author: any; fullData: GraphData }) {
-  const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
+  const works = fullData.nodes.filter((n) => n.type === "work" && workAuthorIds(n).includes(author.id));
   const years = String(author.birthYear ?? "?") + " – " + String(author.deathYear ?? "?");
   const nationality = author.nationality ? (iso3166Map[author.nationality] || author.nationality) : "";
   const meta = [author.originalName || author.label_en, nationality, years]

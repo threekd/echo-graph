@@ -32,7 +32,7 @@ function AppContent() {
   stateRef.current = { state, dispatch };
 
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
-  // cam / islands / authors 参数用于恢复分享链接;数据加载完成后再次应用,保证首载深链生效
+  // cam / islands / authors 参数用于恢复旧版分享链接;数据加载完成后再次应用,保证首载深链生效
   const applyHash = useCallback((data?: GraphData) => {
     if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
     const h = location.hash.replace(/^#/, "");

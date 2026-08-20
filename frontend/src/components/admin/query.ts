@@ -8,7 +8,8 @@ export interface AdminSort {
 export type DeletedFilter = "all" | "active" | "deleted";
 
 export interface AdminQueryOptions<T extends Record<string, any>> {
-  search: string;
+  // 顶部全局搜索框已从管理页 UI 移除,保留纯函数能力供测试/复用
+  search?: string;
   filters: Record<string, string>;
   // 按列文本搜索:对单元格显示值做不区分大小写的包含匹配
   textFilters: Record<string, string>;
@@ -22,7 +23,7 @@ export function applyAdminQuery<T extends Record<string, any>>(
   rows: T[],
   opts: AdminQueryOptions<T>
 ): T[] {
-  const q = opts.search.trim().toLowerCase();
+  const q = (opts.search || "").trim().toLowerCase();
   const df = opts.deletedFilter || "all";
   const searched = q
     ? rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)))

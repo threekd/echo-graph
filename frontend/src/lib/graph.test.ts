@@ -73,6 +73,22 @@ describe("authorViewData", () => {
     const data = authorViewData(author, 3, fullData);
     expect(data.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w2", "w3", "w4"]);
   });
+
+  it("包含合著作品(author_ids 数组)", () => {
+    const coAuthor = { id: "a2", type: "author", label: "B" };
+    const full: any = {
+      nodes: [
+        { id: "a1", type: "author", label: "A" },
+        coAuthor,
+        { id: "w1", type: "work", label: "W1", author_ids: ["a1"] },
+        { id: "w2", type: "work", label: "W2", author_ids: ["a1", "a2"] },
+      ],
+      edges: [],
+    };
+    const data = authorViewData(coAuthor, 1, full);
+    expect(data.nodes.map((n) => n.id).sort()).toEqual(["a2", "w2"]);
+    expect(data.edges).toEqual([{ source: "w2", target: "a2", type: "authored" }]);
+  });
 });
 
 describe("首载深链渲染(显式 fullData)", () => {
@@ -105,5 +121,26 @@ describe("首载深链渲染(显式 fullData)", () => {
     renderRipple(detail, 1, { fullData });
     const data = dispatched.find((a) => a.type === "SET_VIEW_DATA")?.data;
     expect(data.nodes.map((n: any) => n.id).sort()).toEqual(["c", "n1"]);
+  });
+
+  it("renderRipple 为合著作品加入全部作者节点与归属边", () => {
+    const fullData: any = {
+      nodes: [
+        { id: "a1", type: "author", label: "A" },
+        { id: "a2", type: "author", label: "B" },
+        { id: "c", type: "work", label: "C", author_ids: ["a1", "a2"] },
+        { id: "n1", type: "work", label: "N1", author_ids: ["a1"] },
+      ],
+      edges: [],
+    };
+    const dispatched = withEmptyState();
+    const detail: any = { work: { id: "c" }, mentioned_by: [{ source: "n1", evidence: "x" }], mentions: [] };
+    renderRipple(detail, 1, { fullData });
+    const data = dispatched.find((a) => a.type === "SET_VIEW_DATA")?.data;
+    expect(data.nodes.filter((n: any) => n.type === "author").map((n: any) => n.id).sort())
+      .toEqual(["a1", "a2"]);
+    const authored = data.edges.filter((e: any) => e.type === "authored");
+    expect(authored.map((e: any) => `${e.source}->${e.target}`).sort())
+      .toEqual(["c->a1", "c->a2", "n1->a1"]);
   });
 });

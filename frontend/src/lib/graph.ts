@@ -1,5 +1,4 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { getCameraState } from "./renderer";
 import { workDetail, expansion, findPath } from "./api";
 import {
   isAnonymousAuthor,
@@ -8,6 +7,7 @@ import {
   filterAuthorIslands,
   filterAuthorsWith,
   buildWorkLookups as buildWorkLookupsPure,
+  workAuthorIds,
 } from "./graphData";
 import {
   initialState,
@@ -25,6 +25,7 @@ export {
   filterIslands,
   filterAuthorsWith,
   buildWorkLookupsPure as buildWorkLookups,
+  workAuthorIds,
 };
 
 interface StateRef {
@@ -55,7 +56,7 @@ function findNode(id: string, fullData?: GraphData): GraphNode | undefined {
 }
 
 // ---- URL 状态同步:视图/过滤/扩散级数自动写入 hash,浏览器前进/后退可导航 ----
-// 相机位置不随拖动写入(避免历史记录刷屏),由分享链接(getShareHash)携带最新相机。
+// 相机位置不写入 URL(避免历史记录刷屏);旧版分享链接中的 cam= 仍由 App 解析兼容。
 let lastWrittenHash: string | null = null;
 
 interface ViewOpts {
@@ -97,9 +98,8 @@ function commitView(kind: string, data: GraphData, opts: ViewOpts): void {
   dispatch({ type: "SET_VIEW_DATA", data });
 }
 
-function buildHash(opts: ViewOpts | undefined, includeCam: boolean): string {
+function buildHash(opts: ViewOpts | undefined): string {
   const st = getState();
-  const cam = getCameraState();
   const view = (opts && opts.view) || st.currentView;
   const parts: string[] = [];
   if (view === "ripple") {
@@ -124,20 +124,12 @@ function buildHash(opts: ViewOpts | undefined, includeCam: boolean): string {
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
   if (hideIslands) parts.push("islands=1");
   if (!showAuthors) parts.push("authors=0");
-  if (includeCam && cam) {
-    parts.push("cam=" + [cam.theta, cam.phi, cam.radius, cam.cx, cam.cy, cam.cz].map((x) => +x.toFixed(3)).join(","));
-  }
   return parts.join("&");
-}
-
-// 分享链接:当前视图 + 最新相机位置 + 过滤状态
-export function getShareHash(): string {
-  return buildHash({}, true);
 }
 
 // 将当前视图/过滤状态写入 URL(不含相机)
 export function syncUrl(opts: ViewOpts) {
-  const hash = buildHash(opts || {}, false);
+  const hash = buildHash(opts || {});
   if (location.hash.replace(/^#/, "") !== hash) {
     lastWrittenHash = "#" + hash;
     location.hash = hash;
@@ -176,19 +168,20 @@ function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
   const have: Record<string, boolean> = {};
   nodes.forEach((n) => { have[n.id] = true; });
   nodes.filter((n) => n.type === "work").forEach((w) => {
-    const aid = w.author_id;
-    if (!aid) return;
-    const an = findNode(aid, fullData);
-    if (an && isAnonymousAuthor(an)) return; // 佚名节点不加入涟漪/扩散子图
-    edges.push({ source: w.id, target: aid, type: "authored" });
-    if (!have[aid]) {
-      if (an) { nodes.push(an); have[aid] = true; }
-    }
+    workAuthorIds(w).forEach((aid) => {
+      const an = findNode(aid, fullData);
+      if (an && isAnonymousAuthor(an)) return; // 佚名节点不加入涟漪/扩散子图
+      edges.push({ source: w.id, target: aid, type: "authored" });
+      if (!have[aid] && an) {
+        nodes.push(an);
+        have[aid] = true;
+      }
+    });
   });
   // 未勾选"隐藏孤岛星"时:把当前视图里每位作者名下的全部作品也展示出来(勾选后回到仅涟漪节点的行为)
   if (!hideIslands) {
     nodes.filter((n) => n.type === "author").forEach((a) => {
-      fullData.nodes.filter((w) => w.type === "work" && w.author_id === a.id).forEach((w) => {
+      fullData.nodes.filter((w) => w.type === "work" && workAuthorIds(w).includes(a.id)).forEach((w) => {
         if (have[w.id]) return;
         nodes.push({ ...w, __extra: true }); // 作者名下额外作品:环绕作者形成隐约星云
         have[w.id] = true;
@@ -266,7 +259,7 @@ export function expandRippleDebounced(hops: number, centerId?: string, fullData?
 // 作者扩散子图:层级 N 时,在作者名下全部作品的基础上,沿 ECHO(无向)向外扩 N-1 跳
 export function authorViewData(author: GraphNode, hops: number, fullData: GraphData): GraphData {
   const outHops = Math.max(0, hops - 1);
-  const works = fullData.nodes.filter((n) => n.type === "work" && n.author_id === author.id);
+  const works = fullData.nodes.filter((n) => n.type === "work" && workAuthorIds(n).includes(author.id));
   const dist = new Map<string, number>();
   const queue: string[] = [];
   works.forEach((w) => { dist.set(w.id, 0); queue.push(w.id); });

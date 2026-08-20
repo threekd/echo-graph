@@ -153,11 +153,11 @@ class ParseRowsTest(unittest.TestCase):
         self.assertIsNone(wm[0].creationYear)
 
     def test_text_fields_trimmed(self) -> None:
-        """自由文本字段(名称/标题/原文片段等)保存前应去除首尾空白。"""
+        """自由文本字段保存前应去除首尾空白与零宽/不可见字符。"""
         a, w, e = _fixture()
         a[0]["Name_CN"] = "  作家甲  "
         w[0]["Title_CN"] = "  书一\n"
-        e[0]["evidence"] = "  提到《书二》  \n"
+        e[0]["evidence"] = "  提到《书二》\u200b  \n"
         am, wm, em, _ = parse_rows(a, w, e)
         self.assertEqual(am[0].Name_CN, "作家甲")
         self.assertEqual(wm[0].Title_CN, "书一")

@@ -77,17 +77,6 @@ main { height: 100%; position: relative; min-height: 0; }
   gap: 8px;
 }
 
-.tool-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.tool-row button {
-  flex: 1 1 auto;
-  padding: 7px 10px;
-  font-size: 12px;
-}
-
 #expand-bar {
   display: flex;
   align-items: center;
@@ -545,6 +534,12 @@ button.ghost { color: var(--muted); }
   gap: 14px;
   flex-wrap: wrap;
 }
+.admin-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 .admin-head h2 {
   margin: 0;
   font-size: 17px;
@@ -568,7 +563,7 @@ button.ghost { color: var(--muted); }
 }
 .admin-tab .cnt { color: #9cc3ff; margin-left: 4px; font-size: 11px; }
 .admin-actions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
-.admin-actions input, .admin-actions button {
+.admin-actions button {
   padding: 7px 11px;
   border-radius: 9px;
   border: 1px solid rgba(148, 163, 255, 0.25);
@@ -577,7 +572,6 @@ button.ghost { color: var(--muted); }
   font-size: 12px;
   cursor: pointer;
 }
-.admin-actions input { background: rgba(10, 14, 34, 0.7); width: 180px; }
 #btn-auth.authed {
   border-color: rgba(52, 211, 153, 0.55);
   color: #34d399;

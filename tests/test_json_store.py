@@ -116,10 +116,66 @@ class JsonStorePathTest(unittest.TestCase):
         self.assertEqual(len(d4["mentioned_by"]), 1)
         self.assertEqual(d4["mentions"], [])
 
+    def test_multi_author_work(self) -> None:
+        """合著作品:节点带全部 author_ids、作者名合并、详情与搜索均含全部作者。"""
+        seed = {
+            "meta": {"demo": True},
+            "authors": [
+                {"id": "a1", "Name_CN": "甲", "Name_EN": "", "originalName": "A"},
+                {"id": "a2", "Name_CN": "乙", "Name_EN": "", "originalName": "B"},
+            ],
+            "works": [{
+                "id": "w1",
+                "Title_CN": "合著",
+                "Title_EN": "",
+                "originalTitle": "Coauthored",
+                "language": "en",
+                "author_id": "a1, a2",  # 逗号+空格,验证归一化
+            }],
+            "edges": [],
+        }
+        seed_file = Path(self.tmp.name) / "seed-multi.json"
+        seed_file.write_text(json.dumps(seed), encoding="utf-8")
+        with patch.object(db, "SEED_PATH", seed_file):
+            store = db.JsonStore()
+
+        g = store.graph()
+        work = next(n for n in g["nodes"] if n["type"] == "work")
+        self.assertEqual(work["author_ids"], ["a1", "a2"])
+        self.assertEqual(work["author_id"], "a1")  # 兼容字段:取第一个
+        self.assertEqual(work["author"], "甲、乙")
+        authored = sorted((e["source"], e["target"]) for e in g["edges"] if e["type"] == "authored")
+        self.assertEqual(authored, [("w1", "a1"), ("w1", "a2")])
+
+        d = store.work_detail("w1")
+        self.assertEqual([a["id"] for a in d["authors"]], ["a1", "a2"])
+        self.assertEqual(d["author"]["id"], "a1")
+
+        hits = store.search("合著")
+        self.assertEqual(hits[0]["sub"], "甲、乙")
+
     def test_search_author_without_nationality_has_no_none(self) -> None:
         hits = self.store.search("A")
         self.assertTrue(any(h["type"] == "author" for h in hits))
         self.assertFalse(any("None" in (h.get("sub") or "") for h in hits))
+
+    def test_search_tolerates_none_optional_fields(self) -> None:
+        """可选字段为空(None)或键缺失(Neo4j null 属性不落盘)时搜索不应崩溃。"""
+        seed = _chain_seed(2)
+        seed["authors"][0].pop("Name_EN", None)
+        for w in seed["works"]:
+            w.pop("Title_EN", None)
+            w.pop("publicationYear", None)
+            w.pop("creationYear", None)
+        seed_file = Path(self.tmp.name) / "seed-none.json"
+        seed_file.write_text(json.dumps(seed), encoding="utf-8")
+        with patch.object(db, "SEED_PATH", seed_file):
+            store = db.JsonStore()
+        author_hits = store.search("A")
+        work_hits = store.search("W1")
+        self.assertTrue(any(h["type"] == "author" for h in author_hits))
+        self.assertTrue(any(h["type"] == "work" for h in work_hits))
+        self.assertFalse(any("None" in (h.get("sub") or "") for h in work_hits))
 
     def test_graph_status_filter_treats_missing_as_draft(self) -> None:
         g_draft = self.store.graph(status="draft")

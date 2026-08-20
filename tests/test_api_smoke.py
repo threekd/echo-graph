@@ -105,12 +105,15 @@ class ApiSmokeTest(unittest.TestCase):
             patch("app.admin.save_rows"),
             patch("app.admin.snapshot", return_value=None),
         ):
-            res = admin.create("authors", {"originalName": "  某作家  ", "Name_CN": "  某  "})
+            res = admin.create(
+                "authors",
+                {"originalName": "  \u200b某作家\u200b  ", "Name_CN": "  某\u200b  "},
+            )
         row = res["row"]
         self.assertTrue(row["createdAt"])
         self.assertTrue(row["updatedAt"])
         self.assertEqual(row["reviewStatus"], "draft")
-        self.assertEqual(row["originalName"], "某作家")  # 落盘前去除首尾空白
+        self.assertEqual(row["originalName"], "某作家")  # 落盘前去除首尾空白与零宽字符
         self.assertEqual(row["Name_CN"], "某")
 
     def test_admin_update_bumps_updated_at_keeps_created_at(self) -> None:

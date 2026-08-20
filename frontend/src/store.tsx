@@ -61,7 +61,7 @@ export const initialState: AppState = {
   fullData: { nodes: [], edges: [] },
   viewData: { nodes: [], edges: [] },
   currentView: "main",
-  // 相机快照:渲染器在视图切换/交互结束时回传(实时相机仍以渲染器为准,分享链接读取最新值)
+  // 相机快照:渲染器在视图切换/交互结束时回传(实时相机仍以渲染器为准)
   camera: { theta: -Math.PI / 2 + 0.4, phi: Math.PI / 2 - 0.18, radius: 1500, cx: 0, cy: 0, cz: 0 },
   rippleCenter: null,
   currentAuthorId: null,

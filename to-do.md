@@ -1,6 +1,6 @@
 # Echo Graph · 需求与进度清单
 
-> 整理自项目启动以来的全部需求(截至 2026-08-19),按模块分类。
+> 整理自项目启动以来的全部需求,按模块分类。
 > 状态:✅ 已完成 · 🟡 部分完成 · ⬜ 待办
 
 ## 1. 数据与模型
@@ -9,7 +9,7 @@
 - [x] 数据模型按 `data_schema.md`(schemaVersion 1.1)规范:`Author` / `Work` 节点及属性
   - Work:`id`、`language`(ISO 639-1)、`originalTitle`、`Title_CN`、`Title_EN`、`publicationYear`、`creationYear`、时间戳
   - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
-- [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
+- [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 1:N(允许合著)
 - [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`note`、`reviewStatus` 与时间戳
 - [x] 涟漪关系(边)增加 `id`(UUID v7):`edges.csv` 新增 `id` 列并回填存量 3 条;管理页新增/编辑/删除按 `id` 定位,与作者/作品一致
 - [x] 作者/作品增加 `reviewStatus` 审核状态(默认 `draft`),管理页作者/作品表格列由「删除时间」改为「审核状态」,编辑表单同步支持
@@ -17,7 +17,6 @@
 - [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源,已全量导入 Neo4j;示例数据(seed.json、演示快照、生成脚本、md 表格、旧 xlsx)已删除
 - [x] 提供新增/修改数据的标准流程(CSV → `import_data.py` 或数据管理页)
 - [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
-- [x] 现有真实关系已逐条审核并置 `reviewed`(CSV / Neo4j / 快照同步)
 - ⬜ 扩充数据量与出处精确性(需人工策展)
 
 ## 2. 后端 / API
@@ -32,7 +31,7 @@
 - [x] Neo4j Aura 数据导入与约束(index)
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
-- [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j、导出 JSON(后端保留 CSV 导出接口,均需管理令牌);保存时自动版本快照(`data/versions/`)
+- [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j;保存时自动版本快照(`data/versions/`)
 - [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
 - [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
@@ -65,7 +64,6 @@
 - [x] 悬停节点:暂停自动旋转,右侧栏滑出并显示详情(不切换 3D 视图)
 - [x] 交互停止后自动恢复旋转(恢复阈值可调,当前 500ms)
 - [x] 扩散范围滑动条(1–8 级):拖动时保持当前视角,实时显示"N 级 · M 本书"
-- [x] 快捷键:搜索下拉 ↑↓ 选择、Enter 确认;路径输入回车查询
 - [x] 修复:中文输入法候选框弹出导致左侧栏误隐藏(输入聚焦/组合期间不隐藏)
 - [x] 扩散滑动条防抖(拖动时数值即时更新,停止 400ms 后再请求)
 
@@ -89,17 +87,17 @@
 - [x] 主图谱力导向布局分帧计算,避免大数据量卡顿(含视图令牌防止异步覆盖)
 - [x] 静态资源版本号防缓存(v=12)
 - [x] README 随进度同步维护
-- [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤、相机位置写入 URL(`#v=ripple:workId:hops&islands=1&cam=...`);浏览器前进/后退可导航;左侧栏提供"分享链接 / 导出图片"(PNG 含节点文字标签)
+- [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤写入 URL(`#v=ripple:workId:hops&islands=1`),相机位置不再由新链接携带(兼容解析旧 `cam=`);浏览器前进/后退可导航;侧边栏「分享链接 / 导出图片」按钮已移除
 - [x] 移除"导出数据"按钮与"示例"按钮;"数据管理"入口移至侧边栏底部;路径输入区改为上下等宽下拉框 + 切换按钮 + 右侧"寻找路径"
 - [x] React + Vite 迁移:前端重构为 React 18 + Vite 5(`frontend/`),FastAPI 托管构建产物;核心功能(图谱渲染/搜索/路径/涟漪/作者视图/深链/管理页)已验证
 - [x] 数据管理功能的权限设置:管理接口统一 Bearer Token 鉴权(`ADMIN_TOKEN`,前端管理页输入令牌后可用)
-- [x] 恢复 URL 状态化:视图/扩散级数/孤岛过滤/作者开关自动写入 hash,浏览器前进/后退可导航;支持 `cam=` / `islands=` / `authors=` 参数与首载深链,分享链接携带当前视图与最新相机位置;路径输入恢复作品联想下拉
+- [x] 恢复 URL 状态化:视图/扩散级数/孤岛过滤/作者开关自动写入 hash,浏览器前进/后退可导航;支持 `cam=` / `islands=` / `authors=` 参数与首载深链(兼容旧版分享链接);路径输入恢复作品联想下拉
 - [x] 清理旧版 `static/` 页面与前端死代码(`lib/actions.js` / `admin.js` / `panels.js`、重复 vendor 副本),前端单一维护源
 - [x] React 迁移复盘·清理:移除 `viewData` 死状态;`viewLabel` 去重;纯函数抽取到 `lib/graphData.js` 并接入 Vitest 单测(7 个用例)
 - [x] React 迁移复盘·解耦:深链 `applyHash` 不再篡改 `stateRef`,过滤状态改为显式 flags 透传;同视图刷新改为增量同步场景(保留节点/相机,不再全量重建)
 - [x] React 迁移复盘·依赖:three 0.185 升级为 npm 依赖(`three` + addons),移除 vendored 全局脚本
 - [x] React 19 升级(19.2.8,`@types/react` 19);lint/test/build 全绿
-- [x] 相机状态回传 React store(`SET_CAMERA`,视图切换/交互结束时节流同步);分享链接仍读渲染器实时值
+- [x] 相机状态回传 React store(`SET_CAMERA`,视图切换/交互结束时节流同步)
 - [x] 节点点击/悬停改为 React 事件委托(`pickNode` / `setHoveredNode` API,移除注入式 onNodeClick/onNodeHover)
 - [x] TypeScript 迁移:全部 `src` 转 `.ts`/`.tsx`(strict + tsc --noEmit),接入 typescript-eslint 与 CI typecheck;tsconfig 单一来源
 - [x] 渲染器内核完全受控化:`viewData` 重新入 store 并被 GraphCanvas effect 消费;`graph.ts` 只计算并 dispatch(SET_VIEW / SET_VIEW_DATA / SET_CAMERA),不再直接调渲染器;renderer 退化为 `update(kind, data)` 纯执行器(相机由 `data.camera` 驱动,默认相机上移到 React 侧);移除 onViewChange 注入

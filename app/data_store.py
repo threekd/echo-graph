@@ -28,13 +28,21 @@ EDGE_HEADER = [
     "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
 
+# 不可见格式字符:网页复制文本常带入零宽空格(U+200B)等,录入时统一移除
+INVISIBLE_CHARS = "\u200b\u200c\u200d\u2060\ufeff"  # 零宽空格/连接符/不换行零宽等
+
+
+def remove_invisible_chars(value: str) -> str:
+    """移除零宽空格等不可见格式字符,不触碰普通空格与换行。"""
+    return value.translate(str.maketrans("", "", INVISIBLE_CHARS))
+
 
 def clean_row(raw: dict) -> dict:
-    """基础数据清洗:字符串去首尾空白,空串归一为 None。所有落盘数据先过这里。"""
+    """基础数据清洗:去首尾空白、移除零宽/不可见字符,空串归一为 None。所有落盘数据先过这里。"""
     out: dict = {}
     for k, v in raw.items():
         if isinstance(v, str):
-            v = v.strip() or None
+            v = remove_invisible_chars(v).strip() or None
         out[k] = v
     return out
 

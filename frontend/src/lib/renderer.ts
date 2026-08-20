@@ -47,6 +47,10 @@ let lastCameraSync = 0;
 let lastSyncedCam: CameraState | null = null;
 let wheelTimer: number | null = null;
 let resizeContainer: HTMLElement | null = null;
+// 底部手势区单指触摸:记录起点并判断"纵向向上主导"(交给呼出栏,抑制平移)
+let zoneTouchStartX = 0;
+let zoneTouchStartY = 0;
+let zoneVerticalUp = false;
 // 自然转动(空闲自动旋转)速度:手机端稍快,桌面保持原速
 const AUTO_ROTATE_SPEED = window.matchMedia("(max-width: 768px)").matches ? 0.0024 : 0.0016;
 
@@ -672,16 +676,15 @@ function bindControls(container: HTMLElement): void {
       pinchDist = dist(activePointers[ids[0]], activePointers[ids[1]]);
       pinchMidX = (activePointers[ids[0]].x + activePointers[ids[1]].x) / 2;
       pinchMidY = (activePointers[ids[0]].y + activePointers[ids[1]].y) / 2;
+    } else if (e.pointerType === "touch") {
+      // 首个手指落点作为手势区方向判断基准
+      zoneTouchStartX = e.clientX;
+      zoneTouchStartY = e.clientY;
+      zoneVerticalUp = false;
     }
   });
   bindEvent(dom, "pointermove", function (e) {
     if (dragging) {
-      // 触摸起点在底部手势区(呼出功能栏/详情栏)时,图谱不参与平移/旋转/缩放
-      if (e.pointerType === "touch" && isBottomGestureTouch()) {
-        lastX = e.clientX;
-        lastY = e.clientY;
-        return;
-      }
       const ids = Object.keys(activePointers);
       if (ids.length >= 2 && activePointers[e.pointerId]) {
         // 双指手势:间距变化 → 缩放,中点位移 → 旋转(同时生效)
@@ -707,6 +710,20 @@ function bindControls(container: HTMLElement): void {
           applyCamera();
         }
         return;
+      }
+      // 底部手势区单指:仅抑制"纵向向上主导"的平移(交给呼出栏);
+      // 横向平移、双指旋转/缩放不受影响
+      if (e.pointerType === "touch" && isBottomGestureTouch()) {
+        const cdx = e.clientX - zoneTouchStartX;
+        const cdy = e.clientY - zoneTouchStartY;
+        if (!zoneVerticalUp && cdy < 0 && Math.abs(cdy) > Math.abs(cdx) * 1.2) {
+          zoneVerticalUp = true;
+        }
+        if (zoneVerticalUp) {
+          lastX = e.clientX;
+          lastY = e.clientY;
+          return;
+        }
       }
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
@@ -736,6 +753,7 @@ function bindControls(container: HTMLElement): void {
       lastX = activePointers[rest[0]].x;
       lastY = activePointers[rest[0]].y;
     }
+    if (Object.keys(activePointers).length === 0) zoneVerticalUp = false;
     lastInteraction = Date.now();
     syncCameraToStore();
   });
@@ -751,6 +769,7 @@ function bindControls(container: HTMLElement): void {
       lastX = activePointers[rest[0]].x;
       lastY = activePointers[rest[0]].y;
     }
+    if (Object.keys(activePointers).length === 0) zoneVerticalUp = false;
     syncCameraToStore();
   });
   bindEvent(dom, "contextmenu", function (e) {

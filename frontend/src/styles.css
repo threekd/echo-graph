@@ -118,25 +118,6 @@ main { height: 100%; position: relative; min-height: 0; }
   0%, 100% { opacity: 0.12; transform: scale(0.75); }
   50% { opacity: 0.95; transform: scale(1.2); }
 }
-.shooting {
-  position: absolute;
-  top: 14%; left: 78%;
-  width: 130px;
-  height: 1.6px;
-  border-radius: 2px;
-  opacity: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(220, 240, 255, 0.95));
-  transform: rotate(-32deg);
-  animation: shoot 11s linear infinite;
-}
-.shooting:nth-of-type(2) { top: 30%; left: 88%; animation-delay: 5.5s; animation-duration: 15s; }
-@keyframes shoot {
-  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(-32deg); }
-  4% { opacity: 1; }
-  13% { opacity: 0; transform: translate3d(-58vw, 32vh, 0) rotate(-32deg); }
-  100% { opacity: 0; transform: translate3d(-58vw, 32vh, 0) rotate(-32deg); }
-}
 
 .nodelabel {
   color: #dbe9ff;

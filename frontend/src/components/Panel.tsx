@@ -116,7 +116,7 @@ export default function Panel() {
   }, []);
 
   const scheduleHide = useCallback(() => {
-    // 触屏没有 hover:移动端保持打开,由关闭按钮收起,不做自动隐藏
+    // 触屏没有 hover:移动端保持打开,由栏外点击收起,不做自动隐藏
     if (isMobileLayout()) return;
     cancelHide();
     hideTimer.current = setTimeout(() => {

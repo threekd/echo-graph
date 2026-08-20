@@ -3,6 +3,11 @@
 Primary store is Neo4j (per README architecture). If Neo4j is unreachable,
 the app transparently falls back to the bundled demo JSON dataset so the demo
 always works. Set ECHO_STORE=json to force the JSON store.
+
+软删除(soft delete)只在 CSV 数据层表达:data/real/*.csv 中 deletedAt 非空的
+行在导入时直接从 Neo4j 中物理移除(DETACH DELETE),因此图中只存在活跃数据,
+Neo4j 节点/关系上从不写入 deletedAt 属性,查询层也无需(且不应)过滤该属性——
+引用库中不存在的属性键会触发 Neo4j "property key does not exist" 通知。
 """
 
 from __future__ import annotations
@@ -365,11 +370,9 @@ class Neo4jStore:
         if status:
             params["status"] = status
 
-        author_q = (
-            "MATCH (a:Author) WHERE a.deletedAt IS NULL"
-        )
+        author_q = "MATCH (a:Author)"
         if status:
-            author_q += " AND a.reviewStatus = $status"
+            author_q += " WHERE a.reviewStatus = $status"
         author_q += " RETURN properties(a) AS props"
         author_rows = self._query(
             author_q,
@@ -379,10 +382,10 @@ class Neo4jStore:
         for row in author_rows:
             nodes.append(_author_node(row["props"]))
 
-        work_q = "MATCH (w:Work) WHERE w.deletedAt IS NULL"
+        work_q = "MATCH (w:Work)"
         if status:
-            work_q += " AND w.reviewStatus = $status"
-        work_q += " OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author) WHERE a.deletedAt IS NULL"
+            work_q += " WHERE w.reviewStatus = $status"
+        work_q += " OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author)"
         work_q += (
             " RETURN properties(w) AS props,"
             " collect(DISTINCT a.Name_CN) AS author_names,"
@@ -400,14 +403,12 @@ class Neo4jStore:
             row["props"]["author_id"] = ids[0] if ids else None
         nodes.extend(_work_node(row["props"]) for row in node_rows)
 
-        echo_q = (
-            """
-            MATCH (w1:Work)-[r:ECHO]->(w2:Work)
-            WHERE w1.deletedAt IS NULL AND w2.deletedAt IS NULL AND r.deletedAt IS NULL
-            """
-        )
+        echo_q = "MATCH (w1:Work)-[r:ECHO]->(w2:Work)"
         if status:
-            echo_q += " AND r.reviewStatus = $status AND w1.reviewStatus = $status AND w2.reviewStatus = $status"
+            echo_q += (
+                " WHERE r.reviewStatus = $status"
+                " AND w1.reviewStatus = $status AND w2.reviewStatus = $status"
+            )
         echo_q += (
             " RETURN w1.id AS source, w2.id AS target,"
             " r.evidence AS evidence, r.evidenceSource AS evidenceSource,"
@@ -415,14 +416,9 @@ class Neo4jStore:
         )
         echo_rows = self._query(echo_q, params)
         edges = [_echo_edge(r) for r in echo_rows]
-        authored_q = (
-            """
-            MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)
-            WHERE w.deletedAt IS NULL AND a.deletedAt IS NULL
-            """
-        )
+        authored_q = "MATCH (w:Work)-[:AUTHORED_BY]->(a:Author)"
         if status:
-            authored_q += " AND w.reviewStatus = $status AND a.reviewStatus = $status"
+            authored_q += " WHERE w.reviewStatus = $status AND a.reviewStatus = $status"
         authored_q += " RETURN w.id AS source, a.id AS target"
         authored_rows = self._query(
             authored_q,
@@ -437,7 +433,6 @@ class Neo4jStore:
             MATCH (n)
             WHERE ((n:Work AND (n.Title_CN CONTAINS $q OR toLower(n.Title_EN) CONTAINS toLower($q) OR toLower(n.originalTitle) CONTAINS toLower($q)))
                OR (n:Author AND (n.Name_CN CONTAINS $q OR toLower(n.Name_EN) CONTAINS toLower($q) OR toLower(n.originalName) CONTAINS toLower($q))))
-              AND n.deletedAt IS NULL
             RETURN n.id AS id, labels(n)[0] AS label, n LIMIT $limit
             """,
             {"q": q, "limit": limit},
@@ -474,8 +469,6 @@ class Neo4jStore:
             "MATCH p = shortestPath((a:Work {id:$from})-[r:ECHO*1.."
             f"{hop}"
             "]->(b:Work {id:$to})) "
-            "WHERE all(x IN nodes(p) WHERE x.deletedAt IS NULL) "
-            "AND all(rel IN relationships(p) WHERE rel.deletedAt IS NULL) "
             "RETURN [x IN nodes(p) | x.id] AS node_ids, "
             "[rel IN relationships(p) | {source: startNode(rel).id, target: endNode(rel).id, "
             "evidence: rel.evidence, evidenceSource: rel.evidenceSource, "
@@ -492,9 +485,7 @@ class Neo4jStore:
         rows = self._query(
             """
             MATCH (w:Work {id:$id})
-            WHERE w.deletedAt IS NULL
             OPTIONAL MATCH (w)-[:AUTHORED_BY]->(a:Author)
-            WHERE a.deletedAt IS NULL
             RETURN properties(w) AS w, collect(DISTINCT a) AS author_nodes LIMIT 1
             """,
             {"id": work_id},
@@ -507,9 +498,7 @@ class Neo4jStore:
         inc = self._query(
             """
             MATCH (i:Work)-[r:ECHO]->(w:Work {id:$id})
-            WHERE i.deletedAt IS NULL AND r.deletedAt IS NULL
             OPTIONAL MATCH (i)-[:AUTHORED_BY]->(ia:Author)
-            WHERE ia.deletedAt IS NULL
             RETURN i.id AS source, i.Title_CN AS source_title,
                    collect(DISTINCT ia.Name_CN) AS source_authors,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
@@ -527,9 +516,7 @@ class Neo4jStore:
         out = self._query(
             """
             MATCH (w:Work {id:$id})-[r:ECHO]->(o:Work)
-            WHERE r.deletedAt IS NULL AND o.deletedAt IS NULL
             OPTIONAL MATCH (o)-[:AUTHORED_BY]->(oa:Author)
-            WHERE oa.deletedAt IS NULL
             RETURN o.id AS target, o.Title_CN AS target_title,
                    collect(DISTINCT oa.Name_CN) AS target_authors,
                    r.evidence AS evidence, r.evidenceSource AS evidenceSource,
@@ -556,8 +543,8 @@ class Neo4jStore:
         hop = max(1, min(int(hops), 8))
         node_rows = self._query(
             "MATCH (c:Work {id:$id}) "
-            f"MATCH (n:Work) WHERE (n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n)) AND n.deletedAt IS NULL "
-            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) WHERE a.deletedAt IS NULL "
+            f"MATCH (n:Work) WHERE (n.id = c.id OR (c)-[:ECHO*1..{hop}]-(n)) "
+            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) "
             "RETURN properties(n) AS props, "
             "collect(DISTINCT a.Name_CN) AS author_names, "
             "collect(DISTINCT a.id) AS author_ids",
@@ -581,7 +568,6 @@ class Neo4jStore:
             "WITH collect(n.id) AS ids "
             "MATCH (a:Work)-[r:ECHO]->(b:Work) "
             "WHERE a.id IN ids AND b.id IN ids "
-            "AND a.deletedAt IS NULL AND b.deletedAt IS NULL AND r.deletedAt IS NULL "
             "RETURN a.id AS source, b.id AS target, r.evidence AS evidence, "
             "r.evidenceSource AS evidenceSource, "
             "r.note AS note, r.reviewStatus AS reviewStatus",
@@ -595,21 +581,19 @@ class Neo4jStore:
             if rel:
                 q = (
                     "MATCH ()-[r:ECHO]->() "
-                    "WHERE startNode(r).deletedAt IS NULL AND endNode(r).deletedAt IS NULL AND r.deletedAt IS NULL "
                     "RETURN coalesce(r.reviewStatus, 'draft') AS s, count(*) AS c"
                 )
             else:
                 q = (
-                    f"MATCH (n:{label}) WHERE n.deletedAt IS NULL "
+                    f"MATCH (n:{label}) "
                     "RETURN coalesce(n.reviewStatus, 'draft') AS s, count(*) AS c"
                 )
             return {row["s"]: row["c"] for row in self._query(q)}
 
-        author_count = self._query("MATCH (a:Author) WHERE a.deletedAt IS NULL RETURN count(a) AS c")[0]["c"]
-        work_count = self._query("MATCH (w:Work) WHERE w.deletedAt IS NULL RETURN count(w) AS c")[0]["c"]
+        author_count = self._query("MATCH (a:Author) RETURN count(a) AS c")[0]["c"]
+        work_count = self._query("MATCH (w:Work) RETURN count(w) AS c")[0]["c"]
         edge_count = self._query(
             "MATCH (a:Work)-[r:ECHO]->(b:Work) "
-            "WHERE a.deletedAt IS NULL AND b.deletedAt IS NULL AND r.deletedAt IS NULL "
             "RETURN count(r) AS c"
         )[0]["c"]
         return {

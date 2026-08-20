@@ -33,7 +33,7 @@
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
 - [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j、导出 JSON(后端保留 CSV 导出接口,均需管理令牌);保存时自动版本快照(`data/versions/`)
-- [x] 软删除同步 Neo4j:导入时从图谱移除 `deletedAt` 非空的行,查询层统一过滤已删除项
+- [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
 - [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品

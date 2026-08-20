@@ -12,7 +12,8 @@ export interface AdminQueryOptions<T extends Record<string, any>> {
   filters: Record<string, string>;
   // 按列文本搜索:对单元格显示值做不区分大小写的包含匹配
   textFilters: Record<string, string>;
-  deletedFilter: DeletedFilter;
+  // 删除状态筛选(当前管理页 UI 已移除该筛选框,保留纯函数能力供测试/复用)
+  deletedFilter?: DeletedFilter;
   sort: AdminSort | null;
   cellValue: (row: T, key: string) => string;
 }
@@ -22,6 +23,7 @@ export function applyAdminQuery<T extends Record<string, any>>(
   opts: AdminQueryOptions<T>
 ): T[] {
   const q = opts.search.trim().toLowerCase();
+  const df = opts.deletedFilter || "all";
   const searched = q
     ? rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)))
     : rows;
@@ -33,8 +35,8 @@ export function applyAdminQuery<T extends Record<string, any>>(
       const ql = q.trim().toLowerCase();
       if (ql && !opts.cellValue(r, key).toLowerCase().includes(ql)) return false;
     }
-    if (opts.deletedFilter === "active" && r.deletedAt) return false;
-    if (opts.deletedFilter === "deleted" && !r.deletedAt) return false;
+    if (df === "active" && r.deletedAt) return false;
+    if (df === "deleted" && !r.deletedAt) return false;
     return true;
   });
   const out = [...filtered];

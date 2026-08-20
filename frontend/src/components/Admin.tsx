@@ -91,7 +91,6 @@ export default function Admin() {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
-  const [deletedFilter, setDeletedFilter] = useState<"all" | "active" | "deleted">("all");
   const [warnings, setWarnings] = useState<any>(null);
   const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
@@ -238,7 +237,6 @@ export default function Admin() {
     setFilters({});
     setTextFilters({});
     setSort(null);
-    setDeletedFilter("all");
   };
 
   const openAdd = () => {
@@ -419,7 +417,6 @@ export default function Admin() {
     search,
     filters,
     textFilters,
-    deletedFilter,
     sort,
     cellValue,
   });
@@ -478,16 +475,6 @@ export default function Admin() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <select
-              className="admin-filter-select"
-              value={deletedFilter}
-              onChange={(e) => setDeletedFilter(e.target.value as "all" | "active" | "deleted")}
-              title="删除状态筛选"
-            >
-              <option value="all">全部状态</option>
-              <option value="active">仅正常</option>
-              <option value="deleted">仅已删除</option>
-            </select>
             <button id="btn-auth" className={token ? "authed" : ""} onClick={openAuth}>
               {token ? "已授权" : "获取授权"}
             </button>
@@ -499,7 +486,7 @@ export default function Admin() {
           </div>
         </div>
         <div id="admin-status">{status}</div>
-        {warnings && (warnings.duplicateAuthorNames?.length || warnings.duplicateWorkTitles?.length || warnings.duplicateEdgePairs?.length) && (
+        {warnings && Boolean(warnings.duplicateAuthorNames?.length || warnings.duplicateWorkTitles?.length || warnings.duplicateEdgePairs?.length) && (
           <div id="admin-warnings">
             ⚠ 重复提醒:
             {warnings.duplicateAuthorNames?.length ? " 作者名:" + warnings.duplicateAuthorNames.join("、") : ""}

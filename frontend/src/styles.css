@@ -668,14 +668,6 @@ th.sortable.active .sort-icon {
   color: var(--muted);
   padding: 22px 10px;
 }
-.admin-filter-select {
-  background: rgba(10, 14, 34, 0.7);
-  border: 1px solid rgba(148, 163, 255, 0.3);
-  border-radius: 8px;
-  color: var(--ink);
-  font-size: 12px;
-  padding: 5px 8px;
-}
 #admin-table td {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(148, 163, 255, 0.08);
@@ -862,35 +854,25 @@ th.sortable.active .sort-icon {
   bottom: calc(100% + 4px);
 }
 
-/* 下拉列表滚动条统一深色风格(Firefox 标准属性 + WebKit 伪元素) */
-.work-picker-results, #q-results, #from-results, #to-results {
+/* 全局滚动条统一深色风格(Firefox 标准属性 + WebKit 伪元素):
+   覆盖管理页表格/弹窗/文本域、下拉列表与侧边栏等所有可滚动容器 */
+* {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 255, 0.38) rgba(10, 14, 34, 0.55);
 }
-.work-picker-results::-webkit-scrollbar,
-#q-results::-webkit-scrollbar,
-#from-results::-webkit-scrollbar,
-#to-results::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
-.work-picker-results::-webkit-scrollbar-track,
-#q-results::-webkit-scrollbar-track,
-#from-results::-webkit-scrollbar-track,
-#to-results::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: rgba(10, 14, 34, 0.55);
   border-radius: 8px;
 }
-.work-picker-results::-webkit-scrollbar-thumb,
-#q-results::-webkit-scrollbar-thumb,
-#from-results::-webkit-scrollbar-thumb,
-#to-results::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 255, 0.38);
   border-radius: 8px;
 }
-.work-picker-results::-webkit-scrollbar-thumb:hover,
-#q-results::-webkit-scrollbar-thumb:hover,
-#from-results::-webkit-scrollbar-thumb:hover,
-#to-results::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 255, 0.58);
 }
 

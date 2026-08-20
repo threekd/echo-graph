@@ -31,7 +31,9 @@ def _chunks(rows: list, size: int = CHUNK):
 
 
 def _node_props(row: BaseModel, now: str) -> dict:
-    # author_id 仅用于 CSV 层关联,图谱中由 AUTHORED_BY 关系表达,不写为节点属性
+    # author_id 仅用于 CSV 层关联,图谱中由 AUTHORED_BY 关系表达,不写为节点属性;
+    # deletedAt 同理只在 CSV 层表达:软删除的行由 run_import 过滤并在导入时从图中
+    # 物理移除(DETACH DELETE),从不作为属性写入 Neo4j(避免查询引用不存在的属性键)
     d = row.model_dump(exclude={"id", "slug", "deletedAt", "author_id"})
     d["createdAt"] = d.get("createdAt") or now
     if not d.get("updatedAt"):
@@ -41,6 +43,7 @@ def _node_props(row: BaseModel, now: str) -> dict:
 
 
 def _echo_props(row: EchoRow, now: str) -> dict:
+    # 与 _node_props 一致:软删除标记不写入 Neo4j,图中只存活跃的 ECHO 关系
     d = row.model_dump(exclude={"source_work_id", "target_work_id", "deletedAt"})
     d["reviewStatus"] = d.get("reviewStatus") or "draft"
     d["createdAt"] = d.get("createdAt") or now
@@ -136,7 +139,9 @@ def import_data(
             # 清理历史遗留的 evidenceLang 属性(schema 1.1 起不再使用)
             tx.run("MATCH ()-[r:ECHO]->() REMOVE r.evidenceLang")
 
-            # 软删除同步:CSV 中 deletedAt 非空的行从图谱中移除(数据仍保留在 CSV 存档)
+            # 软删除同步:CSV 中 deletedAt 非空的行从图谱中物理移除(数据仍保留在
+            # CSV 存档)。设计上 deletedAt 只在 CSV 层表达,图中只存活跃数据,
+            # 因此不写入该属性,查询层也不按 deletedAt 过滤(见 app/db.py 说明)
             if deleted_echoes:
                 deleted_rel_rows = [
                     {"source": r.get("source_work_id"), "target": r.get("target_work_id")}

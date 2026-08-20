@@ -54,6 +54,7 @@ export interface AppState {
   panel: PanelState;
   toast: string | null;
   adminOpen: boolean;
+  adminReady: boolean; // 令牌有效时置 true,驱动"数据管理"按钮显隐
   guideVisible: boolean;
 }
 
@@ -77,6 +78,7 @@ export const initialState: AppState = {
   panel: { type: "empty" },
   toast: null,
   adminOpen: false,
+  adminReady: false,
   guideVisible: false,
 };
 
@@ -112,6 +114,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, toast: action.msg };
     case "SET_ADMIN":
       return { ...state, adminOpen: action.open };
+    case "SET_ADMIN_READY":
+      return { ...state, adminReady: action.value };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

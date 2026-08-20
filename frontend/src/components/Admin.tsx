@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
+import { clearAdminToken, getAdminToken, setAdminToken } from "../lib/adminAuth";
 import {
   AuthorPicker,
   CodePicker,
@@ -14,6 +15,16 @@ import {
 import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./admin/query";
 
 type Kind = "authors" | "works" | "edges";
+
+// 从 URL 中移除 admin 入口参数/片段,恢复到普通页面状态
+function stripAdminFromUrl(): void {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("admin");
+    if (url.hash.indexOf("admin") !== -1) url.hash = "#v=main";
+    history.replaceState(null, "", url.toString());
+  } catch { /* ignore */ }
+}
 
 const KINDS: { key: Kind; label: string }[] = [
   { key: "authors", label: "作者" },
@@ -96,12 +107,16 @@ export default function Admin() {
   const [form, setForm] = useState<any>({});
   const [formError, setFormError] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const [authInput, setAuthInput] = useState("");
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
-  const [token, setToken] = useState(() => {
-    try { return sessionStorage.getItem("echo_graph_admin_token") || ""; } catch { return ""; }
-  });
+  const [token, setToken] = useState(() => getAdminToken());
+
+  // 未授权时自动弹出令牌授权弹窗(深链 #v=admin / ?admin 进入的场景)
+  useEffect(() => {
+    if (state.adminOpen && !token) setAuthOpen(true);
+  }, [state.adminOpen, token]);
 
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
     const headers = new Headers(options.headers || {});
@@ -111,17 +126,22 @@ export default function Admin() {
 
   const handleAuthError = (r: Response): boolean => {
     if (r.status === 401 || r.status === 403) {
-      setStatus("管理令牌无效或缺失,请点击「获取授权」重新授权");
+      // 清除失效令牌,自动重新弹出授权框(token 置空后下方 effect 会打开)
+      clearAdminToken();
+      setToken("");
+      setStatus("管理令牌无效或缺失,请重新授权");
       return true;
     }
     return false;
   };
 
-  // 打开授权对话框
-  const openAuth = () => {
-    setAuthInput("");
-    setAuthError("");
-    setAuthOpen(true);
+  // 取消授权:有令牌时仅关弹窗;未授权用户(误入)直接退出管理页并清理 URL
+  const cancelAuth = () => {
+    setAuthOpen(false);
+    if (!token) {
+      stripAdminFromUrl();
+      dispatch({ type: "SET_ADMIN", open: false });
+    }
   };
 
   // 校验令牌:有效则保存并授权,「获取授权」变为「已授权」
@@ -146,14 +166,32 @@ export default function Admin() {
       })
       .then((d) => {
         if (!d) return;
-        try { sessionStorage.setItem("echo_graph_admin_token", value); } catch { /* ignore */ }
+        setAdminToken(value);
         setToken(value); // token 变化后 load() 会随 useEffect 自动重新拉取数据
         setAuthOpen(false);
         setAuthInput("");
         setStatus("已授权");
+        dispatch({ type: "SET_ADMIN_READY", value: true }); // 授权后显示"数据管理"按钮
       })
       .catch((e) => setAuthError("校验失败: " + e.message))
       .finally(() => setAuthBusy(false));
+  };
+
+  const doLogout = () => {
+    setLogoutOpen(false);
+    clearAdminToken();
+    setToken("");
+    dispatch({ type: "SET_ADMIN_READY", value: false });
+    closeAdmin();
+    setStatus("已退出授权");
+  };
+
+  const openLogoutConfirm = () => setLogoutOpen(true);
+
+  // 关闭管理页;同时清理 URL 中的 admin 入口参数/片段
+  const closeAdmin = () => {
+    stripAdminFromUrl();
+    dispatch({ type: "SET_ADMIN", open: false });
   };
 
   const load = useCallback(() => {
@@ -422,7 +460,13 @@ export default function Admin() {
       <div className="admin-shell">
         <div className="admin-head">
           <div className="admin-head-left">
-            <h2>数据管理</h2>
+            <h2
+              className={"admin-title" + (token ? " clickable" : "")}
+              title={token ? "点击退出授权" : undefined}
+              onClick={token ? openLogoutConfirm : undefined}
+            >
+              数据管理
+            </h2>
             <div className="admin-tabs">
               {KINDS.map((k) => (
                 <button
@@ -437,12 +481,9 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            <button id="btn-auth" className={token ? "authed" : ""} onClick={openAuth}>
-              {token ? "已授权" : "获取授权"}
-            </button>
             <button onClick={openAdd}>＋ 新增</button>
             <button onClick={doImport}>上传↑</button>
-            <button id="admin-close" onClick={() => dispatch({ type: "SET_ADMIN", open: false })}>关闭</button>
+            <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
         <div id="admin-status">{status}</div>
@@ -469,13 +510,25 @@ export default function Admin() {
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") doAuthorize();
-                  if (e.key === "Escape") setAuthOpen(false);
+                  if (e.key === "Escape") cancelAuth();
                 }}
               />
               {authError && <div className="auth-error">{authError}</div>}
               <div className="admin-modal-actions">
                 <button onClick={doAuthorize} disabled={authBusy}>{authBusy ? "校验中…" : "确认"}</button>
-                <button onClick={() => setAuthOpen(false)}>取消</button>
+                <button onClick={cancelAuth}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {logoutOpen && (
+          <div id="auth-modal">
+            <div className="auth-modal-card">
+              <h3>退出授权</h3>
+              <p>确定退出授权吗?退出后「数据管理」按钮将隐藏,需要时可通过 <code>?admin</code> 或 <code>#v=admin</code> 重新授权。</p>
+              <div className="admin-modal-actions">
+                <button className="del" onClick={doLogout}>确认退出</button>
+                <button onClick={() => setLogoutOpen(false)}>取消</button>
               </div>
             </div>
           </div>

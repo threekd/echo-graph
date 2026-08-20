@@ -546,6 +546,19 @@ button.ghost { color: var(--muted); }
   color: #dce6ff;
   filter: drop-shadow(0 0 10px rgba(138, 184, 255, 0.35));
 }
+.admin-title.clickable {
+  cursor: pointer;
+}
+.admin-title.clickable:hover {
+  color: #9cc3ff;
+  text-decoration: underline;
+}
+.auth-modal-card p {
+  margin: 10px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
 .admin-tabs { display: flex; gap: 6px; }
 .admin-tab {
   padding: 7px 14px;
@@ -571,10 +584,6 @@ button.ghost { color: var(--muted); }
   color: var(--ink);
   font-size: 12px;
   cursor: pointer;
-}
-#btn-auth.authed {
-  border-color: rgba(52, 211, 153, 0.55);
-  color: #34d399;
 }
 #admin-status {
   padding: 8px 18px;

@@ -14,6 +14,7 @@ import Toast from "./components/Toast";
 import Guide from "./components/Guide";
 import Admin from "./components/Admin";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
+import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
 import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
@@ -30,21 +31,41 @@ function AppContent() {
   const { state, dispatch } = useApp();
   const stateRef = useRef<{ state: AppState; dispatch: (a: AppAction) => void } | null>(null);
   stateRef.current = { state, dispatch };
+  // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
+  const lastAppliedHash = useRef<string | null>(null);
+  const lastAppliedAt = useRef(0);
 
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
   // cam / islands / authors 参数用于恢复旧版分享链接;数据加载完成后再次应用,保证首载深链生效
   const applyHash = useCallback((data?: GraphData) => {
+    const current = location.hash;
+    if (
+      !data &&
+      lastAppliedHash.current === current &&
+      lastAppliedAt.current > 0 &&
+      Date.now() - lastAppliedAt.current < 500
+    ) {
+      return;
+    }
+    lastAppliedHash.current = current;
+    lastAppliedAt.current = Date.now();
     if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
+    // #v=admin 或 hash 中含 admin(如用户把 ?admin 误加到 # 之后形成 "#v=main?admin")都视为管理入口;
+    // "admin" 不可能出现在 UUID/视图参数中,判定安全
+    if (location.hash.indexOf("admin") !== -1) {
+      dispatch({ type: "SET_ADMIN", open: true });
+      return;
+    }
     const h = location.hash.replace(/^#/, "");
     if (!h) return;
-    const fullData = data || stateRef.current!.state.fullData;
-    if (!fullData || !fullData.nodes.length) return;
     const parts: Record<string, string> = {};
     h.split("&").forEach((p) => {
       const kv = p.split("=");
       parts[kv[0]] = kv[1] == null ? "" : decodeURIComponent(kv[1]);
     });
     const v = parts.v || "";
+    const fullData = data || stateRef.current!.state.fullData;
+    if (!fullData || !fullData.nodes.length) return;
     const cam = parts.cam ? parseCam(parts.cam) : null;
     const flags = {
       hideIslands: parts.islands === "1" || location.search.indexOf("hideislands") !== -1,
@@ -87,6 +108,16 @@ function AppContent() {
     }
   }, [dispatch]);
 
+  // 管理令牌有效性驱动"数据管理"按钮显隐:有 token 时启动校验,有效才显示
+  useEffect(() => {
+    const token = getAdminToken();
+    if (!token) return;
+    validateAdminToken(token).then((ok) => {
+      if (ok) dispatch({ type: "SET_ADMIN_READY", value: true });
+      else clearAdminToken();
+    });
+  }, [dispatch]);
+
   useEffect(() => {
     setStateRef(stateRef);
     setOnCameraChange((camera) => {
@@ -96,7 +127,9 @@ function AppContent() {
       .then(([data, stats]) => {
         dispatch({ type: "SET_DATA", data });
         dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
-        if (location.search.indexOf("admin=1") !== -1) {
+        const urlParams = new URLSearchParams(location.search);
+        const wantAdmin = urlParams.has("admin") || (location.hash || "").indexOf("admin") !== -1;
+        if (wantAdmin) {
           dispatch({ type: "SET_ADMIN", open: true }); // 深链直达数据管理页
         }
         if (location.hash.replace(/^#/, "")) {
@@ -122,11 +155,25 @@ function AppContent() {
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
-  // 浏览器前进/后退或手动修改 hash 时导航
+  // 浏览器前进/后退或手动修改 hash 时导航;popstate/focus 兜底地址栏编辑(omnibox 回车可能只触发其一)
   useEffect(() => {
-    const onHashChange = () => applyHash();
+    let lastFocusHash = location.hash;
+    const onHashChange = () => {
+      lastFocusHash = location.hash;
+      applyHash();
+    };
+    const onFocus = () => {
+      if (location.hash !== lastFocusHash) applyHash(); // 失焦期间 hash 被改动(地址栏编辑)才处理
+      lastFocusHash = location.hash;
+    };
     window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    window.addEventListener("popstate", onHashChange);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("hashchange", onHashChange);
+      window.removeEventListener("popstate", onHashChange);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [applyHash]);
 
   return (

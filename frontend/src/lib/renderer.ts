@@ -446,10 +446,10 @@ function pathLayout(data: GraphData): Record<string, THREE.Vector3> {
   return positions;
 }
 
-// 手机端进入节点视图(涟漪/作者/路径)时,按节点包围球自动调整相机距离,
-// 避免窄屏横向视野下默认视角过近(占满甚至溢出屏幕)
+// 进入节点视图(涟漪/作者/路径)时,按节点包围球自动调整相机距离,
+// 手机端避免窄屏横向视野下默认视角过近,桌面端同样按实际布局取景
 function autoFitViewRadius(kind: string): void {
-  if (!IS_MOBILE_RENDER || kind === "main") return;
+  if (kind === "main") return;
   let maxR = 0;
   Object.keys(positions).forEach(function (id) {
     const r = positions[id].length();
@@ -459,7 +459,9 @@ function autoFitViewRadius(kind: string): void {
   const halfV = (camera.fov * Math.PI) / 360;
   const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
   const halfFit = Math.min(halfV, halfH); // 窄屏时横向视野是限制维度
-  cameraState.radius = Math.max(50, Math.min(8000, (maxR / Math.sin(halfFit)) * 0.8));
+  // 取景系数分端:手机 0.8(比完整容纳更近,节点更大);桌面 1.15(留余量)
+  const fitScale = IS_MOBILE_RENDER ? 0.8 : 1.15;
+  cameraState.radius = Math.max(50, Math.min(8000, (maxR / Math.sin(halfFit)) * fitScale));
   applyCamera();
   syncCameraToStore();
 }

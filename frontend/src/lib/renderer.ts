@@ -459,7 +459,7 @@ function autoFitViewRadius(kind: string): void {
   const halfV = (camera.fov * Math.PI) / 360;
   const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
   const halfFit = Math.min(halfV, halfH); // 窄屏时横向视野是限制维度
-  cameraState.radius = Math.max(50, Math.min(8000, (maxR / Math.sin(halfFit)) * 1.15));
+  cameraState.radius = Math.max(50, Math.min(8000, (maxR / Math.sin(halfFit)) * 0.8));
   applyCamera();
   syncCameraToStore();
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import { useApp } from "../store";
 import { search } from "../lib/api";
-import { buildWorkLookups, type WorkLookups } from "../lib/graphData";
+import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
 } from "../lib/graph";
@@ -92,6 +92,11 @@ export default function Sidebar() {
     const value = e.target.checked;
     dispatch({ type: "SET_HIDE_ISLANDS", value });
     rerenderCurrentView({ hideIslands: value });
+    const n = islandWorkCount(state.fullData);
+    dispatch({
+      type: "SET_TOAST",
+      msg: value ? `孤岛星已隐藏:${n} 部作品无提及关系` : `孤岛星已显示:${n} 部无提及关系的作品恢复显示`,
+    });
   };
 
   const backMain = () => {

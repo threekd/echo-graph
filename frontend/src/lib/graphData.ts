@@ -122,6 +122,17 @@ export function filterAuthorsWith(data: GraphData, showAuthors: boolean): GraphD
   };
 }
 
+// 没有任何 ECHO 提及关系的作品数(用于"隐藏孤岛星"开关的 toast 提示)
+export function islandWorkCount(data: GraphData): number {
+  const deg: Record<string, number> = {};
+  data.edges.forEach((e) => {
+    if (e.type !== "echo") return;
+    deg[e.source] = (deg[e.source] || 0) + 1;
+    deg[e.target] = (deg[e.target] || 0) + 1;
+  });
+  return data.nodes.filter((n) => n.type === "work" && !(deg[n.id] || 0)).length;
+}
+
 export interface WorkLookups {
   workLookup: Record<string, string>;
   workById: Record<string, GraphNode>;

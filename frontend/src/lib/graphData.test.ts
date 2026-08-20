@@ -5,6 +5,7 @@ import {
   filterAuthorIslands,
   filterIslands,
   filterSingleWorkAuthors,
+  islandWorkCount,
   isAnonymousAuthor,
   workAuthorIds,
 } from "./graphData";
@@ -143,6 +144,19 @@ describe("filterAuthorsWith", () => {
 
   it("显示作者时原样返回", () => {
     expect(filterAuthorsWith(data, true)).toBe(data);
+  });
+});
+
+describe("islandWorkCount", () => {
+  it("统计没有 ECHO 提及关系的作品数", () => {
+    const d = {
+      nodes: [node("w1", "work"), node("w2", "work"), node("w3", "work"), node("a1", "author")],
+      edges: [
+        { source: "w1", target: "w2", type: "echo" },
+        { source: "w1", target: "a1", type: "authored" },
+      ],
+    };
+    expect(islandWorkCount(d)).toBe(1); // 只有 w3 无提及关系
   });
 });
 

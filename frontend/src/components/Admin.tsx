@@ -441,7 +441,7 @@ export default function Admin() {
               {token ? "已授权" : "获取授权"}
             </button>
             <button onClick={openAdd}>＋ 新增</button>
-            <button onClick={doImport}>提交</button>
+            <button onClick={doImport}>上传↑</button>
             <button id="admin-close" onClick={() => dispatch({ type: "SET_ADMIN", open: false })}>关闭</button>
           </div>
         </div>

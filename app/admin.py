@@ -91,6 +91,16 @@ def _edge_pair(row: dict) -> tuple[str, str] | None:
     return None
 
 
+def _work_title_map(works: list[dict]) -> dict[str, str]:
+    """作品 id -> Title_CN,用于把报错里的 UUID 换成可读标题。"""
+    return {str(x.get("id")): x.get("Title_CN") for x in works if x.get("id")}
+
+
+def _author_ids_contain(value, author_id: str) -> bool:
+    """works.author_id(逗号分隔,可能带空格)是否包含指定作者 id。"""
+    return any(v.strip() == author_id for v in str(value or "").split(",") if v.strip())
+
+
 @router.get("/data")
 def get_data() -> dict:
     a, w, e = load_rows()
@@ -128,6 +138,7 @@ def do_import(body: dict) -> dict:
 def create(kind: Kind, row: dict) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     a, w, e = load_rows()
+    work_title = _work_title_map(w)
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
     if kind in ("authors", "works", "edges") and not row.get("id"):
@@ -142,7 +153,10 @@ def create(kind: Kind, row: dict) -> dict:
     if kind == "edges":
         pair = _edge_pair(row)
         if pair and any(_edge_pair(r) == pair for r in rows):
-            raise HTTPException(status_code=400, detail=f"涟漪关系已存在:{pair[0]} -> {pair[1]}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"涟漪关系已存在:{work_title.get(pair[0], pair[0])} -> {work_title.get(pair[1], pair[1])}",
+            )
     rows.append(row)
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
@@ -158,6 +172,7 @@ def create(kind: Kind, row: dict) -> dict:
 def update(kind: Kind, item_id: str, row: dict) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     a, w, e = load_rows()
+    work_title = _work_title_map(w)
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
     if not any(r.get("id") == item_id for r in rows):
@@ -172,7 +187,10 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
         if pair and any(
             r.get("id") != item_id and _edge_pair(r) == pair for r in rows
         ):
-            raise HTTPException(status_code=400, detail=f"涟漪关系已存在:{pair[0]} -> {pair[1]}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"涟漪关系已存在:{work_title.get(pair[0], pair[0])} -> {work_title.get(pair[1], pair[1])}",
+            )
     cand[kind] = [row if r.get("id") == item_id else r for r in rows]
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
@@ -186,23 +204,112 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
 
 @router.delete("/{kind}/{item_id}")
 def delete(kind: Kind, item_id: str) -> dict:
+    """软删除。作品连带其涟漪边;作者连带其名下作品与这些作品的涟漪边。"""
     a, w, e = load_rows()
     cand = {"authors": a, "works": w, "edges": e}
     rows = cand[kind]
     found = False
+    now = _now()
     for r in rows:
         if r.get("id") == item_id:
-            r["deletedAt"] = _now()
+            r["deletedAt"] = now
             found = True
     if not found:
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+
+    cascade: dict[str, list[str]] = {"works": [], "edges": []}
+    if kind == "works":
+        # 删除作品:把它作为源或目标的涟漪边一并软删除
+        for r in e:
+            if not r.get("deletedAt") and (
+                r.get("source_work_id") == item_id or r.get("target_work_id") == item_id
+            ):
+                r["deletedAt"] = now
+                cascade["edges"].append(r.get("id") or f"{r.get('source_work_id')}:{r.get('target_work_id')}")
+    elif kind == "authors":
+        # 删除作者:连带其名下作品,以及这些作品相关的涟漪边
+        work_ids = {
+            r.get("id")
+            for r in w
+            if not r.get("deletedAt") and _author_ids_contain(r.get("author_id"), item_id)
+        }
+        for r in w:
+            if r.get("id") in work_ids:
+                r["deletedAt"] = now
+                cascade["works"].append(r.get("id"))
+        for r in e:
+            if not r.get("deletedAt") and (
+                r.get("source_work_id") in work_ids or r.get("target_work_id") in work_ids
+            ):
+                r["deletedAt"] = now
+                cascade["edges"].append(r.get("id") or f"{r.get('source_work_id')}:{r.get('target_work_id')}")
+
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
     save_rows(cand["authors"], cand["works"], cand["edges"])
     return {
         "ok": True,
-        "deletedAt": _now(),
+        "deletedAt": now,
         "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
+        "cascade": cascade,
+    }
+
+
+@router.post("/{kind}/{item_id}/restore")
+def restore(kind: Kind, item_id: str) -> dict:
+    """恢复软删除。同一删除动作级联删除的作品/涟漪(相同 deletedAt)一并恢复。
+
+    删除时用同一个时间戳标记父行与级联行,恢复时按该时间戳找回整组;
+    单独删除的行(不同 deletedAt)不受影响。
+    """
+    a, w, e = load_rows()
+    cand = {"authors": a, "works": w, "edges": e}
+    rows = cand[kind]
+    row = next((r for r in rows if r.get("id") == item_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+    ts = row.get("deletedAt")
+    if not ts:
+        return {"ok": True, "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]), "cascade": {"works": [], "edges": []}}
+
+    now = _now()
+    cascade: dict[str, list[str]] = {"works": [], "edges": []}
+
+    def restore_row(r: dict, bucket: list[str]) -> None:
+        if r.get("deletedAt") == ts:
+            r["deletedAt"] = None
+            r["updatedAt"] = now
+            bucket.append(r.get("id") or f"{r.get('source_work_id')}:{r.get('target_work_id')}")
+
+    if kind == "works":
+        # 恢复作品:同批删除的涟漪边一并恢复
+        for r in e:
+            if r.get("source_work_id") == item_id or r.get("target_work_id") == item_id:
+                restore_row(r, cascade["edges"])
+    elif kind == "authors":
+        # 恢复作者:同批删除的作品与涟漪边一并恢复
+        work_ids = {r.get("id") for r in w if _author_ids_contain(r.get("author_id"), item_id)}
+        for r in w:
+            if r.get("id") in work_ids:
+                restore_row(r, cascade["works"])
+        for r in e:
+            if r.get("source_work_id") in work_ids or r.get("target_work_id") in work_ids:
+                restore_row(r, cascade["edges"])
+    else:
+        # 恢复涟漪边:同批删除的源/目标作品一并恢复,避免活跃边引用已删作品
+        for r in w:
+            if r.get("id") in (row.get("source_work_id"), row.get("target_work_id")):
+                restore_row(r, cascade["works"])
+
+    row["deletedAt"] = None
+    row["updatedAt"] = now
+    _validate(cand["authors"], cand["works"], cand["edges"])
+    snapshot("admin")
+    save_rows(cand["authors"], cand["works"], cand["edges"])
+    return {
+        "ok": True,
+        "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),
+        "cascade": cascade,
     }
 
 

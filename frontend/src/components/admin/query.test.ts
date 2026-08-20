@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAdminQuery, authorDisplayNames } from "./query";
+import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./query";
 
 const authors = [
   { id: "a1", Name_CN: "加缪", originalName: "Albert Camus", reviewStatus: "reviewed", nationality: "CN", birthYear: 1920, deletedAt: "" },
@@ -123,5 +123,23 @@ describe("authorDisplayNames", () => {
   it("空值返回空串", () => {
     expect(authorDisplayNames("", authorsById, labelOf)).toBe("");
     expect(authorDisplayNames(null, authorsById, labelOf)).toBe("");
+  });
+});
+
+describe("edgeDisplayLabel", () => {
+  const worksById: Record<string, any> = {
+    w1: { Title_CN: "局外人", originalTitle: "L'Étranger" },
+    w2: { Title_CN: "鼠疫", originalTitle: "La Peste" },
+  };
+  const labelOf = (w: any) => (w.Title_CN || "") + " - " + (w.originalTitle || "");
+
+  it("源/目标作品均解析为标题", () => {
+    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "w2" }, worksById, labelOf))
+      .toBe("局外人 - L'Étranger → 鼠疫 - La Peste");
+  });
+
+  it("未知作品 id 保留原样", () => {
+    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "nope" }, worksById, labelOf))
+      .toBe("局外人 - L'Étranger → nope");
   });
 });

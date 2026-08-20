@@ -36,6 +36,17 @@ export function authorDisplayNames(
     .join("、");
 }
 
+// 涟漪行的显示名:源作品 → 目标作品(未知 id 保留原样),用于删除确认等提示
+export function edgeDisplayLabel(
+  row: Record<string, any>,
+  worksById: Record<string, any>,
+  labelOf: (w: any) => string,
+): string {
+  const s = worksById[row.source_work_id];
+  const t = worksById[row.target_work_id];
+  return (s ? labelOf(s) : row.source_work_id) + " → " + (t ? labelOf(t) : row.target_work_id);
+}
+
 export function applyAdminQuery<T extends Record<string, any>>(
   rows: T[],
   opts: AdminQueryOptions<T>

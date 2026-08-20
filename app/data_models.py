@@ -212,12 +212,13 @@ def parse_rows(
 
     author_ids: set[str] = {a.id for a in author_models}
     work_ids: set[str] = {w.id for w in work_models}
+    work_title = {w.id: w.Title_CN for w in work_models}
 
-    def dup(items: list[str], label: str) -> None:
+    def dup(items: list, label: str, display=None) -> None:
         seen: set[str] = set()
         for it in items:
             if it in seen:
-                errors.append(f"{label} 重复:{it}")
+                errors.append(f"{label} 重复:{display(it) if display else it}")
             seen.add(it)
 
     dup([a.id for a in author_models], "作者 id")
@@ -226,6 +227,7 @@ def parse_rows(
     dup(
         [(e.source_work_id, e.target_work_id) for e in echo_models],
         "涟漪对",
+        lambda pair: f"{work_title.get(pair[0], pair[0])} -> {work_title.get(pair[1], pair[1])}",
     )
 
     work_authors: dict[str, list[str]] = {}
@@ -285,6 +287,11 @@ def find_duplicates(
 
     dup_pairs: list[str] = []
     seen_pairs: dict[tuple[str, str], str] = {}
+    title_by_id = {str(w.get("id")): w.get("Title_CN") for w in works if w.get("id")}
+
+    def work_label(work_id: str) -> str:
+        return title_by_id.get(work_id) or work_id
+
     for r in echoes:
         if r.get("deletedAt"):
             continue
@@ -292,7 +299,7 @@ def find_duplicates(
         if not s or not t:
             continue
         pair = (str(s), str(t))
-        display = f"{s} -> {t}"
+        display = f"{work_label(str(s))} -> {work_label(str(t))}"
         if pair in seen_pairs:
             if seen_pairs[pair] not in dup_pairs:
                 dup_pairs.append(seen_pairs[pair])

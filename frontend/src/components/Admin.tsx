@@ -11,7 +11,7 @@ import {
   workLabel,
   WorkPicker,
 } from "./admin/pickers";
-import { applyAdminQuery, authorDisplayNames } from "./admin/query";
+import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./admin/query";
 
 type Kind = "authors" | "works" | "edges";
 
@@ -249,12 +249,21 @@ export default function Admin() {
     setModal({ mode: "edit", row });
   };
 
-  const doDelete = (id: string) => {
-    if (!window.confirm("确认删除「" + id + "」?(软删除,可恢复)")) return;
+  const doDelete = (row: any) => {
+    const id = row.id || edgeKey(row);
+    if (!window.confirm(`确认删除「${rowLabel(row)}」?(软删除,可恢复,关联的作品/涟漪将一并软删除)`)) return;
     authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        setStatus(d.ok ? "已软删除" : (d.detail || "删除失败"));
+        const cascade = d.cascade || {};
+        const parts: string[] = [];
+        if (cascade.works && cascade.works.length) parts.push(cascade.works.length + " 部作品");
+        if (cascade.edges && cascade.edges.length) parts.push(cascade.edges.length + " 条涟漪");
+        setStatus(
+          d.ok
+            ? `已软删除「${rowLabel(row)}」${parts.length ? ",连带 " + parts.join(" / ") : ""}`
+            : (d.detail || "删除失败")
+        );
         setWarnings(d.warnings || null);
         if (d.ok) setModal(null); // 从编辑弹窗删除后关闭弹窗
         load();
@@ -265,14 +274,18 @@ export default function Admin() {
   const doRestore = (id: string) => {
     const row = allRows.find((r) => (r.id || edgeKey(r)) === id);
     if (!row) return;
-    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...row, deletedAt: null }),
-    })
+    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id) + "/restore", { method: "POST" })
       .then((r) => r.json())
       .then((d) => {
-        setStatus(d.ok ? "已恢复,需重新导入 Neo4j 后生效" : (d.detail || "恢复失败"));
+        const cascade = d.cascade || {};
+        const parts: string[] = [];
+        if (cascade.works && cascade.works.length) parts.push(cascade.works.length + " 部作品");
+        if (cascade.edges && cascade.edges.length) parts.push(cascade.edges.length + " 条涟漪");
+        setStatus(
+          d.ok
+            ? `已恢复「${rowLabel(row)}」${parts.length ? ",连带恢复 " + parts.join(" / ") : ""},需重新导入 Neo4j 后生效`
+            : (d.detail || "恢复失败")
+        );
         setWarnings(d.warnings || null);
         load();
       })
@@ -345,6 +358,13 @@ export default function Admin() {
   const authorsById: Record<string, any> = {};
   worksList.forEach((w: any) => { worksById[w.id] = w; });
   authorsList.forEach((a: any) => { authorsById[a.id] = a; });
+
+  // 行显示名(删除确认/状态提示用):作者名 / 作品标题 / 涟漪 A → B
+  const rowLabel = (row: any): string => {
+    if (kind === "authors") return authorLabelOf(row);
+    if (kind === "works") return workLabel(row);
+    return edgeDisplayLabel(row, worksById, workLabel);
+  };
 
   // 单元格显示值(与表格渲染一致,排序/筛选共用)
   const cellValue = (r: any, key: string): string => {
@@ -664,7 +684,7 @@ export default function Admin() {
             {formError && <div id="admin-form-errors">{formError}</div>}
             <div className="admin-modal-actions">
               {modal.mode === "edit" && (
-                <button className="del" onClick={() => doDelete(modal.row.id || edgeKey(modal.row))}>删除</button>
+                <button className="del" onClick={() => doDelete(modal.row)}>删除</button>
               )}
               <div className="admin-modal-actions-right">
                 <button onClick={saveForm}>保存</button>

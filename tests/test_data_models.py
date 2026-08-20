@@ -105,6 +105,8 @@ class ParseRowsTest(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             parse_rows(a, w, e)
         self.assertIn("涟漪对 重复", str(ctx.exception))
+        self.assertIn("书一", str(ctx.exception))  # 提示用作品标题而非 UUID
+        self.assertIn("书二", str(ctx.exception))
 
     def test_review_status_defaults_to_draft(self) -> None:
         am, wm, em, _ = parse_rows(*_fixture())
@@ -182,6 +184,8 @@ class ParseRowsTest(unittest.TestCase):
         self.assertIn("Book One", report["duplicateWorkTitles"])
         self.assertIn("书一", report["duplicateWorkTitles"])
         self.assertEqual(len(report["duplicateEdgePairs"]), 1)
+        self.assertIn("书一", report["duplicateEdgePairs"][0])
+        self.assertIn("书二", report["duplicateEdgePairs"][0])
 
     def test_find_duplicates_ignores_same_row_and_deleted(self) -> None:
         a, w, e = _fixture()

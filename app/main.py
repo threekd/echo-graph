@@ -1,4 +1,4 @@
-"""Echo Graph API server."""
+"""Litnebula API server."""
 
 from __future__ import annotations
 
@@ -42,9 +42,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Echo Graph API",
+    title="Litnebula API",
     version=_app_version(),
-    description="世界文学提及图谱 API(演示)",
+    description="回声图谱——世界文学的涟漪地图 API",
     lifespan=lifespan,
 )
 
@@ -83,12 +83,8 @@ def stats() -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    """健康检查:返回当前存储后端与 Neo4j 回退次数。"""
-    return {
-        "status": "ok",
-        "store": store.name,
-        "fallbacks": getattr(store, "fallback_count", lambda: 0)(),
-    }
+    """健康检查:返回当前存储后端(SQLite)。"""
+    return {"status": "ok", "store": store.name}
 
 
 @app.get("/api/graph")

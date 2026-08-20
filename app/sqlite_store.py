@@ -24,11 +24,6 @@ KIND_COLS = {"authors": AUTHOR_COLS, "works": WORK_COLS, "edges": EDGE_COLS}
 KIND_TABLE = {"authors": "authors", "works": "works", "edges": "edges"}
 
 
-def init_db() -> None:
-    with db_sqlite._db():
-        pass
-
-
 def _norm_row(row: dict) -> dict:
     """reviewStatus 空值归一为 draft(NOT NULL 约束)。"""
     out = dict(row)
@@ -197,22 +192,6 @@ def restore_edge_work_ids(conn, source_id: str, target_id: str, ts: str) -> list
     ]
 
 
-def active_counts() -> dict:
-    """活跃行数(供同步状态快速预检)。"""
-    with db_sqlite._db() as conn:
-        return {
-            "authors": conn.execute(
-                "SELECT count(*) AS c FROM authors WHERE deletedAt IS NULL"
-            ).fetchone()["c"],
-            "works": conn.execute(
-                "SELECT count(*) AS c FROM works WHERE deletedAt IS NULL"
-            ).fetchone()["c"],
-            "echoes": conn.execute(
-                "SELECT count(*) AS c FROM edges WHERE deletedAt IS NULL"
-            ).fetchone()["c"],
-        }
-
-
 # ---- 整库重写(迁移 / 恢复工具;普通写入请用行级 CRUD) ----
 
 
@@ -329,7 +308,7 @@ def list_audit(limit: int = 100, offset: int = 0, action: str | None = None, kin
     return {"items": [dict(r) for r in rows], "total": total}
 
 
-# ---- 同步比对规范化(与 Neo4j 比对共用) ----
+# ---- 往返一致性校验规范化(SQLite <-> CSV 共用) ----
 
 
 def sync_norm(value):
@@ -348,7 +327,7 @@ def sync_norm(value):
 
 
 def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
-    """规范化活跃数据载荷(忽略时间戳),用于 SQLite/CSV 与 Neo4j 比对。"""
+    """规范化活跃数据载荷(忽略时间戳),用于 SQLite <-> CSV 往返一致性校验。"""
     active_a = [r for r in author_rows if not r.get("deletedAt")]
     active_w = [r for r in work_rows if not r.get("deletedAt")]
     active_e = [r for r in edge_rows if not r.get("deletedAt")]
@@ -401,7 +380,7 @@ def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
 
 
 def sync_payload() -> dict:
-    """SQLite 侧的规范化载荷(供与 Neo4j 比对)。"""
+    """SQLite 侧的规范化载荷(供迁移/恢复后的往返校验)。"""
     data = list_all()
     return canonical_payload(data["authors"], data["works"], data["edges"])
 

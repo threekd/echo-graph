@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Echo Graph VPS 一键初始化(Ubuntu 22.04 / 24.04+)
+# Litnebula VPS 一键初始化(Ubuntu 22.04 / 24.04+)
 # 用法: sudo bash setup-vps.sh <域名> [certbot邮箱]
 # 示例: sudo bash setup-vps.sh litnebula.com admin@example.com
 set -euo pipefail
@@ -50,13 +50,13 @@ fi
 echo "==> 6/10 安装后端依赖(自动下载 Python 3.14)"
 sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv sync --frozen"
 
-echo "==> 7/10 生成 JSON 兜底种子(Neo4j 不可用时使用)"
-sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv run python scripts/export_seed.py"
+echo "==> 7/10 从仓库 CSV 重建 SQLite(权威库引导,贡献表为空属正常)"
+sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv run python scripts/migrate_csv_to_sqlite.py"
 
 echo "==> 8/10 配置 .env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   sudo -u "$APP_USER" cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-  echo "!! 已生成 $APP_DIR/.env,请先填入 NEO4J_* 与 ADMIN_TOKEN 后再启动服务"
+  echo "!! 已生成 $APP_DIR/.env,请先填入 ADMIN_TOKEN 后再启动服务"
 fi
 
 echo "==> 9/10 构建前端"
@@ -111,7 +111,7 @@ chmod 440 /etc/sudoers.d/echo-graph
 
 echo "==> 初始化完成"
 echo "接下来:"
-echo "  1) 编辑 $APP_DIR/.env,填入 NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD / ADMIN_TOKEN"
+echo "  1) 编辑 $APP_DIR/.env,填入 ADMIN_TOKEN(openssl rand -hex 32 生成)"
 echo "  2) sudo systemctl start echo-graph"
 echo "  3) 验证: curl https://$DOMAIN/api/health"
 echo "  4) 如需防火墙: sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw --force enable"

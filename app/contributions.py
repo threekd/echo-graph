@@ -1,16 +1,14 @@
 """用户贡献收件箱:SQLite 存储,公开提交无需令牌,审核走管理接口。
 
-用户提交只进入收件箱,不会直接写入 Neo4j 或策展 CSV;
+用户提交只进入收件箱,不会直接写入策展数据;
 审核通过后由后续流程(如人工录入 / AI 校正)再并入正式数据。
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import sqlite3
 import time
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -132,48 +130,6 @@ def set_status(contribution_id: str, status: str) -> bool:
             (status, _now(), contribution_id),
         )
         return cur.rowcount > 0
-
-
-def merge_legacy_db(legacy_db: Path) -> int:
-    """把旧 data/contributions.db 的行并入当前库(INSERT OR IGNORE),返回条数。
-
-    兼容旧 schema(无 source_author / target_author 列),旧库保留为备份。
-    """
-    if not Path(legacy_db).exists():
-        return 0
-    old = sqlite3.connect(legacy_db)
-    try:
-        cols = {r[1] for r in old.execute("PRAGMA table_info(contributions)")}
-        if not cols:
-            return 0
-        if {"source_author", "target_author"} <= cols:
-            rows = old.execute(
-                "SELECT id, source_work, target_work, source_author, target_author,"
-                " evidence, evidence_source, note, contact, status, created_at, reviewed_at"
-                " FROM contributions"
-            ).fetchall()
-        else:
-            rows = old.execute(
-                "SELECT id, source_work, target_work, '', '', evidence, evidence_source,"
-                " note, contact, status, created_at, reviewed_at FROM contributions"
-            ).fetchall()
-    finally:
-        old.close()
-    if not rows:
-        return 0
-    # 新表 NOT NULL 列:旧库可能为 NULL,统一归一(evidence_source 等)
-    rows = [
-        (r[0], r[1], r[2], r[3] or "", r[4] or "", r[5], r[6] or "", r[7], r[8], r[9] or "pending", r[10], r[11])
-        for r in rows
-    ]
-    with db_sqlite._db() as conn:
-        conn.executemany(
-            "INSERT OR IGNORE INTO contributions (id, source_work, target_work, source_author,"
-            " target_author, evidence, evidence_source, note, contact, status, created_at, reviewed_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
-    return len(rows)
 
 
 def _rate_limited(client_ip: str) -> bool:

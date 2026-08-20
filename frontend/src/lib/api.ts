@@ -19,7 +19,6 @@ export interface StatsResponse {
   echo_edges: number;
   store: string;
   demo: boolean;
-  fallbacks?: number;
   reviewStatus?: {
     authors: Record<string, number>;
     works: Record<string, number>;
@@ -43,6 +42,8 @@ export interface PathResponse {
 export interface ContributePayload {
   source_work: string;
   target_work: string;
+  source_author: string;
+  target_author: string;
   evidence: string;
   evidence_source?: string;
   note?: string;

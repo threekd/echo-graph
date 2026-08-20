@@ -37,11 +37,9 @@ class DataStoreDbTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = Path(self.tmp.name) / "echo-graph.db"
         self.real = Path(self.tmp.name) / "real"
-        self.versions = Path(self.tmp.name) / "versions"
         self.real.mkdir()
         patch.object(db_sqlite, "DB_PATH", self.db).start()
         patch.object(ds, "REAL_DIR", self.real).start()
-        patch.object(ds, "VERSIONS_DIR", self.versions).start()
         self.addCleanup(self.tmp.cleanup)
 
     def test_save_then_load_roundtrip(self) -> None:
@@ -68,17 +66,6 @@ class DataStoreDbTest(unittest.TestCase):
         other.mkdir()
         ds.export_csv_files(other)
         self.assertEqual(content, (other / "authors.csv").read_bytes())
-
-    def test_snapshot_backs_up_db_and_csv(self) -> None:
-        a, w, e = _rows()
-        sqlite_store.rewrite_all(a, w, e)
-        ds.export_csv_files()
-        path = ds.snapshot("test")
-        self.assertIsNotNone(path)
-        snap = Path(path)
-        self.assertTrue((snap / "echo-graph.db").exists())
-        self.assertTrue((snap / "authors.csv").exists())
-        self.assertTrue((snap / "edges.csv").exists())
 
     def test_load_csv_rows_reads_export_files(self) -> None:
         a, w, e = _rows()

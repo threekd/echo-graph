@@ -175,7 +175,7 @@ export default function Sidebar() {
           <h1>Litnebula</h1>
           <span className="badge">回声图谱</span>
           <div className="store-badge">
-            数据源:{state.storeName === "neo4j" ? "Neo4j" : state.storeName === "json" ? "JSON 兜底" : "加载中…"}
+            数据源:{state.storeName ? "SQLite" : "加载中…"}
           </div>
         </div>
         <nav>

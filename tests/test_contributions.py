@@ -99,35 +99,5 @@ class ContributionStoreTest(unittest.TestCase):
         self.assertEqual(row["source_author"], "甲")
         self.assertEqual(c.list_contributions()["items"][0]["target_author"], "乙")
 
-    def test_merge_legacy_db(self) -> None:
-        """旧库(无作者列的旧 schema)行并入主库,兼容缺失列。"""
-        legacy = Path(self.tmp.name) / "legacy.db"
-        conn = sqlite3.connect(legacy)
-        conn.execute(
-            "CREATE TABLE contributions (id TEXT PRIMARY KEY, source_work TEXT NOT NULL,"
-            " target_work TEXT NOT NULL, evidence TEXT NOT NULL, evidence_source TEXT,"
-            " note TEXT, contact TEXT, status TEXT NOT NULL DEFAULT 'pending',"
-            " created_at TEXT NOT NULL, reviewed_at TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO contributions (id, source_work, target_work, evidence, created_at)"
-            " VALUES ('legacy-1', 'A', 'B', 'x', '2026-01-01T00:00:00+00:00')"
-        )
-        conn.commit()
-        conn.close()
-
-        merged = c.merge_legacy_db(legacy)
-        self.assertEqual(merged, 1)
-        items = c.list_contributions()["items"]
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["id"], "legacy-1")
-        self.assertEqual(items[0]["source_author"], "")
-        self.assertEqual(items[0]["target_author"], "")
-        self.assertEqual(items[0]["evidence_source"], "")  # 旧库 NULL -> 空串
-        # 幂等:重复合并不产生重复行
-        self.assertEqual(c.merge_legacy_db(legacy), 1)
-        self.assertEqual(c.list_contributions()["total"], 1)
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -95,11 +95,6 @@ const FIELDS: Record<AdminTab, any[]> = {
   audit: [],
 };
 
-// 边有独立 id;source:target 仅作历史数据的兜底复合标识
-function edgeKey(r: any): string {
-  return (r.source_work_id || "") + ":" + (r.target_work_id || "");
-}
-
 function contributionStatusLabel(s: string): string {
   return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
 }
@@ -114,7 +109,6 @@ export default function Admin() {
   const [contribsLoading, setContribsLoading] = useState(false);
   const [contribCount, setContribCount] = useState(0);
   const [viewContrib, setViewContrib] = useState<any>(null);
-  const [synced, setSynced] = useState<boolean | null>(null);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message: string;
@@ -238,15 +232,7 @@ export default function Admin() {
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
   }, [authFetch]);
 
-  // 同步状态独立请求:不阻塞管理数据加载,提示异步到达
-  const loadSync = useCallback(() => {
-    authFetch("/api/admin/sync")
-      .then((r) => r.json())
-      .then((d) => setSynced(d.synced != null ? d.synced : null))
-      .catch(() => setSynced(null));
-  }, [authFetch]);
-
-  useEffect(() => { load(); loadSync(); }, [load, loadSync]);
+  useEffect(() => { load(); }, [load]);
 
   // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
   const loadContribs = useCallback(() => {
@@ -347,7 +333,7 @@ export default function Admin() {
   };
 
   const doDelete = (row: any) => {
-    const id = row.id || edgeKey(row);
+    const id = row.id;
     setConfirmState({
       title: "确认删除",
       message: `确认删除「${rowLabel(row)}」?(软删除,可恢复,关联的作品/涟漪将一并软删除)`,
@@ -375,7 +361,6 @@ export default function Admin() {
                 ),
               }));
             }
-            loadSync();
           })
           .catch((e) => setStatus("删除失败: " + e.message));
       },
@@ -383,7 +368,7 @@ export default function Admin() {
   };
 
   const doRestore = (id: string) => {
-    const row = allRows.find((r) => (r.id || edgeKey(r)) === id);
+    const row = allRows.find((r) => r.id === id);
     if (!row) return;
     authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id) + "/restore", { method: "POST" })
       .then((r) => r.json())
@@ -394,7 +379,7 @@ export default function Admin() {
         if (cascade.edges && cascade.edges.length) parts.push(cascade.edges.length + " 条涟漪");
         setStatus(
           d.ok
-            ? `已恢复「${rowLabel(row)}」${parts.length ? ",连带恢复 " + parts.join(" / ") : ""},需重新导入 Neo4j 后生效`
+            ? `已恢复「${rowLabel(row)}」${parts.length ? ",连带恢复 " + parts.join(" / ") : ""}`
             : (d.detail || "恢复失败")
         );
         if (d.ok) {
@@ -406,30 +391,8 @@ export default function Admin() {
             ),
           }));
         }
-        loadSync();
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
-  };
-
-  const doImport = () => {
-    setConfirmState({
-      title: "上传到数据库",
-      message: "确认增量合并更新后的数据?",
-      onConfirm: () => {
-        setStatus("导入中…");
-        authFetch("/api/admin/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wipe: false, version: "1.1" }),
-        })
-          .then((r) => r.json())
-          .then((d) => {
-            setStatus(d.ok ? "导入完成" : (d.detail || "导入失败"));
-            setTimeout(() => window.location.reload(), 1200);
-          })
-          .catch((e) => setStatus("导入失败: " + e.message));
-      },
-    });
   };
 
   const saveForm = () => {
@@ -455,7 +418,7 @@ export default function Admin() {
       Object.entries(form).map(([k, v]) => [k, typeof v === "string" ? (v.trim() || null) : v])
     );
     const url = modal.mode === "edit"
-      ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id || edgeKey(modal.row))
+      ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id)
       : "/api/admin/" + kind;
     authFetch(url, {
       method: modal.mode === "edit" ? "PUT" : "POST",
@@ -487,7 +450,6 @@ export default function Admin() {
           }
           return { ...prev, [key]: [...list, res.data.row] };
         });
-        loadSync();
       })
       .catch((e) => setFormError("请求失败: " + e.message));
   };
@@ -579,14 +541,10 @@ export default function Admin() {
           </div>
           <div className="admin-actions">
             {kind !== "contributions" && kind !== "audit" && <button onClick={openAdd}>＋ 新增</button>}
-            {kind !== "contributions" && kind !== "audit" && <button onClick={doImport}>上传↑</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
         <div id="admin-status">{status}</div>
-        {synced === false && (
-          <div id="admin-sync-hint">数据未上传,点击「上传↑」同步至 Neo4j</div>
-        )}
         {warnings && Boolean(warnings.duplicateAuthorNames?.length || warnings.duplicateWorkTitles?.length || warnings.duplicateEdgePairs?.length) && (
           <div id="admin-warnings">
             ⚠ 重复提醒:
@@ -693,7 +651,7 @@ export default function Admin() {
               onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
               renderActions={(r) =>
                 r.deletedAt
-                  ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
+                  ? <button onClick={() => doRestore(r.id)}>恢复</button>
                   : <button onClick={() => openEdit(r)}>编辑</button>
               }
             />

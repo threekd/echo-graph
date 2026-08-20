@@ -30,8 +30,8 @@
   - `GET /api/stats` 数据统计
 - [x] Neo4j Aura 数据导入与约束(index)
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
-- [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV 已移除(备份由自动 CSV 导出 + git 承担);每次保存自动版本快照(`data/versions/`)
-- [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j;保存时自动版本快照(`data/versions/`)
+- [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;导入 Neo4j 已随查询层退役(Phase 4);导出 JSON/CSV 已移除(备份由自动 CSV 导出 + git 承担);保存快照已在 P3d 移除(`data/versions/` 为历史遗留)
+- [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复(「上传↑」导入与保存快照已随 Phase 4/P3d 移除)
 - [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
 - [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
 - [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
@@ -46,11 +46,12 @@
 - [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
 - [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
 - ⬜ 贡献数据后续:AI 校正、审核通过后自动录入策展 CSV、验证码/持久化限流、按联系方式跟进用户
-- [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区)
+- [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
 - [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `docs/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 审计表;同步计数预检
 - [x] SQLite 迁移后优化(P3a-e):级联删除/恢复纯 SQL;行级校验(目标行+SQL 交叉引用);乐观并发(updatedAt 守卫 409);快照降频+分层清理(load_rows 迁入 sqlite_store,移除 save_rows,删除更新 updatedAt);`GET /api/admin/audit` 审计查询
 - [x] 前端优化(A/B):数据行类型化(`lib/adminTypes.ts`)+ Admin 拆分(AdminTable/ContributionsPanel/AuditPanel)+ jsdom 组件测试;Admin/Contribute 懒加载(首屏减约 30KB);乐观更新+409 版本冲突弹窗;审计 Tab;导出 JSON/CSV 按钮已移除(自动 CSV 导出 + git 备份足够);`author_ids` 数组化;`/api/admin/data?include_deleted=` 按需拉取
+- [x] Neo4j 查询层退役(Phase 4,P1-P3 清理):公开读取全部由 SQLite 提供(`app/db.py` → `SqliteStore`);删除 importer / export_seed / `/api/admin/sync` / `/api/admin/import` 与管理页「上传↑」;部署收敛为单 worker + SQLite `.backup` 备份 + CSV 重建;依赖清理(neo4j/openpyxl 移除、pydantic 显式声明);清理死代码(snapshot / migrate_contributions / merge_legacy_db)与过期文档;版本 0.5.0
 
 ## 3. 可视化效果
 
@@ -121,5 +122,5 @@
 1. **数据审核与扩充**:逐条审核真实提及并置 `reviewed`,补充出处精确性,扩充数据集
 2. ~~渲染器受控化~~(已完成):剩余可选项为给渲染层补集成/快照测试、按需懒加载 three、评估高频相机动画是否值得纳入 `useSyncExternalStore` 订阅
 3. 按年代 / 语言 / 国别配色或聚类,让图谱携带更多语义
-4. 加载状态指示、管理页恢复后自动导入 Neo4j 等体验细节
+4. 加载状态指示等体验细节
 5. 发布流程:按 `reviewStatus` 过滤草稿内容的公开视图,以及快照恢复入口

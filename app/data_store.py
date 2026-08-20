@@ -1,21 +1,16 @@
-"""数据访问层:SQLite 为策展数据唯一权威,CSV 为确定性导出产物(git 审计)。"""
+"""CSV 导出层:SQLite 为策展数据唯一权威,CSV 为确定性导出产物(git 审计)。"""
 
 from __future__ import annotations
 
 import csv
-import datetime as dt
 import os
-import shutil
-import sqlite3
 import tempfile
 from pathlib import Path
 
-from app import db_sqlite, sqlite_store
+from app import sqlite_store
 
 ROOT = Path(__file__).resolve().parent.parent
 REAL_DIR = ROOT / "data" / "real"
-VERSIONS_DIR = ROOT / "data" / "versions"
-KEEP_SNAPSHOTS = 20  # 每个 prefix 保留的最近快照份数
 
 AUTHOR_HEADER = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -88,34 +83,3 @@ def export_csv_files(target_dir: Path | None = None) -> None:
     _write_csv(out / "authors.csv", AUTHOR_HEADER, data["authors"])
     _write_csv(out / "works.csv", WORK_HEADER, data["works"])
     _write_csv(out / "edges.csv", EDGE_HEADER, data["edges"])
-
-
-def snapshot(prefix: str = "admin") -> str | None:
-    """保存前备份:SQLite 备份 + CSV 导出到 data/versions/<时间戳>-<prefix>/。"""
-    if not db_sqlite.DB_PATH.exists():
-        return None
-    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    target = VERSIONS_DIR / f"{ts}-{prefix}"
-    target.mkdir(parents=True, exist_ok=True)
-    src = sqlite3.connect(db_sqlite.DB_PATH)
-    try:
-        dst = sqlite3.connect(target / "echo-graph.db")
-        try:
-            src.backup(dst)
-        finally:
-            dst.close()
-    finally:
-        src.close()
-    export_csv_files(target)
-    _prune_snapshots(prefix)
-    return str(target)
-
-
-def _prune_snapshots(prefix: str) -> None:
-    """按目录名(时间戳)排序,每个 prefix 只保留最近 KEEP_SNAPSHOTS 份。"""
-    dirs = sorted(
-        (d for d in VERSIONS_DIR.iterdir() if d.is_dir() and d.name.endswith(f"-{prefix}")),
-        key=lambda d: d.name,
-    )
-    for old in dirs[:-KEEP_SNAPSHOTS]:
-        shutil.rmtree(old, ignore_errors=True)

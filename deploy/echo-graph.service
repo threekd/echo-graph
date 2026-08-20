@@ -1,5 +1,5 @@
 [Unit]
-Description=Echo Graph (FastAPI + React)
+Description=Litnebula (FastAPI + React)
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,8 @@ Group=echograph
 WorkingDirectory=/opt/echo-graph
 EnvironmentFile=/opt/echo-graph/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/echograph/.local/bin/uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+# 1 核 VPS:单 worker 即可,减少内存占用;SQLite 本地读取无并发写压力
+ExecStart=/home/echograph/.local/bin/uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

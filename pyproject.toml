@@ -1,13 +1,12 @@
 [project]
 name = "echo-graph"
-version = "0.4.0"
-description = "Echo Graph — 世界文学影响图谱(回声图谱)"
+version = "0.5.0"
+description = "Litnebula — 回声图谱(世界文学影响图谱)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.141.1",
-    "neo4j>=6.2.0",
-    "openpyxl>=3.1.5",
+    "pydantic>=2.11",
     "python-dotenv>=1.2.3",
     "uvicorn[standard]>=0.52.3",
 ]

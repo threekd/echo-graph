@@ -1,6 +1,7 @@
 # Echo Graph 策展数据迁移方案：CSV 事实源 → SQLite 主存 + 确定性 CSV 导出
 
-> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。P3a-e 已完成：级联纯 SQL、行级校验、乐观并发、快照降频与分层清理、审计查询接口。前端 A/B 优化已完成：类型化与组件拆分、懒加载、乐观更新、审计 UI、导出按钮、author_ids 数组化。本文档记录完整方案。
+> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。P3a-e 已完成：级联纯 SQL、行级校验、乐观并发、快照降频与分层清理、审计查询接口。前端 A/B 优化已完成：类型化与组件拆分、懒加载、乐观更新、审计 UI、导出按钮、author_ids 数组化。
+> **Phase 4（已完成，2026-08-21）**：Neo4j 查询层与 JSON 兜底退役——公开读取全部由 SQLite 提供（`app/db.py` 改为 `SqliteStore`）；`importer.py`、`scripts/import_data.py`、`scripts/export_seed.py`、`/api/admin/sync`、管理页「上传↑」全部移除；部署脚本/文档收敛为单 worker + SQLite 备份 + CSV 重建；依赖清理（neo4j/openpyxl 移除、pydantic 显式声明）；版本 0.5.0。本文档第 1-10 节为历史迁移记录，第 11 节为本次演进说明。
 
 ## 一、背景与目标
 
@@ -26,6 +27,9 @@
 ```
 
 原则：**SQLite 是唯一权威；CSV 是派生产物（只读、确定性、git 跟踪）；Neo4j 只做查询与导入目标；所有写操作必须过校验层。**
+
+> 演进说明：上述为 Phase 1-3 的目标架构。Phase 4 进一步收敛——Neo4j 查询层退役，
+> 公开读取直接由 SQLite 提供（`SqliteStore`），因此目标架构中的"Neo4j(查询层)"分支已删除。
 
 ## 三、数据库设计（`data/echo-graph.db`）
 
@@ -72,7 +76,7 @@
 - **DB CHECK**：`works.language` 长度、`edges.evidence` 长度、`contributions.status` 枚举；
 - **时间戳归一**：所有 createdAt/updatedAt/deletedAt 统一为 UTC `+00:00`（一次性数据迁移 + 写入归一）；
 - **审计表** `audit_log`：每次管理写操作记录 action/kind/row_id/detail；
-- **同步计数预检**：`/api/admin/sync` 先比 3 个活跃计数（单次查询），不一致即判未同步，一致才做全量比对。
+- **同步计数预检**：`/api/admin/sync` 先比 3 个活跃计数（单次查询），不一致即判未同步，一致才做全量比对（Phase 4 已随 Neo4j 退役移除该接口）。
 
 ## 五之三、P3a-e 优化清单（已完成）
 
@@ -96,12 +100,12 @@
 
 | 模块 | 改动 |
 |---|---|
-| `app/admin.py` | CRUD/导出/导入接口路径与响应不变，内部改调 SQLite 层；`/api/admin/sync` 的 CSV 侧比对改为 SQLite 侧 |
-| `app/importer.py` + `scripts/import_data.py` | `run_import` 改为从 SQLite 读；`--source csv` 退役或改为恢复工具 |
-| `app/db.py` | 不变（JsonStore 兜底、Neo4j 查询层不动） |
+| `app/admin.py` | CRUD 接口路径与响应不变，内部改调 SQLite 层；`/api/admin/sync`、`/api/admin/import` 已随 Neo4j 退役删除 |
+| `app/importer.py` + `scripts/import_data.py` | Phase 4 已删除（Neo4j 查询层退役，不再需要导入管线） |
+| `app/db.py` | Phase 4 改为 `SqliteStore`：公开读取直接查 SQLite，JsonStore/Neo4jStore/ResilientStore 全部移除 |
 | `app/contributions.py` | 表并入同库后仅连接路径统一 |
 | 前端 | **零改动**（API 形状保持不变） |
-| 测试 | 数据层测试改为 SQLite（临时库）；admin/sync/贡献测试适配；新增迁移往返一致性、导出确定性测试 |
+| 测试 | 数据层测试改为 SQLite（临时库）；admin/贡献测试适配；新增迁移往返一致性、导出确定性、SqliteStore 读取测试 |
 
 ## 七、确定性 CSV 导出 + git 纪律
 
@@ -115,6 +119,7 @@
 1. **Phase 1（已完成）**：建库建表、数据层 CRUD、迁移脚本、往返一致性测试；
 2. **Phase 2（已完成）**：admin / importer / sync 全切到 SQLite；每次写入自动导出 CSV；旧 CSV 读写路径移除；
 3. **Phase 3（已完成）**：CI 导出门禁、贡献表并入同库、文档（README / data_schema / data_real README）与 to-do 更新、`.gitignore` 调整。
+4. **Phase 4（已完成）**：Neo4j 查询层与 JSON 兜底退役，SQLite 承担全部读取；删除 importer/export_seed/sync 链路；部署脚本与文档收敛（单 worker、SQLite 备份、CSV 重建）；依赖与死代码清理；版本 0.5.0。
 
 ## 九、风险与注意
 
@@ -126,3 +131,27 @@
 ## 十、工作量粗估
 
 Phase 1 约 2–3 天（含测试）；Phase 2 约 1–2 天；Phase 3 约 1 天。大头在数据层重构与测试适配，导入管线与 Neo4j 侧改动很小。
+
+## 十一、Phase 4 演进：Neo4j 查询层退役（SQLite 承担全部读取）
+
+背景：Phase 1-3 后，架构为"SQLite 写权威 + Neo4j 查询层 + JSON 兜底种子 + CSV 审计"，四套数据表示并存，
+每次管理编辑后需手动「上传↑」同步 Neo4j，兜底种子(seed.json)仅在部署时生成、可能漂移。
+目标运行环境为 1核2G VPS，进一步放大了这套链路的维护成本。
+
+变更：
+
+- `app/db.py` 重写为单一 `SqliteStore`：`graph / search / path / work_detail / expansion / stats` 全部直接查 SQLite，
+  输出形状与旧 JsonStore 完全一致（前端零改动）；软删除行读取时一律过滤。
+- 删除 `app/importer.py`、`scripts/import_data.py`、`scripts/export_seed.py`、`/api/admin/sync`、`/api/admin/import`；
+  管理页移除「上传↑」按钮与「数据未上传」提示。
+- 部署收敛：`echo-graph.service` 单 worker；`deploy.sh` 用 `sqlite3 .backup` 备份权威库、部署时从仓库 CSV 重建 SQLite
+  （contributions / audit_log 表不受影响）；`setup-vps.sh` 初始化时从 CSV 引导建库；`.env` 仅需 `ADMIN_TOKEN`。
+- 依赖：移除 `neo4j` / `openpyxl`，显式声明 `pydantic`；版本升至 0.5.0。
+- 清理：删除死代码 `data_store.snapshot`、`migrate_contributions.py`、`merge_legacy_db`、空目录与过期文档引用。
+
+数据流（当前）：
+
+```
+写入+读取:  admin/AI/公开接口 ──> SQLite(唯一权威)
+                                 └──> CSV 导出(git 审计 / 跨机器传输)
+```

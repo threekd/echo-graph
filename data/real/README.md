@@ -15,12 +15,12 @@ uv run python scripts/export_csv.py          # 覆盖 data/real/*.csv
 uv run python scripts/export_csv.py --check  # 仅校验(CI 门禁)
 ```
 
-导入 Neo4j(从 SQLite 读取):
+重建 SQLite(从仓库 CSV 引导 / 恢复;贡献与审计表不受影响):
 
 ```bash
-uv run python scripts/import_data.py --wipe --version 1.1   # 全量重建
+uv run python scripts/migrate_csv_to_sqlite.py
 ```
 
-`--wipe` 会全量重建;不加则幂等更新。`deletedAt` 非空的行保留在库与 CSV 存档,但不会进入图谱。校验失败(引用不存在、重复 id、作者 id 未匹配、genre 越界等)会整批拒绝并打印原因。
+`deletedAt` 非空的行保留在库与 CSV 存档,但读取层一律过滤。校验失败(引用不存在、重复 id、作者 id 未匹配、genre 越界等)会整批拒绝并打印原因。
 
 列名与 `data_schema.md` 一致:`id` 使用 UUID,新增作者/作品/涟漪时后端自动生成 UUID v7;`works.csv` 的 `author_id` 存作者 UUID(多人用逗号分隔),展示名由作者表提供;`reviewStatus` 留空默认 `draft`。

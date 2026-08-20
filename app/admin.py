@@ -1,6 +1,7 @@
-"""数据管理 API:三张表的增删改查、软删除、一键导入 Neo4j、导出。
+"""数据管理 API:三张表的增删改查、软删除、审计查询。
 
-存储层:data/real/*.csv(UTF-8 BOM),保存前自动版本快照。
+存储层:SQLite(data/echo-graph.db);每次写入自动导出 CSV 至 data/real/(git 审计)。
+Neo4j 导入与同步比对已随查询层退役。
 """
 
 from __future__ import annotations
@@ -21,8 +22,6 @@ from app.data_store import (
     clean_row,
     export_csv_files,
 )
-from app.db import get_store
-from app.importer import run_import
 
 _admin_bearer = HTTPBearer(auto_error=False)
 
@@ -118,100 +117,6 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None) -> l
     return errors
 
 
-def _source_sync_payload() -> dict:
-    """当前权威来源(SQLite)活跃数据的规范化载荷,用于与 Neo4j 比对。"""
-    a, w, e = sqlite_store.load_rows()
-    return sqlite_store.canonical_payload(a, w, e)
-
-
-def _neo4j_counts() -> dict | None:
-    """Neo4j 活跃计数(单次查询);不可用时返回 None。"""
-    store = get_store()
-    primary = getattr(store, "primary", None)
-    if primary is None or getattr(primary, "name", None) != "neo4j":
-        return None
-    try:
-        row = primary._query(
-            "MATCH (a:Author) WITH count(a) AS author_count "
-            "MATCH (w:Work) WITH author_count, count(w) AS work_count "
-            "MATCH ()-[r:ECHO]->() RETURN author_count, work_count, count(r) AS echo_count"
-        )[0]
-    except Exception:  # noqa: BLE001 - Neo4j 不可用时视为无法比对
-        return None
-    return {"authors": row["author_count"], "works": row["work_count"], "echoes": row["echo_count"]}
-
-
-def _neo4j_sync_payload() -> dict | None:
-    """Neo4j 主存储的规范化载荷;不可用(JSON 兜底/连接失败)时返回 None。
-
-    合并查询:作者/作品与归属关系用一次查询取回(labels 区分类型),
-    ECHO 关系一次取回,共 2 次网络往返。
-    """
-    store = get_store()
-    primary = getattr(store, "primary", None)
-    if primary is None or getattr(primary, "name", None) != "neo4j":
-        return None
-    try:
-        q = primary._query
-        node_rows = q(
-            "MATCH (n) WHERE n:Author OR n:Work "
-            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) "
-            "RETURN labels(n) AS ls, properties(n) AS p, collect(DISTINCT a.id) AS author_ids"
-        )
-        echo_rows = q("MATCH (s:Work)-[r:ECHO]->(t:Work) RETURN s.id AS s, t.id AS t, properties(r) AS p")
-    except Exception:  # noqa: BLE001 - Neo4j 不可用时视为无法比对
-        return None
-
-    authors = []
-    works = []
-    for r in node_rows:
-        p = r["p"]
-        ls = r.get("ls") or []
-        if "Author" in ls:
-            authors.append({
-                "id": sqlite_store.sync_norm(p.get("id")),
-                "originalName": sqlite_store.sync_norm(p.get("originalName")),
-                "Name_CN": sqlite_store.sync_norm(p.get("Name_CN")),
-                "Name_EN": sqlite_store.sync_norm(p.get("Name_EN")),
-                "nationality": sqlite_store.sync_norm((p.get("nationality") or "").upper()),
-                "birthYear": sqlite_store.sync_norm(p.get("birthYear")),
-                "deathYear": sqlite_store.sync_norm(p.get("deathYear")),
-                "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
-            })
-        elif "Work" in ls:
-            aids = [x for x in (r.get("author_ids") or []) if x]
-            works.append({
-                "id": sqlite_store.sync_norm(p.get("id")),
-                "language": sqlite_store.sync_norm((p.get("language") or "").lower()),
-                "originalTitle": sqlite_store.sync_norm(p.get("originalTitle")),
-                "Title_CN": sqlite_store.sync_norm(p.get("Title_CN")),
-                "Title_EN": sqlite_store.sync_norm(p.get("Title_EN")),
-                "Title_Other": sqlite_store.sync_norm(p.get("Title_Other")),
-                "publicationYear": sqlite_store.sync_norm(p.get("publicationYear")),
-                "creationYear": sqlite_store.sync_norm(p.get("creationYear")),
-                "genre": sqlite_store.sync_norm(p.get("genre")),
-                "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
-                "author_ids": sorted(sqlite_store.sync_norm(x) for x in aids),
-            })
-    echoes = []
-    for r in echo_rows:
-        p = r["p"]
-        echoes.append({
-            "id": sqlite_store.sync_norm(p.get("id")),
-            "source": sqlite_store.sync_norm(r["s"]),
-            "target": sqlite_store.sync_norm(r["t"]),
-            "evidence": sqlite_store.sync_norm(p.get("evidence")),
-            "evidenceSource": sqlite_store.sync_norm(p.get("evidenceSource")),
-            "note": sqlite_store.sync_norm(p.get("note")),
-            "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
-        })
-    return {
-        "authors": sorted(authors, key=lambda x: x["id"]),
-        "works": sorted(works, key=lambda x: x["id"]),
-        "echoes": sorted(echoes, key=lambda x: x["id"]),
-    }
-
-
 @router.get("/data")
 def get_data(
     include_deleted: bool = Query(True, description="是否包含软删除行(前端按需拉取)"),
@@ -237,33 +142,6 @@ def get_data(
             },
         },
     }
-
-
-@router.get("/sync")
-def admin_sync() -> dict:
-    """SQLite 与 Neo4j 的同步状态(独立接口;计数不一致快速判定,一致才做全量比对)。"""
-    neo_counts = _neo4j_counts()
-    if neo_counts is None:
-        return {"synced": None}
-    if sqlite_store.active_counts() != neo_counts:
-        return {"synced": False}
-    source_payload = _source_sync_payload()
-    neo_payload = _neo4j_sync_payload()
-    return {
-        "synced": (source_payload == neo_payload) if neo_payload is not None else None,
-    }
-
-
-@router.post("/import")
-def do_import(body: dict) -> dict:
-    wipe = bool(body.get("wipe", False))
-    version = str(body.get("version", "1.1"))
-    try:
-        return {"ok": True, **run_import(wipe=wipe, version=version)}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}") from exc
-    except (FileNotFoundError, RuntimeError) as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{kind}")

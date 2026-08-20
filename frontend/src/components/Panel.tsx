@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useApp, type GraphData } from "../store";
 import { selectNode } from "../lib/graph";
 import { workAuthorIds } from "../lib/graphData";
+import { isMobileLayout } from "../lib/mobileGestures";
 import iso3166 from "../lib/iso3166-1.json";
 
 const iso3166Map = iso3166 as Record<string, string>;
@@ -115,6 +116,8 @@ export default function Panel() {
   }, []);
 
   const scheduleHide = useCallback(() => {
+    // 触屏没有 hover:移动端保持打开,由关闭按钮收起,不做自动隐藏
+    if (isMobileLayout()) return;
     cancelHide();
     hideTimer.current = setTimeout(() => {
       const el = document.getElementById("panel");
@@ -136,6 +139,7 @@ export default function Panel() {
   // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
+      if (isMobileLayout()) return; // 移动端不依赖鼠标位置自动隐藏
       const el = document.getElementById("panel");
       if (!el || !el.classList.contains("show")) return;
       const rect = el.getBoundingClientRect();
@@ -176,7 +180,8 @@ export default function Panel() {
     content = (
       <div id="panel-empty">
         <p>点击任意星星,自动展开它的涟漪;</p>
-        <p>右键拖拽旋转 · 左键拖拽平移 · 滚轮缩放。</p>
+        <p>桌面:右键拖拽旋转 · 左键拖拽平移 · 滚轮缩放。</p>
+        <p>手机:单指平移 · 双指旋转 / 缩放。</p>
         <p>顶部可搜索作品、查找提及链。</p>
       </div>
     );

@@ -14,6 +14,7 @@ import Toast from "./components/Toast";
 import Guide from "./components/Guide";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
 import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
+import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
@@ -51,6 +52,7 @@ function AppContent() {
   const { state, dispatch } = useApp();
   const stateRef = useRef<{ state: AppState; dispatch: (a: AppAction) => void } | null>(null);
   stateRef.current = { state, dispatch };
+  useMobileGestures();
   // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
   const lastAppliedHash = useRef<string | null>(null);
   const lastAppliedAt = useRef(0);
@@ -166,6 +168,7 @@ function AppContent() {
   // 左右侧边栏边缘感应:鼠标靠近屏幕边缘时滑出
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
+      if (isMobileLayout()) return; // 移动端侧栏/详情由手势控制,禁用边缘悬停呼出
       const left = document.getElementById("sidebar-left");
       const right = document.getElementById("panel");
       if (left && e.clientX < 8) left.classList.add("show");

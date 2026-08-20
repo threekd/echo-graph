@@ -31,6 +31,8 @@ let dragging = false, dragButton = 0, lastX = 0, lastY = 0;
 let hovering = false;          // 鼠标悬停在节点上时暂停自动旋转
 const activePointers: Record<string, { x: number; y: number }> = {}; // 触摸多点支持
 let pinchDist = 0;
+let pinchMidX = 0; // 双指中点(用于二指平移)
+let pinchMidY = 0;
 let viewToken = 0;             // 防止异步布局的旧回调覆盖新视图
 let hiddenLabelIds: Record<string, boolean> = {}; // 主图谱中默认隐藏标签的孤岛作品
 let currentKind: string | null = null; // 当前视图类型(用于同视图增量同步)
@@ -105,7 +107,7 @@ export function initThree(containerOrNull?: HTMLElement | null): void {
   camera = new THREE.PerspectiveCamera(55, w / h, 1, 12000);
   applyCamera();
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(w, h);
   renderer.domElement.style.position = "absolute";
@@ -657,36 +659,48 @@ function bindControls(container: HTMLElement): void {
     if (Object.keys(activePointers).length === 2) {
       const ids = Object.keys(activePointers);
       pinchDist = dist(activePointers[ids[0]], activePointers[ids[1]]);
+      pinchMidX = (activePointers[ids[0]].x + activePointers[ids[1]].x) / 2;
+      pinchMidY = (activePointers[ids[0]].y + activePointers[ids[1]].y) / 2;
     }
   });
   bindEvent(dom, "pointermove", function (e) {
     if (dragging) {
       const ids = Object.keys(activePointers);
       if (ids.length >= 2 && activePointers[e.pointerId]) {
-        // 双指捏合:缩放
+        // 双指手势:间距变化 → 缩放,中点位移 → 旋转(同时生效)
         activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
-        if (ids.length === 2 && pinchDist > 0) {
-          const d = dist(activePointers[ids[0]], activePointers[ids[1]]);
-          if (d > 0) {
-            cameraState.radius *= pinchDist / d;
+        if (ids.length === 2) {
+          const a = activePointers[ids[0]];
+          const b = activePointers[ids[1]];
+          const d = dist(a, b);
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          if (pinchDist > 0 && d > 0) {
+            cameraState.radius *= pinchDist / d; // 开合 → 缩放
             cameraState.radius = Math.max(50, Math.min(8000, cameraState.radius));
-            pinchDist = d;
-            lastInteraction = Date.now();
-            applyCamera();
           }
+          // 双指整体位移 → 旋转
+          cameraState.theta -= (mx - pinchMidX) * 0.005;
+          cameraState.phi -= (my - pinchMidY) * 0.005;
+          cameraState.phi = Math.max(0.15, Math.min(Math.PI - 0.15, cameraState.phi));
+          pinchDist = d;
+          pinchMidX = mx;
+          pinchMidY = my;
+          lastInteraction = Date.now();
+          applyCamera();
         }
         return;
       }
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      if (e.pointerType === "touch" || dragButton === 2) {
-        // 触摸单指 / 鼠标右键:旋转视角
+      if (dragButton === 2) {
+        // 鼠标右键:旋转视角
         cameraState.theta -= dx * 0.005;
         cameraState.phi -= dy * 0.005;
         cameraState.phi = Math.max(0.15, Math.min(Math.PI - 0.15, cameraState.phi));
       } else {
-        // 鼠标左键拖拽:平移视角
+        // 触摸单指 / 鼠标左键:平移视角
         panBy(dx, dy);
       }
       applyCamera();
@@ -696,6 +710,15 @@ function bindControls(container: HTMLElement): void {
     delete activePointers[e.pointerId];
     dragging = Object.keys(activePointers).length > 0;
     if (!dragging) dom.style.cursor = "grab";
+    pinchDist = 0;
+    pinchMidX = 0;
+    pinchMidY = 0;
+    const rest = Object.keys(activePointers);
+    if (rest.length === 1) {
+      // 双指抬起一根后,剩余单指继续旋转,同步基准点避免跳变
+      lastX = activePointers[rest[0]].x;
+      lastY = activePointers[rest[0]].y;
+    }
     lastInteraction = Date.now();
     syncCameraToStore();
   });
@@ -703,6 +726,14 @@ function bindControls(container: HTMLElement): void {
     delete activePointers[e.pointerId];
     dragging = Object.keys(activePointers).length > 0;
     dom.style.cursor = "grab";
+    pinchDist = 0;
+    pinchMidX = 0;
+    pinchMidY = 0;
+    const rest = Object.keys(activePointers);
+    if (rest.length === 1) {
+      lastX = activePointers[rest[0]].x;
+      lastY = activePointers[rest[0]].y;
+    }
     syncCameraToStore();
   });
   bindEvent(dom, "contextmenu", function (e) {

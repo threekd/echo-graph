@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import tempfile
 import unittest
 from pathlib import Path
@@ -75,6 +76,20 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(stats["works"], 2)
         self.assertEqual(stats["echoes"], 1)
         self.assertEqual(stats["authored_links"], 3)
+
+    def test_prune_audit(self) -> None:
+        """按天裁剪审计记录:dry_run 只统计,实际删除后不可再查到。"""
+        old_ts = (dt.datetime.now(dt.UTC) - dt.timedelta(days=200)).isoformat(timespec="seconds")
+        with db_sqlite._db() as conn:
+            db_sqlite.audit(conn, "create", "authors", "a-new", detail="new")
+            conn.execute(
+                "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail)"
+                " VALUES (?, 'admin', 'create', 'authors', 'a-old', 'old')",
+                (old_ts,),
+            )
+        self.assertEqual(store.prune_audit(days=90, dry_run=True), 1)
+        self.assertEqual(store.prune_audit(days=90), 1)
+        self.assertEqual(store.prune_audit(days=90, dry_run=True), 0)
 
 
 if __name__ == "__main__":

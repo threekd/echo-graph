@@ -18,7 +18,7 @@ import {
   type GraphNode,
 } from "../store";
 
-// 纯函数统一来自 graphData.js,这里仅做转发,保证既有调用方兼容
+// 纯函数统一来自 graphData.ts,这里仅做转发,保证既有调用方兼容
 export {
   isAnonymousAuthor,
   filterSingleWorkAuthors,

@@ -12,19 +12,10 @@ from app import sqlite_store
 ROOT = Path(__file__).resolve().parent.parent
 EXPORT_DIR = ROOT / "data" / "export"
 
-AUTHOR_HEADER = [
-    "id", "originalName", "Name_CN", "Name_EN", "nationality",
-    "birthYear", "deathYear", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
-]
-WORK_HEADER = [
-    "id", "language", "originalTitle", "Title_CN", "Title_EN",
-    "Title_Other", "author_id", "publicationYear", "creationYear", "genre", "reviewStatus",
-    "createdAt", "updatedAt", "deletedAt",
-]
-EDGE_HEADER = [
-    "id", "source_work_id", "target_work_id", "evidence", "evidenceSource",
-    "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
-]
+# 导出表头与 sqlite_store 的列定义保持单一来源(works 额外在 Title_Other 后插入 author_id)
+AUTHOR_HEADER = sqlite_store.AUTHOR_COLS
+WORK_HEADER = sqlite_store.WORK_COLS[:6] + ["author_id"] + sqlite_store.WORK_COLS[6:]
+EDGE_HEADER = sqlite_store.EDGE_COLS
 
 # 不可见格式字符:网页复制文本常带入零宽空格(U+200B)等,录入时统一移除
 INVISIBLE_CHARS = "\u200b\u200c\u200d\u2060\ufeff"  # 零宽空格/连接符/不换行零宽等

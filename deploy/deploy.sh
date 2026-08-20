@@ -9,7 +9,13 @@ cd "$APP_DIR"
 echo "==> 备份本地数据(data/export、历史目录、SQLite 权威库)"
 mkdir -p backups
 BK_FILE="backups/data-$(date +%Y%m%d-%H%M%S).tgz"
-tar czf "$BK_FILE" data/export data/versions data/snapshots 2>/dev/null || true
+BACKUP_DIRS=()
+for d in data/export data/versions data/snapshots; do
+  if [[ -d "$d" ]]; then BACKUP_DIRS+=("$d"); fi
+done
+if [[ ${#BACKUP_DIRS[@]} -gt 0 ]]; then
+  tar czf "$BK_FILE" "${BACKUP_DIRS[@]}" 2>/dev/null || echo "!! 数据目录打包失败(非致命,继续部署)"
+fi
 # SQLite 权威库用 sqlite3 .backup 一致性快照(WAL 模式不能直接拷贝)
 if [[ -f data/echo-graph.db ]]; then
   DB_BK="backups/echo-graph-$(date +%Y%m%d-%H%M%S).db"

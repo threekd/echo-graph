@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 from typing import Any
 
 from app import db_sqlite
+from app.db import invalidate_cache
 
 AUTHOR_COLS = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -217,10 +219,15 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
             "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
             [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
         )
+    invalidate_cache()
 
 
 def rewrite_all(author_rows, work_rows, edge_rows) -> None:
-    """单事务整库重写(恢复工具;admin 已改行级写入)。入参为与 load_rows 同形状的行 dict。"""
+    """单事务整库重写(测试 / 恢复工具;admin 已改行级写入)。入参为与 load_rows 同形状的行 dict。
+
+    与 replace_all 的分工:replace_all 接收 parse_rows 模型(迁移/导入用);
+    rewrite_all 接收行 dict(测试造数 / 恢复用),内部自行拆分 author_id。
+    """
     def normalized(rows: list[dict]) -> list[dict]:
         return [_norm_row(r) for r in rows]
 
@@ -259,6 +266,7 @@ def rewrite_all(author_rows, work_rows, edge_rows) -> None:
             "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
             [(wid, aid.strip()) for wid, aid in work_authors],
         )
+    invalidate_cache()
 
 
 def list_all() -> dict:
@@ -306,6 +314,21 @@ def list_audit(limit: int = 100, offset: int = 0, action: str | None = None, kin
             f"SELECT count(*) AS c FROM audit_log{clause}", params
         ).fetchone()["c"]
     return {"items": [dict(r) for r in rows], "total": total}
+
+
+def prune_audit(days: int = 90, dry_run: bool = False) -> int:
+    """删除早于 N 天的审计记录(默认 90 天);dry_run 只统计不删除。
+
+    返回受影响行数(dry_run 时返回将删除的行数)。配合 scripts/prune_audit.py。
+    """
+    cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).isoformat(timespec="seconds")
+    with db_sqlite._db() as conn:
+        if dry_run:
+            return conn.execute(
+                "SELECT count(*) AS c FROM audit_log WHERE ts < ?", (cutoff,)
+            ).fetchone()["c"]
+        cur = conn.execute("DELETE FROM audit_log WHERE ts < ?", (cutoff,))
+        return cur.rowcount
 
 
 # ---- 往返一致性校验规范化(SQLite <-> CSV 共用) ----

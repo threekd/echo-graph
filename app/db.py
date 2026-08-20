@@ -8,9 +8,24 @@ Neo4j 查询层与 JSON 兜底(seed.json)已退役(见 docs/sqlite-migration.md)
 from __future__ import annotations
 
 import os
+import time
 from collections import deque
 
 from app import db_sqlite
+
+# 进程内读缓存:同一 DB 路径缓存活跃行(默认 3 秒,兜底外部进程写入);
+# admin 写入 / 整库重建 / 快照恢复会显式调用 invalidate_cache() 立即失效。
+_CACHE_TTL_SECONDS = 3.0
+_read_cache: dict[tuple[str, ...], tuple[float, tuple]] = {}
+
+
+def _cache_key() -> tuple[str, ...]:
+    return (str(db_sqlite.DB_PATH),)
+
+
+def invalidate_cache() -> None:
+    """清除公开读取缓存(admin 写入 / 整库重建 / 快照恢复后调用)。"""
+    _read_cache.clear()
 
 
 def _author_node(p: dict) -> dict:
@@ -134,7 +149,15 @@ class SqliteStore:
         """无连接池,无需清理。"""
 
     def _tables(self) -> tuple[list[dict], list[dict], list[dict], dict[str, list[str]]]:
-        """一次取回活跃数据:authors / works / edges(附 source/target 别名)+ work_authors。"""
+        """一次取回活跃数据:authors / works / edges(附 source/target 别名)+ work_authors。
+
+        结果按 DB 路径进程内缓存(TTL 3 秒);调用方不得修改返回的行 dict,
+        写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
+        """
+        now = time.monotonic()
+        hit = _read_cache.get(_cache_key())
+        if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
+            return hit[1]
         with db_sqlite._db() as conn:
             authors = [
                 dict(r) for r in conn.execute(
@@ -160,7 +183,9 @@ class SqliteStore:
         for e in edges:
             e["source"] = e["source_work_id"]
             e["target"] = e["target_work_id"]
-        return authors, works, edges, work_authors
+        payload = (authors, works, edges, work_authors)
+        _read_cache[_cache_key()] = (now, payload)
+        return payload
 
     @staticmethod
     def _join_names(author_ids: list[str], authors_by_id: dict[str, dict]) -> str:

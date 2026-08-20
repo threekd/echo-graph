@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +18,9 @@ load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "data" / "echo-graph.db"
+
+# 进程内写互斥:admin 写事务与快照恢复互斥(恢复期间禁止写入,避免覆盖竞态)
+_write_lock = threading.Lock()
 
 
 def normalize_ts(value) -> str | None:
@@ -265,11 +269,23 @@ def _migration_v4(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE audit_log ADD COLUMN after TEXT")
 
 
+def _migration_v5(conn: sqlite3.Connection) -> None:
+    """补充 edges(source_work_id) 索引(路径/扩散按源查询)。"""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_work_id)")
+
+
+def _migration_v6(conn: sqlite3.Connection) -> None:
+    """审计表按时间查询/裁剪加索引(配合 scripts/prune_audit.py)。"""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
     (3, _migration_v3),
     (4, _migration_v4),
+    (5, _migration_v5),
+    (6, _migration_v6),
 ]
 
 

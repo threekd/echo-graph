@@ -6,17 +6,20 @@
 - `csv`:`data/versions/<dir>/` 下含三份 CSV 的历史目录——校验后复制进 data/export
   并重建 SQLite。
 
-恢复是危险操作:恢复前会自动为当前库先做一次安全备份;db 恢复会原子替换并清理
-WAL 残留;csv 恢复会重建策展表(贡献/审计表保留);成功后由调用方触发 CSV 重新导出。
+恢复是危险操作:恢复前会自动为当前库先做一次安全备份;db 恢复通过 SQLite backup API
+覆盖当前库(不依赖文件替换与 WAL 清理);csv 恢复会重建策展表(贡献/审计表保留);
+成功后由调用方触发 CSV 重新导出。
+
+db 恢复通过 SQLite backup API 覆盖当前库(不依赖文件替换与 WAL 清理),恢复期间
+持有 db_sqlite._write_lock,与 admin 写事务/贡献提交互斥。
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import os
 import shutil
 import sqlite3
-import tempfile
+import threading
 from pathlib import Path
 
 from app import db_sqlite
@@ -26,6 +29,9 @@ from app.data_store import EXPORT_DIR, load_csv_rows_from
 ROOT = Path(__file__).resolve().parent.parent
 BACKUPS_DIR = ROOT / "backups"
 VERSIONS_DIR = ROOT / "data" / "versions"
+# 应用侧快照保留上限(deploy.sh 另有自己的 14 份裁剪)
+SNAPSHOT_RETENTION = 30
+_restore_lock = threading.Lock()
 
 
 def list_snapshots() -> list[dict]:
@@ -79,7 +85,24 @@ def create_snapshot() -> dict:
             dst.close()
     finally:
         src.close()
+    _prune_backups()
     return {"ok": True, "name": target.relative_to(ROOT).as_posix()}
+
+
+def _prune_backups() -> None:
+    """保留最近 SNAPSHOT_RETENTION 份 backups/ 下的 .db 快照(含 pre-restore 安全备份)。"""
+    if not BACKUPS_DIR.is_dir():
+        return
+    snapshots = sorted(
+        BACKUPS_DIR.glob("echo-graph-*.db"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for stale in snapshots[SNAPSHOT_RETENTION:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
 
 
 def _resolve_allowed(name: str) -> Path:
@@ -115,25 +138,35 @@ def _safety_backup() -> str | None:
 
 
 def _replace_db_from_file(target: Path) -> None:
-    """把 .db 快照原子替换到权威库,并清理 WAL 残留。"""
+    """把 .db 快照内容恢复到权威库(用 SQLite backup API)。
+
+    相比文件替换,backup API 由 SQLite 管理目标库的页复制与 WAL,不依赖删除
+    -wal/-shm 残留,也不会因目标文件被其他连接占用而失败。
+    """
     db_path = Path(db_sqlite.DB_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(db_path.parent), suffix=".restore.tmp")
-    os.close(fd)
+    src = sqlite3.connect(target)
     try:
-        shutil.copyfile(target, tmp)
-        os.replace(tmp, db_path)
+        dst = sqlite3.connect(db_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
     finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-    for suffix in ("-wal", "-shm"):
-        stale = Path(str(db_path) + suffix)
-        if stale.exists():
-            stale.unlink()
+        src.close()
 
 
 def restore_snapshot(name: str) -> dict:
-    """把指定快照恢复到当前权威库;返回安全备份路径与恢复类型。"""
+    """把指定快照恢复到当前权威库;返回安全备份路径与恢复类型。
+
+    恢复期间持有 db_sqlite._write_lock,与 admin 写事务/贡献提交互斥;
+    文档建议恢复期间避免编辑数据。
+    """
+    with _restore_lock, db_sqlite._write_lock:
+        return _restore_snapshot_locked(name)
+
+
+def _restore_snapshot_locked(name: str) -> dict:
     target = _resolve_allowed(name)
     safety = _safety_backup()
 

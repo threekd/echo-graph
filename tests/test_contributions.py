@@ -12,6 +12,17 @@ import app.contributions as c
 from app import db_sqlite
 
 
+class _FakeClient:
+    def __init__(self, host: str) -> None:
+        self.host = host
+
+
+class _FakeRequest:
+    def __init__(self, host: str | None = None, headers: dict | None = None) -> None:
+        self.client = _FakeClient(host) if host is not None else None
+        self.headers = headers or {}
+
+
 class ContributionStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -77,6 +88,39 @@ class ContributionStoreTest(unittest.TestCase):
         for _ in range(c.SUBMIT_LIMIT):
             self.assertFalse(c._rate_limited(ip))
         self.assertTrue(c._rate_limited(ip))
+
+    def test_client_ip_trusted_proxy_uses_forwarded_for(self) -> None:
+        req = _FakeRequest("127.0.0.1", {"x-forwarded-for": "203.0.113.9, 10.0.0.2"})
+        self.assertEqual(c._client_ip(req), "203.0.113.9")
+
+    def test_client_ip_ipv6_trusted_proxy(self) -> None:
+        req = _FakeRequest("::1", {"x-forwarded-for": "2001:db8::1"})
+        self.assertEqual(c._client_ip(req), "2001:db8::1")
+
+    def test_client_ip_untrusted_peer_ignores_forwarded_for(self) -> None:
+        """直连(或伪造头)时以对端地址为准,防止 XFF 绕过限流。"""
+        req = _FakeRequest("203.0.113.9", {"x-forwarded-for": "198.51.100.7"})
+        self.assertEqual(c._client_ip(req), "203.0.113.9")
+
+    def test_client_ip_invalid_forwarded_for_falls_back(self) -> None:
+        req = _FakeRequest("127.0.0.1", {"x-forwarded-for": "not-an-ip"})
+        self.assertEqual(c._client_ip(req), "127.0.0.1")
+
+    def test_client_ip_missing_client_is_unknown(self) -> None:
+        self.assertEqual(c._client_ip(_FakeRequest()), "unknown")
+
+    def test_rate_map_pruned_when_large(self) -> None:
+        c._rate.clear()
+        old = c._MAX_RATE_KEYS
+        c._MAX_RATE_KEYS = 2
+        try:
+            c._rate["a"] = [1.0]
+            c._rate["b"] = [2.0]
+            c._rate["c"] = [3.0]
+            c._rate_limited("d")
+            self.assertLessEqual(len(c._rate), 2)
+        finally:
+            c._MAX_RATE_KEYS = old
 
     def test_legacy_schema_migrated(self) -> None:
         """旧库(无作者列)打开后自动补列,不影响既有数据。"""

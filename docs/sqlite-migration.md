@@ -1,5 +1,7 @@
 # Echo Graph 策展数据迁移方案：CSV 事实源 → SQLite 主存 + 确定性 CSV 导出
 
+> 历史档案:第 1-10 节记录迁移过程与已退役架构(CSV 事实源 → Neo4j 查询层),当前架构以第 11 节与 README.md 为准。
+
 > 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。P3a-e 已完成：级联纯 SQL、行级校验、乐观并发、快照降频与分层清理、审计查询接口。前端 A/B 优化已完成：类型化与组件拆分、懒加载、乐观更新、审计 UI、导出按钮、author_ids 数组化。
 > **Phase 4（已完成，2026-08-21）**：Neo4j 查询层与 JSON 兜底退役——公开读取全部由 SQLite 提供（`app/db.py` 改为 `SqliteStore`）；`importer.py`、`scripts/import_data.py`、`scripts/export_seed.py`、`/api/admin/sync`、管理页「上传↑」全部移除；部署脚本/文档收敛为单 worker + SQLite 备份 + CSV 重建；依赖清理（neo4j/openpyxl 移除、pydantic 显式声明）；版本 0.5.0。本文档第 1-10 节为历史迁移记录，第 11 节为本次演进说明。
 

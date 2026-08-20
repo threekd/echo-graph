@@ -77,7 +77,7 @@
 
 - 唯一约束:`Work.id`、`Author.id`
 - 全文检索:数据量增长后可对 `Work(Title_CN, Title_EN, originalTitle)` 建 SQLite FTS5 索引;`evidence` 属长文本,当前用包含匹配,后续可拆分为独立 Evidence 表或接入 FTS5
-- 建议查询:`edges` 按 `source_work_id` / `target_work_id` 建索引(已有 `idx_edges_target`),路径与扩散查询在读取层以内存 BFS 实现,数据量增长后可加 FTS5 与进程内邻接缓存
+- 建议查询:`edges` 按 `source_work_id` / `target_work_id` 建索引(已有 `idx_edges_target`、`idx_edges_source`),路径与扩散查询在读取层以内存 BFS 实现,数据量增长后可加 FTS5 与进程内邻接缓存
 
 ## 说明
 

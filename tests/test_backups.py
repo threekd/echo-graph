@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -145,6 +146,18 @@ class BackupsTest(unittest.TestCase):
         for bad in ("../pyproject.toml", "echo-graph.db", "data/echo-graph.db", "unknown.db"):
             with self.assertRaises(ValueError):
                 backups.restore_snapshot(bad)
+
+    def test_snapshot_retention_prunes_old(self) -> None:
+        """快照保留上限:只保留最近 SNAPSHOT_RETENTION 份 db 快照。"""
+        for i in range(backups.SNAPSHOT_RETENTION + 5):
+            p = self.backups_dir / f"echo-graph-{i:04d}.db"
+            p.write_bytes(b"x")
+            os.utime(p, (i + 1, i + 1))
+        backups._prune_backups()
+        remaining = sorted(p.name for p in self.backups_dir.glob("echo-graph-*.db"))
+        self.assertEqual(len(remaining), backups.SNAPSHOT_RETENTION)
+        self.assertNotIn("echo-graph-0000.db", remaining)  # 最旧的 5 份被删除
+        self.assertIn(f"echo-graph-{backups.SNAPSHOT_RETENTION + 4:04d}.db", remaining)
 
 
 if __name__ == "__main__":

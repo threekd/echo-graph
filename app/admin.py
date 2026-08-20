@@ -23,6 +23,7 @@ from app.data_store import (
     clean_row,
     export_csv_files,
 )
+from app.db import invalidate_cache
 
 _admin_bearer = HTTPBearer(auto_error=False)
 
@@ -128,7 +129,7 @@ def _review_contribution(item_id: str, status: str) -> bool:
     action = "approve" if status == "approved" else "reject"
     label = f"{contrib.get('source_work')} → {contrib.get('target_work')}"
     detail = f"审核「{label}」: {contrib.get('status')} → {status}"
-    with db_sqlite._db() as conn:
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
         db_sqlite.audit(
             conn, action, "contributions", item_id, detail,
             before={"status": contrib.get("status")},
@@ -234,6 +235,7 @@ def admin_restore(body: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
         raise HTTPException(status_code=500, detail=f"恢复失败:{exc}") from exc
     export_csv_files()
+    invalidate_cache()
     return result
 
 
@@ -247,7 +249,7 @@ def create(kind: Kind, row: dict) -> dict:
     now = _now()
     row.setdefault("createdAt", now)
     row["updatedAt"] = now
-    with db_sqlite._db() as conn:
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
         errors = validate_row(conn, kind, row)
         if errors:
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
@@ -257,6 +259,7 @@ def create(kind: Kind, row: dict) -> dict:
         label = _audit_label(conn, kind, row)
         db_sqlite.audit(conn, "create", kind, row.get("id"), f"新增「{label}」", after=row)
     export_csv_files()
+    invalidate_cache()
     return {"ok": True, "row": row}
 
 
@@ -264,7 +267,7 @@ def create(kind: Kind, row: dict) -> dict:
 def update(kind: Kind, item_id: str, row: dict) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     now = _now()
-    with db_sqlite._db() as conn:
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
         existing = sqlite_store.get_row(conn, kind, item_id)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
@@ -287,6 +290,7 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
         detail = f"修改「{label}」" + (f": {changes}" if changes else "")
         db_sqlite.audit(conn, "update", kind, item_id, detail, before=existing, after=row)
     export_csv_files()
+    invalidate_cache()
     return {"ok": True, "row": row}
 
 
@@ -295,7 +299,7 @@ def delete(kind: Kind, item_id: str) -> dict:
     """软删除。作品连带其涟漪边;作者连带其名下作品与这些作品的涟漪边。"""
     now = _now()
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
-    with db_sqlite._db() as conn:
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
         row = sqlite_store.get_row(conn, kind, item_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
@@ -322,6 +326,7 @@ def delete(kind: Kind, item_id: str) -> dict:
             after={**row, "deletedAt": now},
         )
     export_csv_files()
+    invalidate_cache()
     return {"ok": True, "deletedAt": now, "cascade": cascade}
 
 
@@ -333,7 +338,7 @@ def restore(kind: Kind, item_id: str) -> dict:
     单独删除的行(不同 deletedAt)不受影响。
     """
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
-    with db_sqlite._db() as conn:
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
         row = sqlite_store.get_row(conn, kind, item_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
@@ -368,6 +373,7 @@ def restore(kind: Kind, item_id: str) -> dict:
             after={**row, "deletedAt": None},
         )
     export_csv_files()
+    invalidate_cache()
     return {"ok": True, "cascade": cascade}
 
 

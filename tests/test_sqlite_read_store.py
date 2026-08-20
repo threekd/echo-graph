@@ -161,6 +161,23 @@ class SqliteStoreTest(unittest.TestCase):
         self.store.close()  # 无连接池,不应抛错;后续查询仍可用
         self.assertEqual(len(self.store.graph()["nodes"]), 6)
 
+    def test_read_cache_populated_and_invalidated(self) -> None:
+        """读层缓存按 DB 路径缓存,整库重写后立即失效。"""
+        db._read_cache.clear()
+        self.store.graph()
+        self.assertIn((str(db_sqlite.DB_PATH),), db._read_cache)
+        sqlite_store.rewrite_all(*_fixture())
+        self.assertEqual(db._read_cache, {})
+
+    def test_read_cache_refreshes_after_rewrite(self) -> None:
+        """整库重写后再次读取应拿到新数据(缓存未残留旧行)。"""
+        self.store.graph()  # 先填充缓存
+        a, w, e = _fixture()
+        w[0]["Title_CN"] = "局外人(改)"
+        sqlite_store.rewrite_all(a, w, e)
+        titles = [n["label"] for n in self.store.graph()["nodes"] if n["type"] == "work"]
+        self.assertIn("局外人(改)", titles)
+
 
 if __name__ == "__main__":
     unittest.main()

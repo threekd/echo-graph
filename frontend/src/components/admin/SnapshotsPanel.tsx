@@ -93,7 +93,7 @@ export default function SnapshotsPanel({
   return (
     <div className="snapshots-panel">
       <p className="panel-hint">
-        快照来源:deploy.sh 的 SQLite 备份(backups/)与历史版本目录(data/versions/)。恢复前会自动备份当前库;恢复成功后公开视图立即使用恢复的数据。
+        快照来源:deploy.sh 的 SQLite 备份(backups/)与历史版本目录(data/versions/);应用侧保留最近 30 份。恢复前会自动备份当前库,恢复期间请勿编辑数据;恢复成功后公开视图立即使用恢复的数据。
       </p>
       <div id="admin-status">{status}</div>
       <div className="admin-modal-actions" style={{ justifyContent: "flex-start", margin: "0 0 8px" }}>

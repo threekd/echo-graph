@@ -95,10 +95,19 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 | CSV 导出 `data/export/*.csv` | git 仓库 | push 到远端即备份 |
 | 编辑版本快照 `data/versions/` | VPS 本地 | `deploy.sh` 打包;建议 rsync(历史遗留,新代码不再写入) |
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
+| 审计日志 `audit_log` | SQLite 内 | 用 `scripts/prune_audit.py --days 90` 裁剪(可加 cron 定期执行) |
 
 > **快照恢复入口**:管理端「数据管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
 > `backups/` 的 SQLite 备份与 `data/versions/` 的历史 CSV 目录;恢复前会自动为当前库
-> 做安全备份,恢复后自动重新导出 CSV。
+> 做安全备份,恢复后自动重新导出 CSV。应用侧创建的快照保留最近 30 份(`backups/` 下),
+> deploy.sh 自身的备份保留 14 份;**恢复期间请勿编辑数据**,后端在恢复与写事务之间
+> 做了进程内互斥,单 worker 下不会出现并发覆盖。
+
+审计日志裁剪(可选 cron,每天 03:30):
+
+```bash
+30 3 * * * cd /opt/echo-graph && uv run --frozen python scripts/prune_audit.py --days 90
+```
 
 如需要每日自动备份,可加一条 cron(复用 deploy.sh 里的 backup 逻辑):
 
@@ -125,3 +134,22 @@ sudo crontab -e
 journalctl -u echo-graph -e            # 实时日志
 curl https://<你的域名>/api/health     # 期望 {"status":"ok","store":"sqlite"}
 ```
+
+## 8. 限流策略(贡献提交)
+
+公开接口 `POST /api/contribute/echo` 采用三层防护:
+
+1. **应用层策略(细粒度)**:进程内滑动窗口,默认每 IP 每小时最多 20 条
+   (`app/contributions.py` 的 `SUBMIT_LIMIT`)。单 worker 部署下计数精确;
+   若改为多 worker,进程间不共享计数,需依赖 nginx 层或换共享存储(如 Redis)。
+2. **信任边界**:仅当对端属于 `TRUSTED_PROXIES`(默认 `127.0.0.1,::1`,可在
+   `.env` 用逗号分隔的 IP/CIDR 覆盖)时,应用才解析 `X-Forwarded-For` 取最左
+   客户端 IP;直连 uvicorn 或伪造请求头时一律使用对端地址。该解析在应用内完成,
+   不依赖 uvicorn 的 `--proxy-headers` 设置。
+3. **nginx 防洪(粗粒度)**:`setup-vps.sh` 自动生成
+   `/etc/nginx/conf.d/echo-graph-ratelimit.conf`(`rate=10r/m burst=20 nodelay`,
+   约 630 条/小时上限),只挡洪峰流量,不替代应用层策略;手动部署见
+   `deploy/nginx.conf` 文件头注释。
+
+调整方式:改 `.env` 的 `TRUSTED_PROXIES`(多级代理时逐级加入);
+改 nginx zone 的 `rate`/`burst` 值后 `systemctl reload nginx`。

@@ -99,6 +99,10 @@ function truncate(s: string, n: number): string {
   return s && s.length > n ? s.slice(0, n) + "…" : (s || "");
 }
 
+function contributionStatusLabel(s: string): string {
+  return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
+}
+
 export default function Admin() {
   const { state, dispatch } = useApp();
   const [kind, setKind] = useState<Kind>("authors");
@@ -109,6 +113,7 @@ export default function Admin() {
   const [contribStatus, setContribStatus] = useState("pending");
   const [contribsLoading, setContribsLoading] = useState(false);
   const [contribCount, setContribCount] = useState(0);
+  const [viewContrib, setViewContrib] = useState<any>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
@@ -245,15 +250,10 @@ export default function Admin() {
     if (kind === "contributions") loadContribs(contribStatus);
   }, [kind, contribStatus, loadContribs]);
 
-  const reviewContrib = (id: string, action: "approve" | "reject") => {
-    authFetch("/api/admin/contributions/" + encodeURIComponent(id) + "/" + action, { method: "POST" })
-      .then((r) => r.json())
-      .then((d) => {
-        setStatus(d.ok ? (action === "approve" ? "已通过" : "已驳回") : (d.detail || "操作失败"));
-        loadContribs(contribStatus);
-      })
-      .catch((e) => setStatus("操作失败: " + e.message));
-  };
+  // 打开管理页即加载待审核数,让"贡献"Tab 角标未切换过去时也显示正确数字
+  useEffect(() => {
+    loadContribs("pending");
+  }, [loadContribs]);
 
   // 固定筛选行:实测表头行高度,作为筛选行的 sticky 吸附偏移
   const tableRef = useRef<HTMLTableElement | null>(null);
@@ -613,12 +613,8 @@ export default function Admin() {
                       <td>{c.contact || ""}</td>
                       <td>{c.created_at}</td>
                       <td>
-                        {c.status === "pending" ? (
-                          <>
-                            <button onClick={() => reviewContrib(c.id, "approve")}>通过</button>
-                            <button className="del" onClick={() => reviewContrib(c.id, "reject")}>驳回</button>
-                          </>
-                        ) : (
+                        <button onClick={() => setViewContrib(c)}>查看</button>
+                        {c.status !== "pending" && (
                           <span className={c.status === "approved" ? "badge-reviewed" : "badge-rejected"}>
                             {c.status === "approved" ? "已通过" : "已驳回"}
                           </span>
@@ -706,6 +702,58 @@ export default function Admin() {
             </table>
           )}
         </div>
+        {viewContrib && (
+          <div id="admin-modal" style={{ display: "flex" }}>
+            <div className="admin-modal-card">
+              <h3>贡献详情</h3>
+              <div id="admin-form">
+                <label>
+                  <span>源作品(提及方)</span>
+                  <input readOnly value={viewContrib.source_work || ""} />
+                </label>
+                <label>
+                  <span>源作品作者</span>
+                  <input readOnly value={viewContrib.source_author || ""} />
+                </label>
+                <label>
+                  <span>目标作品(被提及方)</span>
+                  <input readOnly value={viewContrib.target_work || ""} />
+                </label>
+                <label>
+                  <span>目标作品作者</span>
+                  <input readOnly value={viewContrib.target_author || ""} />
+                </label>
+                <label className="full">
+                  <span>原文片段</span>
+                  <textarea readOnly value={viewContrib.evidence || ""} />
+                </label>
+                <label>
+                  <span>出处(章节/页码/译本)</span>
+                  <input readOnly value={viewContrib.evidence_source || ""} />
+                </label>
+                <label className="full">
+                  <span>备注</span>
+                  <textarea readOnly value={viewContrib.note || ""} />
+                </label>
+                <label>
+                  <span>联系方式</span>
+                  <input readOnly value={viewContrib.contact || ""} />
+                </label>
+                <label>
+                  <span>提交时间</span>
+                  <input readOnly value={viewContrib.created_at || ""} />
+                </label>
+                <label>
+                  <span>审核状态</span>
+                  <input readOnly value={contributionStatusLabel(viewContrib.status || "")} />
+                </label>
+              </div>
+              <div className="admin-modal-actions">
+                <button onClick={() => setViewContrib(null)}>关闭</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {modal && (

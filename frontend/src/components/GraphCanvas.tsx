@@ -7,6 +7,8 @@ export default function GraphCanvas() {
   const { state } = useApp();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hoveredRef = useRef<string | null>(null);
+  const pendingHover = useRef<string | null>(null); // 指针当前命中的节点(待停留确认)
+  const hoverTimer = useRef<number | null>(null);
   const dragRef = useRef<{ down: boolean; moved: boolean; x: number; y: number }>({
     down: false,
     moved: false,
@@ -14,6 +16,14 @@ export default function GraphCanvas() {
     y: 0,
   });
   const rafRef = useRef<number>(0);
+  const HOVER_DELAY_MS = 100; // 停留超过该时长才视为悬停(暂停旋转 + 显示详情)
+
+  const cancelHoverTimer = () => {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -68,12 +78,38 @@ export default function GraphCanvas() {
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
       const id = pickNode(x, y);
-      if (id !== hoveredRef.current) {
-        hoveredRef.current = id;
-        setHoveredNode(id);
-        if (id) showNodeDetail(id);
+      pendingHover.current = id;
+      if (id === hoveredRef.current) return; // 已在悬停态,无需变化
+      cancelHoverTimer();
+      if (!id) {
+        // 离开节点:立即清除悬停态
+        hoveredRef.current = null;
+        setHoveredNode(null);
+        return;
       }
+      // 短暂经过不触发;停留 HOVER_DELAY_MS 后,暂停旋转与显示详情同时生效
+      hoverTimer.current = window.setTimeout(() => {
+        hoverTimer.current = null;
+        if (pendingHover.current === id) {
+          hoveredRef.current = id;
+          setHoveredNode(id);
+          showNodeDetail(id);
+        }
+      }, HOVER_DELAY_MS);
     });
+  };
+
+  const handlePointerLeave = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current); // 取消排队的拾取,避免离开画布后悬停残留
+      rafRef.current = 0;
+    }
+    cancelHoverTimer();
+    pendingHover.current = null;
+    if (hoveredRef.current) {
+      hoveredRef.current = null;
+      setHoveredNode(null);
+    }
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -89,16 +125,6 @@ export default function GraphCanvas() {
     }
   };
 
-  const handlePointerLeave = () => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current); // 取消排队的拾取,避免离开画布后悬停残留
-      rafRef.current = 0;
-    }
-    if (hoveredRef.current) {
-      hoveredRef.current = null;
-      setHoveredNode(null);
-    }
-  };
 
   return (
     <div

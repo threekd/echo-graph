@@ -816,6 +816,11 @@ th.sortable.active .sort-icon {
   font-size: 12.5px;
 }
 #admin-form textarea { min-height: 90px; resize: none; overflow-y: auto; }
+#admin-form input[readonly],
+#admin-form textarea[readonly] {
+  color: var(--muted);
+  cursor: default;
+}
 .suggest-input {
   position: relative;
   width: 100%;

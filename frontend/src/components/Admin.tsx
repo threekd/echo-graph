@@ -87,7 +87,7 @@ const FIELDS: Record<AdminTab, any[]> = {
     { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
     { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
     { key: "evidence", label: "原文片段", required: true, type: "textarea" },
-    { key: "evidenceSource", label: "出处" },
+    { key: "evidenceSource", label: "出处", required: true },
     { key: "note", label: "备注" },
     { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
@@ -413,8 +413,8 @@ export default function Admin() {
 
   const doImport = () => {
     setConfirmState({
-      title: "上传到 Neo4j",
-      message: "将 data/real/*.csv 写入 Neo4j(增量合并),继续?",
+      title: "上传到数据库",
+      message: "确认增量合并更新后的数据?",
       onConfirm: () => {
         setStatus("导入中…");
         authFetch("/api/admin/import", {

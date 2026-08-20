@@ -92,6 +92,8 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None) -> l
                     errors.append(f"作者 id {aid} 未在作者表中找到")
         else:
             EchoRow.model_validate(row)
+            if not (row.get("evidenceSource") or "").strip():
+                errors.append("出处不能为空")
             for wid in (row.get("source_work_id"), row.get("target_work_id")):
                 if not sqlite_store.row_exists(conn, "works", wid):
                     errors.append(f"作品 {wid} 未找到")

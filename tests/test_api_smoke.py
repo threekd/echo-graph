@@ -217,10 +217,28 @@ class ApiSmokeTest(unittest.TestCase):
         }]
         sqlite_store.rewrite_all([], works, edges)
         with self.assertRaises(HTTPException) as ctx:
-            admin.create("edges", {"source_work_id": w1, "target_work_id": w2, "evidence": "y"})
+            admin.create("edges", {
+                "source_work_id": w1, "target_work_id": w2,
+                "evidence": "y", "evidenceSource": "c1",
+            })
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("反与正", ctx.exception.detail)
         self.assertIn("婚礼", ctx.exception.detail)
+
+    def test_admin_edge_requires_evidence_source(self) -> None:
+        """新增涟漪时出处必填。"""
+        import app.admin as admin
+
+        w1, w2 = (str(uuid.uuid4()) for _ in range(2))
+        works = [
+            {"id": w1, "language": "fr", "originalTitle": "A", "Title_CN": "甲书"},
+            {"id": w2, "language": "fr", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        sqlite_store.rewrite_all([], works, [])
+        with self.assertRaises(HTTPException) as ctx:
+            admin.create("edges", {"source_work_id": w1, "target_work_id": w2, "evidence": "x"})
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("出处不能为空", ctx.exception.detail)
 
     def test_admin_delete_work_cascades_edges(self) -> None:
         """删除作品时,与其相关的涟漪边一并软删除。"""

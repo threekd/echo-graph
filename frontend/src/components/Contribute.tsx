@@ -1,8 +1,13 @@
 /* 贡献数据弹窗:普通用户提交涟漪建议,写入待审核收件箱(不进入正式数据)。 */
 
 import { useMemo, useState } from "react";
-import { useApp } from "../store";
+import { useApp, type GraphNode } from "../store";
 import { submitContribution } from "../lib/api";
+import {
+  authorSuggestionLabels,
+  workAuthorNames,
+  workSuggestionLabel,
+} from "../lib/contributeSuggestions";
 
 const EMPTY = {
   source_work: "",
@@ -21,11 +26,13 @@ function SuggestionInput({
   onChange,
   suggestions,
   placeholder,
+  onPick,
 }: {
   value: string;
   onChange: (v: string) => void;
   suggestions: string[];
   placeholder: string;
+  onPick?: (label: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -33,6 +40,13 @@ function SuggestionInput({
   const filtered = q
     ? suggestions.filter((s) => s.toLowerCase().includes(q)).slice(0, 50)
     : suggestions.slice(0, 50);
+
+  const pick = (label: string) => {
+    onChange(label);
+    setOpen(false);
+    setActive(-1);
+    if (onPick) onPick(label);
+  };
 
   return (
     <div className="suggest-input">
@@ -53,9 +67,7 @@ function SuggestionInput({
             setActive((v) => (v - 1 + filtered.length) % filtered.length);
           } else if (e.key === "Enter" && active >= 0 && filtered[active]) {
             e.preventDefault();
-            onChange(filtered[active]);
-            setOpen(false);
-            setActive(-1);
+            pick(filtered[active]);
           }
         }}
       />
@@ -66,7 +78,7 @@ function SuggestionInput({
               key={s}
               className={i === active ? "active" : undefined}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onChange(s); setOpen(false); setActive(-1); }}
+              onClick={() => pick(s)}
             >
               {s}
             </li>
@@ -83,24 +95,39 @@ export default function Contribute() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // 已有作品/作者名,用于下拉联想(允许自由输入新名称)
-  const workSuggestions = useMemo(() => {
-    const seen = new Set<string>();
-    state.fullData.nodes.forEach((n) => {
-      if (n.type !== "work") return;
-      [n.label, n.label_en, n.originalTitle].forEach((v) => { if (v) seen.add(String(v)); });
-    });
-    return Array.from(seen).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  // 已有作品/作者名,用于下拉联想(允许自由输入新名称);作品按展示名映射回节点,便于选中后填充作者
+  const authorsById = useMemo(() => {
+    const map: Record<string, GraphNode> = {};
+    state.fullData.nodes.forEach((n) => { if (n.type === "author") map[n.id] = n; });
+    return map;
   }, [state.fullData]);
 
-  const authorSuggestions = useMemo(() => {
-    const seen = new Set<string>();
+  const worksByLabel = useMemo(() => {
+    const map = new Map<string, GraphNode>();
     state.fullData.nodes.forEach((n) => {
-      if (n.type !== "author") return;
-      [n.label, n.label_en, n.originalName].forEach((v) => { if (v) seen.add(String(v)); });
+      if (n.type !== "work") return;
+      const label = workSuggestionLabel(n);
+      if (label && !map.has(label)) map.set(label, n);
     });
-    return Array.from(seen).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    return map;
   }, [state.fullData]);
+
+  const workSuggestions = useMemo(
+    () => Array.from(worksByLabel.keys()).sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+    [worksByLabel]
+  );
+  const authorSuggestions = useMemo(
+    () => authorSuggestionLabels(state.fullData.nodes),
+    [state.fullData]
+  );
+
+  // 选中已有作品时自动填充其关联作者(多人用"、"连接;无作者信息时不动)
+  const fillWorkAuthor = (which: "source" | "target") => (label: string) => {
+    const node = worksByLabel.get(label);
+    if (!node) return;
+    const names = workAuthorNames(node, authorsById);
+    if (names.length) set(which === "source" ? "source_author" : "target_author", names.join("、"));
+  };
 
   if (!state.contributeOpen) return null;
 
@@ -149,6 +176,7 @@ export default function Contribute() {
               onChange={(v) => set("source_work", v)}
               suggestions={workSuggestions}
               placeholder="如:局外人 / L'Étranger"
+              onPick={fillWorkAuthor("source")}
             />
           </label>
           <label>
@@ -167,6 +195,7 @@ export default function Contribute() {
               onChange={(v) => set("target_work", v)}
               suggestions={workSuggestions}
               placeholder="如:鼠疫 / La Peste"
+              onPick={fillWorkAuthor("target")}
             />
           </label>
           <label>

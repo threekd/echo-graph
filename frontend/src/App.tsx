@@ -110,11 +110,8 @@ function AppContent() {
           if (node.type === "work") {
             workDetail(id).then((d) => {
               renderRipple(d, hops, flags);
-              // 手机端深链进入层级视图时不弹出详情栏
-              dispatch({
-                type: "SET_PANEL",
-                panel: isMobileLayout() ? { type: "empty" } : { type: "work", d },
-              });
+              // 手机端深链也保存节点信息,但面板不自动呼出
+              dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
               if (hops > 1) expandRippleDebounced(hops, id, data);
             }).catch(() => dispatch({ type: "SET_TOAST", msg: "加载作品详情失败" }));
         } else {
@@ -191,7 +188,9 @@ function AppContent() {
         if (p) p.classList.remove("show");
       } else if (notMain) {
         renderMain({});
-        dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
+        // 收起面板但保留节点信息,右侧上划仍可查看
+        const panelEl = document.getElementById("panel");
+        if (panelEl) panelEl.classList.remove("show");
       } else {
         return; // 主视图且无栏:放行,让浏览器退出/回上一页
       }

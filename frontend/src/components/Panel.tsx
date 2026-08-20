@@ -172,8 +172,11 @@ export default function Panel() {
     const el = document.getElementById("panel");
     if (el) {
       if (panel.type !== "empty") {
-        el.classList.add("show");
-        scheduleHide(); // 展示时启动倒计时,鼠标移入面板会取消
+        if (!isMobileLayout()) {
+          el.classList.add("show");
+          scheduleHide(); // 桌面:展示时启动倒计时,鼠标移入面板会取消
+        }
+        // 手机端:内容保留但不自动呼出,由底部右侧上划打开
       } else {
         el.classList.remove("show"); // 内容置空时收起(手机端点击节点不弹详情栏)
         wasInsideRef.current = false;
@@ -187,6 +190,7 @@ export default function Panel() {
         <p>点击任意星星,自动展开它的涟漪;</p>
         <p>桌面:右键拖拽旋转 · 左键拖拽平移 · 滚轮缩放。</p>
         <p>手机:单指平移 · 双指旋转 / 缩放。</p>
+        <p>手机:点击节点进入层级后,右侧上划可查看该节点详情。</p>
         <p>顶部可搜索作品、查找提及链。</p>
       </div>
     );

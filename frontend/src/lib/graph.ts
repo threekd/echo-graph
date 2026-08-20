@@ -386,17 +386,16 @@ export function selectNode(id: string) {
     dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
     return;
   }
-  // 手机端点击节点只进入层级视图,不弹出详情栏
-  const openPanel = !isMobileLayout();
   if (node.type === "work") {
     workDetail(id).then((d) => {
       renderRipple(d);
-      dispatch({ type: "SET_PANEL", panel: openPanel ? { type: "work", d } : { type: "empty" } });
+      // 手机端也保存节点信息供右侧上划查看,但不自动呼出(Panel 按 isMobileLayout 控制)
+      dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
       dispatch({ type: "SET_TOAST", msg: "已展开《" + node.label + "》的涟漪", kind: "success" });
     }).catch(failToast);
   } else {
     renderAuthorView(node);
-    dispatch({ type: "SET_PANEL", panel: openPanel ? { type: "author", author: node } : { type: "empty" } });
+    dispatch({ type: "SET_PANEL", panel: { type: "author", author: node } });
     dispatch({
       type: "SET_TOAST",
       msg: "视图:作者 · " + node.label + "(" + countWorks(node.id) + " 部作品)",

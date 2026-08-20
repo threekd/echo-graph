@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -57,12 +58,32 @@ def _db() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def audit(conn: sqlite3.Connection, action: str, kind: str, row_id: str | None, detail: str = "") -> None:
-    """写一条审计记录(与业务写入同一事务)。"""
+def audit(
+    conn: sqlite3.Connection,
+    action: str,
+    kind: str,
+    row_id: str | None,
+    detail: str = "",
+    before: dict | None = None,
+    after: dict | None = None,
+) -> None:
+    """写一条审计记录(与业务写入同一事务)。
+
+    detail 为人读摘要(含对象名称与变更字段);before/after 为改动前后的行 JSON,
+    供管理端审计页展开对比定位。
+    """
     conn.execute(
-        "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail)"
-        " VALUES (?, 'admin', ?, ?, ?, ?)",
-        (dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), action, kind, row_id, detail),
+        "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail, before, after)"
+        " VALUES (?, 'admin', ?, ?, ?, ?, ?, ?)",
+        (
+            dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+            action,
+            kind,
+            row_id,
+            detail,
+            json.dumps(before, ensure_ascii=False) if before is not None else None,
+            json.dumps(after, ensure_ascii=False) if after is not None else None,
+        ),
     )
 
 
@@ -235,10 +256,20 @@ def _migration_v3(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_work_id)")
 
 
+def _migration_v4(conn: sqlite3.Connection) -> None:
+    """审计表补充 before/after JSON 列(改动前后行,供审计页对比)。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(audit_log)")}
+    if "before" not in cols:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN before TEXT")
+    if "after" not in cols:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN after TEXT")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
     (3, _migration_v3),
+    (4, _migration_v4),
 ]
 
 

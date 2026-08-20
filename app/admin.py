@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import db_sqlite, sqlite_store
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
-from app.contributions import list_contributions, set_status
+from app.contributions import get_contribution, list_contributions, set_status
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
 from app.data_store import (
     clean_row,
@@ -74,6 +74,67 @@ def _new_uuid() -> str:
 def _author_id_list(value) -> list[str]:
     """把 works.author_id(逗号分隔,可能带空格)拆成去空后的 id 列表。"""
     return [x.strip() for x in str(value or "").split(",") if x.strip()]
+
+
+AUDIT_FIELDS: dict[Kind, list[str]] = {
+    "authors": [
+        "originalName", "Name_CN", "Name_EN", "nationality",
+        "birthYear", "deathYear", "reviewStatus",
+    ],
+    "works": [
+        "language", "originalTitle", "Title_CN", "Title_EN", "Title_Other",
+        "publicationYear", "creationYear", "genre", "reviewStatus",
+    ],
+    "edges": [
+        "source_work_id", "target_work_id", "evidence",
+        "evidenceSource", "note", "reviewStatus",
+    ],
+}
+
+
+def _work_title(conn, work_id) -> str:
+    row = conn.execute("SELECT Title_CN FROM works WHERE id = ?", (work_id,)).fetchone()
+    return row["Title_CN"] if row else str(work_id or "")
+
+
+def _audit_label(conn, kind: Kind, row: dict) -> str:
+    """审计里的对象名称:作者中文名 / 作品中文名 / 涟漪 A → B。"""
+    if kind == "authors":
+        return str(row.get("Name_CN") or row.get("originalName") or row.get("id") or "")
+    if kind == "works":
+        return str(row.get("Title_CN") or row.get("originalTitle") or row.get("id") or "")
+    return f"{_work_title(conn, row.get('source_work_id'))} → {_work_title(conn, row.get('target_work_id'))}"
+
+
+def _fmt_audit(value) -> str:
+    return "(空)" if value is None or value == "" else str(value)
+
+
+def _audit_changes(kind: Kind, before: dict, after: dict) -> str:
+    """变更字段摘要:字段: 旧值 → 新值(忽略 id/时间戳/软删除/作者关联)。"""
+    parts = []
+    for field in AUDIT_FIELDS[kind]:
+        b, a = before.get(field), after.get(field)
+        if b != a:
+            parts.append(f"{field}: {_fmt_audit(b)} → {_fmt_audit(a)}")
+    return "；".join(parts)
+
+
+def _review_contribution(item_id: str, status: str) -> bool:
+    """审核贡献并写审计(通过/驳回)。"""
+    contrib = get_contribution(item_id)
+    if contrib is None or not set_status(item_id, status):
+        return False
+    action = "approve" if status == "approved" else "reject"
+    label = f"{contrib.get('source_work')} → {contrib.get('target_work')}"
+    detail = f"审核「{label}」: {contrib.get('status')} → {status}"
+    with db_sqlite._db() as conn:
+        db_sqlite.audit(
+            conn, action, "contributions", item_id, detail,
+            before={"status": contrib.get("status")},
+            after={"status": status},
+        )
+    return True
 
 
 def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None) -> list[str]:
@@ -193,7 +254,8 @@ def create(kind: Kind, row: dict) -> dict:
         sqlite_store.insert_row(conn, kind, row)
         if kind == "works":
             sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
-        db_sqlite.audit(conn, "create", kind, row.get("id"))
+        label = _audit_label(conn, kind, row)
+        db_sqlite.audit(conn, "create", kind, row.get("id"), f"新增「{label}」", after=row)
     export_csv_files()
     return {"ok": True, "row": row}
 
@@ -220,7 +282,10 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
             sqlite_store.set_work_authors(conn, item_id, _author_id_list(row.get("author_id")))
-        db_sqlite.audit(conn, "update", kind, item_id)
+        label = _audit_label(conn, kind, row)
+        changes = _audit_changes(kind, existing, row)
+        detail = f"修改「{label}」" + (f": {changes}" if changes else "")
+        db_sqlite.audit(conn, "update", kind, item_id, detail, before=existing, after=row)
     export_csv_files()
     return {"ok": True, "row": row}
 
@@ -231,7 +296,8 @@ def delete(kind: Kind, item_id: str) -> dict:
     now = _now()
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
     with db_sqlite._db() as conn:
-        if not sqlite_store.row_exists(conn, kind, item_id):
+        row = sqlite_store.get_row(conn, kind, item_id)
+        if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
             edge_ids = sqlite_store.cascade_work_edge_ids(conn, item_id)
@@ -247,9 +313,13 @@ def delete(kind: Kind, item_id: str) -> dict:
             cascade = {"works": work_ids, "edges": edge_ids}
         else:
             sqlite_store.mark_deleted(conn, kind, [item_id], now)
+        label = _audit_label(conn, kind, row)
         db_sqlite.audit(
             conn, "delete", kind, item_id,
-            f"cascade works={len(cascade['works'])} edges={len(cascade['edges'])}",
+            f"删除「{label}」"
+            + (f"(连带 works={len(cascade['works'])} edges={len(cascade['edges'])})" if any(cascade.values()) else ""),
+            before=row,
+            after={**row, "deletedAt": now},
         )
     export_csv_files()
     return {"ok": True, "deletedAt": now, "cascade": cascade}
@@ -292,7 +362,10 @@ def restore(kind: Kind, item_id: str) -> dict:
             cascade["works"] = work_ids
         db_sqlite.audit(
             conn, "restore", kind, item_id,
-            f"cascade works={len(cascade['works'])} edges={len(cascade['edges'])}",
+            f"恢复「{_audit_label(conn, kind, row)}」"
+            + (f"(连带 works={len(cascade['works'])} edges={len(cascade['edges'])})" if any(cascade.values()) else ""),
+            before=row,
+            after={**row, "deletedAt": None},
         )
     export_csv_files()
     return {"ok": True, "cascade": cascade}
@@ -310,14 +383,14 @@ def admin_contributions(
 
 @router.post("/contributions/{item_id}/approve")
 def approve_contribution(item_id: str) -> dict:
-    if not set_status(item_id, "approved"):
+    if not _review_contribution(item_id, "approved"):
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
     return {"ok": True}
 
 
 @router.post("/contributions/{item_id}/reject")
 def reject_contribution(item_id: str) -> dict:
-    if not set_status(item_id, "rejected"):
+    if not _review_contribution(item_id, "rejected"):
         raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
     return {"ok": True}
 
@@ -326,8 +399,8 @@ def reject_contribution(item_id: str) -> dict:
 def admin_audit(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    action: str | None = Query(None, pattern="^(create|update|delete|restore)$"),
-    kind: str | None = Query(None, pattern="^(authors|works|edges)$"),
+    action: str | None = Query(None, pattern="^(create|update|delete|restore|approve|reject)$"),
+    kind: str | None = Query(None, pattern="^(authors|works|edges|contributions)$"),
 ) -> dict:
     """管理写操作审计记录。"""
     return sqlite_store.list_audit(limit, offset, action, kind)

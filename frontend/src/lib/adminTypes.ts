@@ -71,6 +71,8 @@ export interface AuditEntry {
   kind: string;
   row_id: string | null;
   detail: string;
+  before?: string | null;
+  after?: string | null;
 }
 
 export interface AdminData {

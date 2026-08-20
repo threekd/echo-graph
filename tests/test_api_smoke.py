@@ -134,6 +134,9 @@ class ApiSmokeTest(unittest.TestCase):
         saved = sqlite_store.list_all()["authors"][0]
         self.assertEqual(saved["originalName"], "新名")
         self.assertEqual(saved["createdAt"], "2026-01-01T00:00:00+00:00")
+        audit = sqlite_store.list_audit()
+        self.assertEqual(audit["items"][0]["action"], "update")
+        self.assertIn("Name_CN: 旧中文名 → 新中文名", audit["items"][0]["detail"])
 
     def test_admin_update_optimistic_lock_conflict(self) -> None:
         """更新时 updatedAt 已被他人改动 -> 409 乐观锁冲突。"""
@@ -340,6 +343,27 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(audit["total"], 1)
         self.assertEqual(audit["items"][0]["action"], "create")
         self.assertEqual(audit["items"][0]["kind"], "authors")
+        self.assertIn("新增", audit["items"][0]["detail"])
+        self.assertIsNotNone(audit["items"][0]["after"])
+
+    def test_admin_approve_contribution_writes_audit(self) -> None:
+        import app.admin as admin
+        from app.contributions import submit_contribution
+
+        row = submit_contribution({
+            "source_work": "甲书",
+            "target_work": "乙书",
+            "source_author": "甲",
+            "target_author": "乙",
+            "evidence": "x",
+            "evidence_source": "c1",
+        })
+        self.assertTrue(admin.approve_contribution(row["id"])["ok"])
+        audit = sqlite_store.list_audit()
+        self.assertEqual(audit["items"][0]["action"], "approve")
+        self.assertEqual(audit["items"][0]["kind"], "contributions")
+        self.assertIn("甲书 → 乙书", audit["items"][0]["detail"])
+        self.assertEqual(audit["items"][0]["after"], '{"status": "approved"}')
 
     def test_admin_token_rejects_placeholder(self) -> None:
         import app.admin as admin

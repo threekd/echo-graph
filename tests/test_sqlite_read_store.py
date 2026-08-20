@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,7 +53,7 @@ class SqliteStoreTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
         sqlite_store.rewrite_all(*_fixture())
-        self.store = db.SqliteStore()
+        self.store = db.SqliteStore(reviewed_only=False)
 
     def test_graph_shape(self) -> None:
         g = self.store.graph()
@@ -149,10 +150,12 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(s["works"], 1)
         self.assertEqual(s["echo_edges"], 1)
 
-    def test_reviewed_only_off_by_default(self) -> None:
-        """默认(未开 PUBLIC_REVIEWED_ONLY)仍返回全部状态。"""
-        store = db.SqliteStore(reviewed_only=False)
-        self.assertEqual(store.stats()["works"], 4)
+    def test_env_controls_reviewed_only_default(self) -> None:
+        """PUBLIC_REVIEWED_ONLY 环境变量决定默认过滤开关。"""
+        with patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "1"}, clear=False):
+            self.assertTrue(db.SqliteStore().reviewed_only)
+        with patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": ""}, clear=False):
+            self.assertFalse(db.SqliteStore().reviewed_only)
 
     def test_close_is_noop(self) -> None:
         self.store.close()  # 无连接池,不应抛错;后续查询仍可用

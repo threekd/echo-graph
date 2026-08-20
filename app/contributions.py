@@ -122,6 +122,15 @@ def list_contributions(
     return {"items": [dict(r) for r in rows], "total": total}
 
 
+def get_contribution(contribution_id: str) -> dict | None:
+    """按 id 取单条贡献(审核审计用)。"""
+    with db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT * FROM contributions WHERE id = ?", (contribution_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def set_status(contribution_id: str, status: str) -> bool:
     """pending -> approved / rejected;返回是否命中。"""
     with db_sqlite._db() as conn:

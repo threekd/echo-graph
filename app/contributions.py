@@ -10,37 +10,16 @@ import datetime as dt
 import sqlite3
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app import db_sqlite
 from app.data_store import remove_invisible_chars
-
-ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "echo-graph.db"
 
 # 极简进程内限流:同一 IP 每小时最多 SUBMIT_LIMIT 条(多 worker 下按进程独立计数,后续可换持久化)
 SUBMIT_LIMIT = 10
 _rate: dict[str, list[float]] = {}
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS contributions (
-    id TEXT PRIMARY KEY,
-    source_work TEXT NOT NULL,
-    target_work TEXT NOT NULL,
-    source_author TEXT NOT NULL,
-    target_author TEXT NOT NULL,
-    evidence TEXT NOT NULL,
-    evidence_source TEXT NOT NULL,
-    note TEXT,
-    contact TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    reviewed_at TEXT
-)
-"""
 
 MAX_LEN = {
     "source_work": 200,
@@ -52,36 +31,6 @@ MAX_LEN = {
     "note": 1000,
     "contact": 200,
 }
-
-
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-@contextmanager
-def _db() -> Iterator[sqlite3.Connection]:
-    """打开连接并确保建表;正常退出时提交事务,异常或结束后关闭连接。"""
-    conn = _connect()
-    try:
-        _ensure_schema(conn)
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _ensure_schema(conn: sqlite3.Connection) -> None:
-    """建表 + 兼容旧库:缺失的新列用 ALTER 补齐。"""
-    conn.execute(SCHEMA)
-    cols = {r["name"] for r in conn.execute("PRAGMA table_info(contributions)")}
-    if "source_author" not in cols:
-        conn.execute("ALTER TABLE contributions ADD COLUMN source_author TEXT NOT NULL DEFAULT ''")
-    if "target_author" not in cols:
-        conn.execute("ALTER TABLE contributions ADD COLUMN target_author TEXT NOT NULL DEFAULT ''")
 
 
 def _now() -> str:
@@ -125,11 +74,6 @@ def _validate(payload: dict) -> dict:
     return data
 
 
-def init_db() -> None:
-    with _db():
-        pass
-
-
 def submit_contribution(payload: dict) -> dict:
     """写入一条 pending 贡献,返回落库后的行。"""
     data = _validate(payload)
@@ -140,7 +84,7 @@ def submit_contribution(payload: dict) -> dict:
         "created_at": _now(),
         "reviewed_at": None,
     }
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         conn.execute(
             "INSERT INTO contributions (id, source_work, target_work, source_author,"
             " target_author, evidence, evidence_source, note, contact, status, created_at, reviewed_at)"
@@ -160,7 +104,7 @@ def list_contributions(
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         if status:
             rows = conn.execute(
                 "SELECT * FROM contributions WHERE status = ?"
@@ -182,7 +126,7 @@ def list_contributions(
 
 def set_status(contribution_id: str, status: str) -> bool:
     """pending -> approved / rejected;返回是否命中。"""
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         cur = conn.execute(
             "UPDATE contributions SET status = ?, reviewed_at = ? WHERE id = ?",
             (status, _now(), contribution_id),
@@ -222,7 +166,7 @@ def merge_legacy_db(legacy_db: Path) -> int:
         (r[0], r[1], r[2], r[3] or "", r[4] or "", r[5], r[6] or "", r[7], r[8], r[9] or "pending", r[10], r[11])
         for r in rows
     ]
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         conn.executemany(
             "INSERT OR IGNORE INTO contributions (id, source_work, target_work, source_author,"
             " target_author, evidence, evidence_source, note, contact, status, created_at, reviewed_at)"

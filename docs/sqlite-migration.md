@@ -1,6 +1,6 @@
 # Echo Graph 策展数据迁移方案：CSV 事实源 → SQLite 主存 + 确定性 CSV 导出
 
-> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。本文档记录完整方案。
+> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。本文档记录完整方案。
 
 ## 一、背景与目标
 
@@ -56,11 +56,23 @@
 
 ## 五、数据层（`app/sqlite_store.py`）
 
-- `_db()` 事务上下文（建表 + FK + WAL + commit/close）；
-- `replace_all(models...)`：单事务整库重建（迁移用）；
-- `list_all()` / `export_rows()`：返回与 CSV `load_rows` 同形状的行（works 行重组 `author_id` 逗号串）；
+- 统一连接层 `app/db_sqlite.py`（连接、事务、schema 迁移 runner、审计、时间戳归一）；
+- 行级 CRUD（`get_row / insert_row / update_row / set_work_authors / mark_deleted / restore_by_ts`），admin 写入不再整库重写；
+- `replace_all / rewrite_all`：单事务整库重建（迁移 / 恢复工具用）；
+- `list_all()`：返回与 CSV `load_rows` 同形状的行（works 行重组 `author_id` 逗号串）；
 - `canonical_payload(rows...)` / `sync_payload()`：规范化载荷，供同步比对（与 admin 的 CSV 侧共用同一实现）；
-- 级联软删除（作品→边、作者→作品+边）Phase 2 下沉到事务内。
+- 级联软删除（作品→边、作者→作品+边）在 admin 侧单事务内执行。
+
+## 五之二、P0-P2 优化清单（已完成）
+
+- **行级 CRUD**：create/update/delete/restore 改为按 id 的事务写入，消除整库重写与并发丢更新；
+- **统一连接层**：`app/db_sqlite.py` 一处管理连接/PRAGMA/事务，sqlite_store 与 contributions 共用；
+- **schema 迁移 runner**：按 `meta.schema_version` 顺序执行迁移（v1 建表 / v2 索引+审计+时间戳归一 / v3 重建补 CHECK），迁移前自动一致性备份；
+- **索引**：`edges(target_work_id)`、`work_authors(author_id)`、`contributions(status, created_at)`；
+- **DB CHECK**：`works.language` 长度、`edges.evidence` 长度、`contributions.status` 枚举；
+- **时间戳归一**：所有 createdAt/updatedAt/deletedAt 统一为 UTC `+00:00`（一次性数据迁移 + 写入归一）；
+- **审计表** `audit_log`：每次管理写操作记录 action/kind/row_id/detail；
+- **同步计数预检**：`/api/admin/sync` 先比 3 个活跃计数（单次查询），不一致即判未同步，一致才做全量比对。
 
 ## 六、模块改动点
 

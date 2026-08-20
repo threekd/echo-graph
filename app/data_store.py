@@ -10,7 +10,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from app import sqlite_store
+from app import db_sqlite, sqlite_store
 
 ROOT = Path(__file__).resolve().parent.parent
 REAL_DIR = ROOT / "data" / "real"
@@ -104,12 +104,12 @@ def export_csv_files(target_dir: Path | None = None) -> None:
 
 def snapshot(prefix: str = "admin") -> str | None:
     """保存前备份:SQLite 备份 + CSV 导出到 data/versions/<时间戳>-<prefix>/。"""
-    if not sqlite_store.DB_PATH.exists():
+    if not db_sqlite.DB_PATH.exists():
         return None
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     target = VERSIONS_DIR / f"{ts}-{prefix}"
     target.mkdir(parents=True, exist_ok=True)
-    src = sqlite3.connect(sqlite_store.DB_PATH)
+    src = sqlite3.connect(db_sqlite.DB_PATH)
     try:
         dst = sqlite3.connect(target / "echo-graph.db")
         try:

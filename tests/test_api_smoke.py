@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import tomllib
 import unittest
 import uuid
@@ -15,9 +16,18 @@ os.environ["ECHO_STORE"] = "json"  # 必须在导入 app.main 前设置,避免�
 
 import app.db as db  # noqa: E402
 import app.main as main  # noqa: E402
+from app import db_sqlite, sqlite_store  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # 管理写入走 SQLite:全部隔离到临时库,且不落盘 CSV/版本目录
+        self.tmp = tempfile.TemporaryDirectory()
+        patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "echo-graph.db").start()
+        patch("app.admin.export_csv_files", lambda: None).start()
+        patch("app.admin.snapshot", return_value=None).start()
+        self.addCleanup(self.tmp.cleanup)
+
     def test_expected_routes_registered(self) -> None:
         paths = {
             getattr(r, "path", None)
@@ -126,7 +136,6 @@ class ApiSmokeTest(unittest.TestCase):
 
         with (
             patch("app.admin.load_rows", return_value=([], [], [])),
-            patch("app.admin.save_rows"),
             patch("app.admin.snapshot", return_value=None),
         ):
             res = admin.create(
@@ -139,6 +148,8 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(row["reviewStatus"], "draft")
         self.assertEqual(row["originalName"], "某作家")  # 落盘前去除首尾空白与零宽字符
         self.assertEqual(row["Name_CN"], "某")
+        # 行级写入已落库
+        self.assertEqual(len(sqlite_store.list_all()["authors"]), 1)
 
     def test_admin_update_bumps_updated_at_keeps_created_at(self) -> None:
         import app.admin as admin
@@ -149,11 +160,8 @@ class ApiSmokeTest(unittest.TestCase):
             "Name_CN": "旧中文名",
             "createdAt": "2026-01-01T00:00:00+00:00",
         }
-        with (
-            patch("app.admin.load_rows", return_value=([author], [], [])),
-            patch("app.admin.save_rows"),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all([author], [], [])
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.update(
                 "authors",
                 author["id"],
@@ -162,6 +170,9 @@ class ApiSmokeTest(unittest.TestCase):
         row = res["row"]
         self.assertEqual(row["createdAt"], "2026-01-01T00:00:00+00:00")
         self.assertTrue(row["updatedAt"])
+        saved = sqlite_store.list_all()["authors"][0]
+        self.assertEqual(saved["originalName"], "新名")
+        self.assertEqual(saved["createdAt"], "2026-01-01T00:00:00+00:00")
 
     def test_admin_get_data_includes_warnings(self) -> None:
         import app.admin as admin
@@ -193,7 +204,6 @@ class ApiSmokeTest(unittest.TestCase):
         }]
         with (
             patch("app.admin.load_rows", return_value=([], works, edges)),
-            patch("app.admin.save_rows"),
             patch("app.admin.snapshot", return_value=None),
         ):
             with self.assertRaises(HTTPException) as ctx:
@@ -215,20 +225,13 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"},
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y"},
         ]
-        saved: dict = {}
-
-        def fake_save_rows(aa, ww, ee):
-            saved["rows"] = (aa, ww, ee)
-
-        with (
-            patch("app.admin.load_rows", return_value=([], works, edges)),
-            patch("app.admin.save_rows", side_effect=fake_save_rows),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all([], works, edges)
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.delete("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["edges"]), sorted([e1, e2]))
-        _, saved_works, saved_edges = saved["rows"]
+        data = sqlite_store.list_all()
+        saved_works, saved_edges = data["works"], data["edges"]
         self.assertTrue(next(r for r in saved_works if r["id"] == w1)["deletedAt"])
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
         self.assertEqual(len([r for r in saved_edges if r.get("deletedAt")]), 2)
@@ -249,21 +252,14 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"},
         ]
-        saved: dict = {}
-
-        def fake_save_rows(aa, ww, ee):
-            saved["rows"] = (aa, ww, ee)
-
-        with (
-            patch("app.admin.load_rows", return_value=(authors, works, edges)),
-            patch("app.admin.save_rows", side_effect=fake_save_rows),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all(authors, works, edges)
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.delete("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
         self.assertEqual(res["cascade"]["edges"], [e1])
-        _, saved_works, saved_edges = saved["rows"]
+        data = sqlite_store.list_all()
+        saved_works, saved_edges = data["works"], data["edges"]
         self.assertTrue(next(r for r in saved_works if r["id"] == w1)["deletedAt"])
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
         self.assertTrue(saved_edges[0]["deletedAt"])
@@ -282,20 +278,13 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y", "deletedAt": "2026-08-20T09:00:00+00:00"},
         ]
-        saved: dict = {}
-
-        def fake_save_rows(aa, ww, ee):
-            saved["rows"] = (aa, ww, ee)
-
-        with (
-            patch("app.admin.load_rows", return_value=([], works, edges)),
-            patch("app.admin.save_rows", side_effect=fake_save_rows),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all([], works, edges)
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.restore("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["edges"], [e1])
-        _, saved_works, saved_edges = saved["rows"]
+        data = sqlite_store.list_all()
+        saved_works, saved_edges = data["works"], data["edges"]
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_edges if r["id"] == e1).get("deletedAt"))
         self.assertEqual(next(r for r in saved_edges if r["id"] == e2)["deletedAt"], "2026-08-20T09:00:00+00:00")
@@ -317,21 +306,14 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
-        saved: dict = {}
-
-        def fake_save_rows(aa, ww, ee):
-            saved["rows"] = (aa, ww, ee)
-
-        with (
-            patch("app.admin.load_rows", return_value=(authors, works, edges)),
-            patch("app.admin.save_rows", side_effect=fake_save_rows),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all(authors, works, edges)
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.restore("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
         self.assertEqual(res["cascade"]["edges"], [e1])
-        _, saved_works, saved_edges = saved["rows"]
+        data = sqlite_store.list_all()
+        saved_works, saved_edges = data["works"], data["edges"]
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_edges if r["id"] == e1).get("deletedAt"))
 
@@ -348,20 +330,12 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
-        saved: dict = {}
-
-        def fake_save_rows(aa, ww, ee):
-            saved["rows"] = (aa, ww, ee)
-
-        with (
-            patch("app.admin.load_rows", return_value=([], works, edges)),
-            patch("app.admin.save_rows", side_effect=fake_save_rows),
-            patch("app.admin.snapshot", return_value=None),
-        ):
+        sqlite_store.rewrite_all([], works, edges)
+        with patch("app.admin.snapshot", return_value=None):
             res = admin.restore("edges", e1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["works"]), sorted([w1, w2]))
-        _, saved_works, _ = saved["rows"]
+        saved_works = sqlite_store.list_all()["works"]
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
 
@@ -370,7 +344,6 @@ class ApiSmokeTest(unittest.TestCase):
 
         with (
             patch("app.admin.load_rows", return_value=([], [], [])),
-            patch("app.admin.save_rows"),
             patch("app.admin.snapshot", return_value=None),
         ):
             res = admin.create("authors", {"originalName": "某", "Name_CN": "某"})

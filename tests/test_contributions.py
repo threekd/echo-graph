@@ -9,12 +9,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.contributions as c
+from app import db_sqlite
 
 
 class ContributionStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        patcher = patch.object(c, "DB_PATH", Path(self.tmp.name) / "contrib.db")
+        patcher = patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "contrib.db")
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
@@ -79,7 +80,7 @@ class ContributionStoreTest(unittest.TestCase):
 
     def test_legacy_schema_migrated(self) -> None:
         """旧库(无作者列)打开后自动补列,不影响既有数据。"""
-        conn = sqlite3.connect(c.DB_PATH)
+        conn = sqlite3.connect(db_sqlite.DB_PATH)
         conn.execute(
             "CREATE TABLE contributions (id TEXT PRIMARY KEY, source_work TEXT NOT NULL,"
             " target_work TEXT NOT NULL, evidence TEXT NOT NULL, evidence_source TEXT,"

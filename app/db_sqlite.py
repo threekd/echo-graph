@@ -1,0 +1,279 @@
+"""统一的 SQLite 连接层与 schema 迁移(策展 + 贡献 + 审计共用)。"""
+
+from __future__ import annotations
+
+import datetime as dt
+import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = ROOT / "data" / "echo-graph.db"
+
+
+def normalize_ts(value) -> str | None:
+    """时间戳归一:无时区按 UTC 处理,统一输出秒级 ISO-8601 +00:00;无法解析则原样保留。"""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return s
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.UTC)
+    else:
+        parsed = parsed.astimezone(dt.UTC)
+    return parsed.isoformat(timespec="seconds")
+
+
+def _connect() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+@contextmanager
+def _db() -> Iterator[sqlite3.Connection]:
+    """事务上下文:迁移 schema,正常退出提交,异常/结束关闭连接。"""
+    conn = _connect()
+    try:
+        _migrate(conn)
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def audit(conn: sqlite3.Connection, action: str, kind: str, row_id: str | None, detail: str = "") -> None:
+    """写一条审计记录(与业务写入同一事务)。"""
+    conn.execute(
+        "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail)"
+        " VALUES (?, 'admin', ?, ?, ?, ?)",
+        (dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), action, kind, row_id, detail),
+    )
+
+
+# ---- schema 迁移 ----
+
+# v1:与迁移前一致的建表(旧库 CREATE IF NOT EXISTS 幂等;新库照此创建)
+MIGRATION_V1 = [
+    """
+    CREATE TABLE IF NOT EXISTS authors (
+        id TEXT PRIMARY KEY,
+        originalName TEXT NOT NULL,
+        Name_CN TEXT NOT NULL,
+        Name_EN TEXT,
+        nationality TEXT,
+        birthYear INTEGER,
+        deathYear INTEGER,
+        reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS works (
+        id TEXT PRIMARY KEY,
+        language TEXT NOT NULL,
+        originalTitle TEXT NOT NULL,
+        Title_CN TEXT NOT NULL,
+        Title_EN TEXT,
+        Title_Other TEXT,
+        publicationYear INTEGER,
+        creationYear INTEGER,
+        genre TEXT CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL),
+        reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS work_authors (
+        work_id TEXT NOT NULL REFERENCES works(id),
+        author_id TEXT NOT NULL REFERENCES authors(id),
+        PRIMARY KEY (work_id, author_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS edges (
+        id TEXT PRIMARY KEY,
+        source_work_id TEXT NOT NULL REFERENCES works(id),
+        target_work_id TEXT NOT NULL REFERENCES works(id),
+        evidence TEXT NOT NULL,
+        evidenceSource TEXT,
+        note TEXT,
+        reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
+        createdAt TEXT,
+        updatedAt TEXT,
+        deletedAt TEXT,
+        UNIQUE (source_work_id, target_work_id),
+        CHECK (source_work_id <> target_work_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS contributions (
+        id TEXT PRIMARY KEY,
+        source_work TEXT NOT NULL,
+        target_work TEXT NOT NULL,
+        source_author TEXT NOT NULL,
+        target_author TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        evidence_source TEXT NOT NULL,
+        note TEXT,
+        contact TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT
+    )
+    """,
+    "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)",
+]
+
+
+def _migration_v2(conn: sqlite3.Connection) -> None:
+    """索引 + 审计表 + 时间戳归一。"""
+    conn.execute("CREATE TABLE IF NOT EXISTS audit_log ("
+                 " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                 " ts TEXT NOT NULL, actor TEXT NOT NULL DEFAULT 'admin',"
+                 " action TEXT NOT NULL, kind TEXT NOT NULL, row_id TEXT, detail TEXT)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_work_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_work_authors_author ON work_authors(author_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_contributions_status_created ON contributions(status, created_at)")
+
+    # 兼容旧库:contributions 若缺作者列则 ALTER 补齐
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(contributions)")}
+    if "source_author" not in cols:
+        conn.execute("ALTER TABLE contributions ADD COLUMN source_author TEXT NOT NULL DEFAULT ''")
+    if "target_author" not in cols:
+        conn.execute("ALTER TABLE contributions ADD COLUMN target_author TEXT NOT NULL DEFAULT ''")
+
+    # 时间戳归一(无时区按 UTC)
+    for table, cols in (
+        ("authors", ("createdAt", "updatedAt", "deletedAt")),
+        ("works", ("createdAt", "updatedAt", "deletedAt")),
+        ("edges", ("createdAt", "updatedAt", "deletedAt")),
+        ("contributions", ("created_at", "reviewed_at")),
+    ):
+        col_sql = ", ".join(f'"{c}"' for c in cols)
+        rows = conn.execute(f"SELECT id, {col_sql} FROM {table}").fetchall()
+        for r in rows:
+            updates = {c: normalize_ts(r[c]) for c in cols}
+            if all(updates[c] == r[c] for c in cols):
+                continue
+            conn.execute(
+                f"UPDATE {table} SET " + ", ".join(f'"{c}" = ?' for c in cols) + " WHERE id = ?",
+                [updates[c] for c in cols] + [r["id"]],
+            )
+
+
+def _migration_v3(conn: sqlite3.Connection) -> None:
+    """重建 works/edges 补 DB 级 CHECK(语言长度、证据长度),并校验外键。"""
+    conn.execute("""
+        CREATE TABLE works_v3 (
+            id TEXT PRIMARY KEY,
+            language TEXT NOT NULL CHECK (length(language) BETWEEN 2 AND 3),
+            originalTitle TEXT NOT NULL,
+            Title_CN TEXT NOT NULL,
+            Title_EN TEXT,
+            Title_Other TEXT,
+            publicationYear INTEGER,
+            creationYear INTEGER,
+            genre TEXT CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL),
+            reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
+            createdAt TEXT,
+            updatedAt TEXT,
+            deletedAt TEXT
+        )
+    """)
+    conn.execute(
+        "INSERT INTO works_v3 (id, language, originalTitle, Title_CN, Title_EN, Title_Other,"
+        " publicationYear, creationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt)"
+        " SELECT id, language, originalTitle, Title_CN, Title_EN, Title_Other,"
+        " publicationYear, creationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt FROM works"
+    )
+    conn.execute("DROP TABLE works")
+    conn.execute("ALTER TABLE works_v3 RENAME TO works")
+    conn.execute("""
+        CREATE TABLE edges_v3 (
+            id TEXT PRIMARY KEY,
+            source_work_id TEXT NOT NULL REFERENCES works(id),
+            target_work_id TEXT NOT NULL REFERENCES works(id),
+            evidence TEXT NOT NULL CHECK (length(evidence) <= 2000),
+            evidenceSource TEXT,
+            note TEXT,
+            reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
+            createdAt TEXT,
+            updatedAt TEXT,
+            deletedAt TEXT,
+            UNIQUE (source_work_id, target_work_id),
+            CHECK (source_work_id <> target_work_id)
+        )
+    """)
+    conn.execute(
+        "INSERT INTO edges_v3 (id, source_work_id, target_work_id, evidence, evidenceSource, note,"
+        " reviewStatus, createdAt, updatedAt, deletedAt)"
+        " SELECT id, source_work_id, target_work_id, evidence, evidenceSource, note,"
+        " reviewStatus, createdAt, updatedAt, deletedAt FROM edges"
+    )
+    conn.execute("DROP TABLE edges")
+    conn.execute("ALTER TABLE edges_v3 RENAME TO edges")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_work_id)")
+
+
+MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
+    (1, MIGRATION_V1),
+    (2, _migration_v2),
+    (3, _migration_v3),
+]
+
+
+def _current_version(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    try:
+        return int(row["value"]) if row else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    current = _current_version(conn)
+    if current >= max(v for v, _ in MIGRATIONS):
+        return
+    # 迁移使用显式事务;完成后恢复默认隔离级别供业务使用
+    conn.isolation_level = None
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for version, payload in MIGRATIONS:
+            if version <= current:
+                continue
+            conn.execute("BEGIN")
+            try:
+                if isinstance(payload, list):
+                    for stmt in payload:
+                        conn.execute(stmt)
+                else:
+                    payload(conn)
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+                (str(version),),
+            )
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.isolation_level = ""
+    bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if bad:
+        raise RuntimeError(f"迁移后外键校验失败:{bad}")

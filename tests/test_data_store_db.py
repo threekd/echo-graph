@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.data_store as ds
-import app.sqlite_store as store
+from app import db_sqlite
 
 
 def _rows():
@@ -39,7 +39,7 @@ class DataStoreDbTest(unittest.TestCase):
         self.real = Path(self.tmp.name) / "real"
         self.versions = Path(self.tmp.name) / "versions"
         self.real.mkdir()
-        patch.object(store, "DB_PATH", self.db).start()
+        patch.object(db_sqlite, "DB_PATH", self.db).start()
         patch.object(ds, "REAL_DIR", self.real).start()
         patch.object(ds, "VERSIONS_DIR", self.versions).start()
         self.addCleanup(self.tmp.cleanup)

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import app.admin as admin
+from app import db_sqlite, sqlite_store
 
 A1 = "01a013e6-e885-766b-b9db-315d518adeeb"
 W1 = "01a013e8-907e-77f3-83c6-bce355a36268"
@@ -39,6 +42,12 @@ class FakeNeo4j:
         self.echoes = echoes
 
     def _query(self, cypher: str, params=None):
+        if "author_count" in cypher:
+            return [{
+                "author_count": len(self.authors),
+                "work_count": len(self.works),
+                "echo_count": len(self.echoes),
+            }]
         if "labels(n) AS ls" in cypher:
             rows = []
             for a in self.authors:
@@ -85,6 +94,14 @@ def _neo_fixture():
 
 
 class SyncStatusTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "echo-graph.db").start()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _seed(self, fixture) -> None:
+        sqlite_store.rewrite_all(*fixture)
+
     def test_csv_payload_normalizes(self) -> None:
         with patch("app.admin.load_rows", return_value=_csv_fixture()):
             p = admin._source_sync_payload()
@@ -96,6 +113,7 @@ class SyncStatusTest(unittest.TestCase):
 
     def test_synced_when_equal(self) -> None:
         authors, works, authored, echoes = _neo_fixture()
+        self._seed(_csv_fixture())
         with (
             patch("app.admin.load_rows", return_value=_csv_fixture()),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),
@@ -107,6 +125,7 @@ class SyncStatusTest(unittest.TestCase):
         authors, works, authored, echoes = _neo_fixture()
         csv = _csv_fixture()
         csv[0][0]["Name_CN"] = "加缪(改名)"  # 只改 CSV,Neo4j 未同步
+        self._seed(csv)
         with (
             patch("app.admin.load_rows", return_value=csv),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),
@@ -119,6 +138,7 @@ class SyncStatusTest(unittest.TestCase):
         csv = _csv_fixture()
         csv[1][0]["id"] = "01a013e8-907e-77f3-83c6-bce48f19b60d"  # 新增作品,Neo4j 没有
         csv[1][0]["Title_CN"] = "婚礼"
+        self._seed(csv)
         with (
             patch("app.admin.load_rows", return_value=csv),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),

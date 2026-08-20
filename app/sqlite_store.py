@@ -2,68 +2,10 @@
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "echo-graph.db"
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS authors (
-    id TEXT PRIMARY KEY,
-    originalName TEXT NOT NULL,
-    Name_CN TEXT NOT NULL,
-    Name_EN TEXT,
-    nationality TEXT,
-    birthYear INTEGER,
-    deathYear INTEGER,
-    reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
-    createdAt TEXT,
-    updatedAt TEXT,
-    deletedAt TEXT
-);
-CREATE TABLE IF NOT EXISTS works (
-    id TEXT PRIMARY KEY,
-    language TEXT NOT NULL,
-    originalTitle TEXT NOT NULL,
-    Title_CN TEXT NOT NULL,
-    Title_EN TEXT,
-    Title_Other TEXT,
-    publicationYear INTEGER,
-    creationYear INTEGER,
-    genre TEXT CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL),
-    reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
-    createdAt TEXT,
-    updatedAt TEXT,
-    deletedAt TEXT
-);
-CREATE TABLE IF NOT EXISTS work_authors (
-    work_id TEXT NOT NULL REFERENCES works(id),
-    author_id TEXT NOT NULL REFERENCES authors(id),
-    PRIMARY KEY (work_id, author_id)
-);
-CREATE TABLE IF NOT EXISTS edges (
-    id TEXT PRIMARY KEY,
-    source_work_id TEXT NOT NULL REFERENCES works(id),
-    target_work_id TEXT NOT NULL REFERENCES works(id),
-    evidence TEXT NOT NULL,
-    evidenceSource TEXT,
-    note TEXT,
-    reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
-    createdAt TEXT,
-    updatedAt TEXT,
-    deletedAt TEXT,
-    UNIQUE (source_work_id, target_work_id),
-    CHECK (source_work_id <> target_work_id)
-);
-CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
+from app import db_sqlite
 
 AUTHOR_COLS = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -78,32 +20,99 @@ EDGE_COLS = [
     "id", "source_work_id", "target_work_id", "evidence", "evidenceSource",
     "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
-
-
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
-
-
-@contextmanager
-def _db() -> Iterator[sqlite3.Connection]:
-    """事务上下文:确保建表,正常退出提交,异常/结束关闭连接。"""
-    conn = _connect()
-    try:
-        conn.executescript(SCHEMA)
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+KIND_COLS = {"authors": AUTHOR_COLS, "works": WORK_COLS, "edges": EDGE_COLS}
+KIND_TABLE = {"authors": "authors", "works": "works", "edges": "edges"}
 
 
 def init_db() -> None:
-    with _db():
+    with db_sqlite._db():
         pass
+
+
+def _norm_row(row: dict) -> dict:
+    """reviewStatus 空值归一为 draft(NOT NULL 约束)。"""
+    out = dict(row)
+    out["reviewStatus"] = out.get("reviewStatus") or "draft"
+    return out
+
+
+# ---- 行级 CRUD(admin 写路径;由调用方在 db_sqlite._db 事务内使用) ----
+
+
+def get_row(conn, kind: str, row_id: str) -> dict | None:
+    row = conn.execute(f"SELECT * FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def insert_row(conn, kind: str, row: dict) -> None:
+    row = _norm_row(row)
+    cols = KIND_COLS[kind]
+    placeholders = ",".join("?" for _ in cols)
+    conn.execute(
+        f"INSERT INTO {KIND_TABLE[kind]} ({','.join(cols)}) VALUES ({placeholders})",
+        [row.get(c) for c in cols],
+    )
+
+
+def update_row(conn, kind: str, row_id: str, row: dict) -> bool:
+    row = _norm_row(row)
+    cols = [c for c in KIND_COLS[kind] if c != "id"]
+    cur = conn.execute(
+        f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?",
+        [row.get(c) for c in cols] + [row_id],
+    )
+    return cur.rowcount > 0
+
+
+def set_work_authors(conn, work_id: str, author_ids: list[str]) -> None:
+    conn.execute("DELETE FROM work_authors WHERE work_id = ?", (work_id,))
+    conn.executemany(
+        "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+        [(work_id, aid) for aid in author_ids],
+    )
+
+
+def mark_deleted(conn, kind: str, ids: list[str], deleted_at: str) -> int:
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    cur = conn.execute(
+        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ? WHERE id IN ({placeholders})",
+        [deleted_at] + list(ids),
+    )
+    return cur.rowcount
+
+
+def restore_by_ts(conn, kind: str, ids: list[str], ts: str, updated_at: str) -> int:
+    """按相同 deletedAt 时间戳恢复一批行(级联恢复)。"""
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    cur = conn.execute(
+        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = NULL, updatedAt = ?"
+        f" WHERE deletedAt = ? AND id IN ({placeholders})",
+        [updated_at, ts] + list(ids),
+    )
+    return cur.rowcount
+
+
+def active_counts() -> dict:
+    """活跃行数(供同步状态快速预检)。"""
+    with db_sqlite._db() as conn:
+        return {
+            "authors": conn.execute(
+                "SELECT count(*) AS c FROM authors WHERE deletedAt IS NULL"
+            ).fetchone()["c"],
+            "works": conn.execute(
+                "SELECT count(*) AS c FROM works WHERE deletedAt IS NULL"
+            ).fetchone()["c"],
+            "echoes": conn.execute(
+                "SELECT count(*) AS c FROM edges WHERE deletedAt IS NULL"
+            ).fetchone()["c"],
+        }
+
+
+# ---- 整库重写(迁移 / 恢复工具;普通写入请用行级 CRUD) ----
 
 
 def replace_all(author_models, work_models, echo_models, work_authors: dict[str, list[str]]) -> None:
@@ -116,7 +125,7 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
             [tuple(r[c] for c in cols) for r in rows],
         )
 
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         conn.execute("DELETE FROM work_authors")
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM works")
@@ -128,26 +137,18 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
             "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
             [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
         )
-        conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')"
-        )
 
 
 def rewrite_all(author_rows, work_rows, edge_rows) -> None:
-    """单事务整库重写(admin 保存路径):入参为与 load_rows 同形状的行 dict。"""
+    """单事务整库重写(恢复工具;admin 已改行级写入)。入参为与 load_rows 同形状的行 dict。"""
     def normalized(rows: list[dict]) -> list[dict]:
-        out = []
-        for r in rows:
-            row = dict(r)
-            row["reviewStatus"] = row.get("reviewStatus") or "draft"
-            out.append(row)
-        return out
+        return [_norm_row(r) for r in rows]
 
     author_rows = normalized(author_rows)
     work_rows = normalized(work_rows)
     edge_rows = normalized(edge_rows)
 
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         conn.execute("DELETE FROM work_authors")
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM works")
@@ -178,14 +179,11 @@ def rewrite_all(author_rows, work_rows, edge_rows) -> None:
             "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
             [(wid, aid.strip()) for wid, aid in work_authors],
         )
-        conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')"
-        )
 
 
 def list_all() -> dict:
     """返回与 CSV load_rows 同形状的行(works 行重组 author_id 逗号串)。"""
-    with _db() as conn:
+    with db_sqlite._db() as conn:
         authors = [dict(r) for r in conn.execute("SELECT * FROM authors ORDER BY id")]
         works = [dict(r) for r in conn.execute("SELECT * FROM works ORDER BY id")]
         edges = [dict(r) for r in conn.execute("SELECT * FROM edges ORDER BY id")]
@@ -200,7 +198,7 @@ def list_all() -> dict:
     return {"authors": authors, "works": works, "edges": edges, "work_authors": work_authors}
 
 
-# ---- 同步比对规范化(与 admin 的 CSV 侧共用,Phase 2 后 CSV 侧移除) ----
+# ---- 同步比对规范化(与 Neo4j 比对共用) ----
 
 
 def sync_norm(value):
@@ -282,8 +280,7 @@ def migrate_from_csv(db_path: Path | str, check: bool = True) -> dict:
     from app.data_models import parse_rows
     from app.data_store import load_csv_rows
 
-    global DB_PATH
-    DB_PATH = Path(db_path)
+    db_sqlite.DB_PATH = Path(db_path)
     authors, works, edges = load_csv_rows()
     author_models, work_models, echo_models, work_authors = parse_rows(authors, works, edges)
     replace_all(author_models, work_models, echo_models, work_authors)

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.sqlite_store as store
+from app import db_sqlite
 from app.data_models import parse_rows
 
 
@@ -35,7 +36,7 @@ class SqliteStoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "echo-graph.db"
-        patcher = patch.object(store, "DB_PATH", self.db_path)
+        patcher = patch.object(db_sqlite, "DB_PATH", self.db_path)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)

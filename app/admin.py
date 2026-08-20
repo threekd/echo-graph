@@ -18,12 +18,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app import db_sqlite, sqlite_store
 from app.contributions import list_contributions, set_status
 from app.data_models import find_duplicates, parse_rows
-from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, clean_row, load_rows, save_rows, snapshot
+from app.data_store import (
+    AUTHOR_HEADER,
+    EDGE_HEADER,
+    WORK_HEADER,
+    clean_row,
+    export_csv_files,
+    load_rows,
+    snapshot,
+)
 from app.db import get_store
 from app.importer import run_import
-from app.sqlite_store import canonical_payload, sync_norm
 
 _admin_bearer = HTTPBearer(auto_error=False)
 
@@ -104,10 +112,32 @@ def _author_ids_contain(value, author_id: str) -> bool:
     return any(v.strip() == author_id for v in str(value or "").split(",") if v.strip())
 
 
+def _author_id_list(value) -> list[str]:
+    """把 works.author_id(逗号分隔,可能带空格)拆成去空后的 id 列表。"""
+    return [x.strip() for x in str(value or "").split(",") if x.strip()]
+
+
 def _source_sync_payload() -> dict:
     """当前权威来源(SQLite)活跃数据的规范化载荷,用于与 Neo4j 比对。"""
     a, w, e = load_rows()
-    return canonical_payload(a, w, e)
+    return sqlite_store.canonical_payload(a, w, e)
+
+
+def _neo4j_counts() -> dict | None:
+    """Neo4j 活跃计数(单次查询);不可用时返回 None。"""
+    store = get_store()
+    primary = getattr(store, "primary", None)
+    if primary is None or getattr(primary, "name", None) != "neo4j":
+        return None
+    try:
+        row = primary._query(
+            "MATCH (a:Author) WITH count(a) AS author_count "
+            "MATCH (w:Work) WITH author_count, count(w) AS work_count "
+            "MATCH ()-[r:ECHO]->() RETURN author_count, work_count, count(r) AS echo_count"
+        )[0]
+    except Exception:  # noqa: BLE001 - Neo4j 不可用时视为无法比对
+        return None
+    return {"authors": row["author_count"], "works": row["work_count"], "echoes": row["echo_count"]}
 
 
 def _neo4j_sync_payload() -> dict | None:
@@ -138,41 +168,41 @@ def _neo4j_sync_payload() -> dict | None:
         ls = r.get("ls") or []
         if "Author" in ls:
             authors.append({
-                "id": sync_norm(p.get("id")),
-                "originalName": sync_norm(p.get("originalName")),
-                "Name_CN": sync_norm(p.get("Name_CN")),
-                "Name_EN": sync_norm(p.get("Name_EN")),
-                "nationality": sync_norm((p.get("nationality") or "").upper()),
-                "birthYear": sync_norm(p.get("birthYear")),
-                "deathYear": sync_norm(p.get("deathYear")),
-                "reviewStatus": sync_norm(p.get("reviewStatus") or "draft"),
+                "id": sqlite_store.sync_norm(p.get("id")),
+                "originalName": sqlite_store.sync_norm(p.get("originalName")),
+                "Name_CN": sqlite_store.sync_norm(p.get("Name_CN")),
+                "Name_EN": sqlite_store.sync_norm(p.get("Name_EN")),
+                "nationality": sqlite_store.sync_norm((p.get("nationality") or "").upper()),
+                "birthYear": sqlite_store.sync_norm(p.get("birthYear")),
+                "deathYear": sqlite_store.sync_norm(p.get("deathYear")),
+                "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
             })
         elif "Work" in ls:
             aids = [x for x in (r.get("author_ids") or []) if x]
             works.append({
-                "id": sync_norm(p.get("id")),
-                "language": sync_norm((p.get("language") or "").lower()),
-                "originalTitle": sync_norm(p.get("originalTitle")),
-                "Title_CN": sync_norm(p.get("Title_CN")),
-                "Title_EN": sync_norm(p.get("Title_EN")),
-                "Title_Other": sync_norm(p.get("Title_Other")),
-                "publicationYear": sync_norm(p.get("publicationYear")),
-                "creationYear": sync_norm(p.get("creationYear")),
-                "genre": sync_norm(p.get("genre")),
-                "reviewStatus": sync_norm(p.get("reviewStatus") or "draft"),
-                "author_ids": sorted(sync_norm(x) for x in aids),
+                "id": sqlite_store.sync_norm(p.get("id")),
+                "language": sqlite_store.sync_norm((p.get("language") or "").lower()),
+                "originalTitle": sqlite_store.sync_norm(p.get("originalTitle")),
+                "Title_CN": sqlite_store.sync_norm(p.get("Title_CN")),
+                "Title_EN": sqlite_store.sync_norm(p.get("Title_EN")),
+                "Title_Other": sqlite_store.sync_norm(p.get("Title_Other")),
+                "publicationYear": sqlite_store.sync_norm(p.get("publicationYear")),
+                "creationYear": sqlite_store.sync_norm(p.get("creationYear")),
+                "genre": sqlite_store.sync_norm(p.get("genre")),
+                "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
+                "author_ids": sorted(sqlite_store.sync_norm(x) for x in aids),
             })
     echoes = []
     for r in echo_rows:
         p = r["p"]
         echoes.append({
-            "id": sync_norm(p.get("id")),
-            "source": sync_norm(r["s"]),
-            "target": sync_norm(r["t"]),
-            "evidence": sync_norm(p.get("evidence")),
-            "evidenceSource": sync_norm(p.get("evidenceSource")),
-            "note": sync_norm(p.get("note")),
-            "reviewStatus": sync_norm(p.get("reviewStatus") or "draft"),
+            "id": sqlite_store.sync_norm(p.get("id")),
+            "source": sqlite_store.sync_norm(r["s"]),
+            "target": sqlite_store.sync_norm(r["t"]),
+            "evidence": sqlite_store.sync_norm(p.get("evidence")),
+            "evidenceSource": sqlite_store.sync_norm(p.get("evidenceSource")),
+            "note": sqlite_store.sync_norm(p.get("note")),
+            "reviewStatus": sqlite_store.sync_norm(p.get("reviewStatus") or "draft"),
         })
     return {
         "authors": sorted(authors, key=lambda x: x["id"]),
@@ -204,12 +234,16 @@ def get_data() -> dict:
 
 @router.get("/sync")
 def admin_sync() -> dict:
-    """CSV 与 Neo4j 的同步状态(独立接口,不拖慢管理数据加载)。"""
-    csv_payload = _source_sync_payload()
+    """SQLite 与 Neo4j 的同步状态(独立接口;计数不一致快速判定,一致才做全量比对)。"""
+    neo_counts = _neo4j_counts()
+    if neo_counts is None:
+        return {"synced": None}
+    if sqlite_store.active_counts() != neo_counts:
+        return {"synced": False}
+    source_payload = _source_sync_payload()
     neo_payload = _neo4j_sync_payload()
     return {
-        # Neo4j 不可用时为 None(前端不提示)
-        "synced": (csv_payload == neo_payload) if neo_payload is not None else None,
+        "synced": (source_payload == neo_payload) if neo_payload is not None else None,
     }
 
 
@@ -251,7 +285,12 @@ def create(kind: Kind, row: dict) -> dict:
     rows.append(row)
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
-    save_rows(cand["authors"], cand["works"], cand["edges"])
+    with db_sqlite._db() as conn:
+        sqlite_store.insert_row(conn, kind, row)
+        if kind == "works":
+            sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
+        db_sqlite.audit(conn, "create", kind, row.get("id"))
+    export_csv_files()
     return {
         "ok": True,
         "row": row,
@@ -285,7 +324,13 @@ def update(kind: Kind, item_id: str, row: dict) -> dict:
     cand[kind] = [row if r.get("id") == item_id else r for r in rows]
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
-    save_rows(cand["authors"], cand["works"], cand["edges"])
+    with db_sqlite._db() as conn:
+        if not sqlite_store.update_row(conn, kind, item_id, row):
+            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        if kind == "works":
+            sqlite_store.set_work_authors(conn, item_id, _author_id_list(row.get("author_id")))
+        db_sqlite.audit(conn, "update", kind, item_id)
+    export_csv_files()
     return {
         "ok": True,
         "row": row,
@@ -337,7 +382,18 @@ def delete(kind: Kind, item_id: str) -> dict:
 
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
-    save_rows(cand["authors"], cand["works"], cand["edges"])
+    with db_sqlite._db() as conn:
+        sqlite_store.mark_deleted(conn, kind, [item_id], now)
+        if kind == "works":
+            sqlite_store.mark_deleted(conn, "edges", cascade["edges"], now)
+        elif kind == "authors":
+            sqlite_store.mark_deleted(conn, "works", cascade["works"], now)
+            sqlite_store.mark_deleted(conn, "edges", cascade["edges"], now)
+        db_sqlite.audit(
+            conn, "delete", kind, item_id,
+            f"cascade works={len(cascade['works'])} edges={len(cascade['edges'])}",
+        )
+    export_csv_files()
     return {
         "ok": True,
         "deletedAt": now,
@@ -392,11 +448,23 @@ def restore(kind: Kind, item_id: str) -> dict:
             if r.get("id") in (row.get("source_work_id"), row.get("target_work_id")):
                 restore_row(r, cascade["works"])
 
-    row["deletedAt"] = None
-    row["updatedAt"] = now
     _validate(cand["authors"], cand["works"], cand["edges"])
     snapshot("admin")
-    save_rows(cand["authors"], cand["works"], cand["edges"])
+    with db_sqlite._db() as conn:
+        sqlite_store.restore_by_ts(conn, kind, [item_id], ts, now)
+        if kind == "works":
+            sqlite_store.restore_by_ts(conn, "edges", cascade["edges"], ts, now)
+        elif kind == "authors":
+            sqlite_store.restore_by_ts(conn, "works", cascade["works"], ts, now)
+            sqlite_store.restore_by_ts(conn, "edges", cascade["edges"], ts, now)
+        else:
+            # 恢复涟漪边:同批删除的源/目标作品一并恢复
+            sqlite_store.restore_by_ts(conn, "works", cascade["works"], ts, now)
+        db_sqlite.audit(
+            conn, "restore", kind, item_id,
+            f"cascade works={len(cascade['works'])} edges={len(cascade['edges'])}",
+        )
+    export_csv_files()
     return {
         "ok": True,
         "warnings": _warnings(cand["authors"], cand["works"], cand["edges"]),

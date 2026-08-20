@@ -55,6 +55,12 @@ function findNode(id: string, fullData?: GraphData): GraphNode | undefined {
   return fd.nodes.filter((n) => n.id === id)[0];
 }
 
+function countWorks(authorId: string): number {
+  return getState().fullData.nodes.filter(
+    (n) => n.type === "work" && workAuthorIds(n).includes(authorId)
+  ).length;
+}
+
 // ---- URL 状态同步:视图/过滤/扩散级数自动写入 hash,浏览器前进/后退可导航 ----
 // 相机位置不写入 URL(避免历史记录刷屏);旧版分享链接中的 cam= 仍由 App 解析兼容。
 let lastWrittenHash: string | null = null;
@@ -338,6 +344,15 @@ export function reRenderAuthor(opts?: ViewOpts) {
 export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promise<any> {
   const fullData = opts?.fullData || getState().fullData;
   dispatch({ type: "SET_PATH", from: fromId, to: toId });
+  const fromNode = findNode(fromId, fullData);
+  const toNode = findNode(toId, fullData);
+  dispatch({
+    type: "SET_PATH_INPUTS",
+    inputs: {
+      from: fromNode ? fromNode.label + " - " + (fromNode.author || "") : "",
+      to: toNode ? toNode.label + " - " + (toNode.author || "") : "",
+    },
+  });
   return findPath(fromId, toId).then((result: any) => {
     if (!result || !result.nodes || !result.nodes.length) return null;
     const nodes = result.nodes.map((id: string) => findNode(id, fullData)).filter(Boolean) as GraphNode[];
@@ -350,6 +365,7 @@ export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promi
       hideIslands: opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands,
       showAuthors: opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors,
     });
+    dispatch({ type: "SET_TOAST", msg: `提及链 · ${result.nodes.length} 本书 / ${result.edges.length} 次提及` });
     return result;
   }).catch((err) => {
     failToast(err);
@@ -368,10 +384,12 @@ export function selectNode(id: string) {
     workDetail(id).then((d) => {
       renderRipple(d);
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
+      dispatch({ type: "SET_TOAST", msg: "已展开《" + node.label + "》的涟漪" });
     }).catch(failToast);
   } else {
     renderAuthorView(node);
     dispatch({ type: "SET_PANEL", panel: { type: "author", author: node } });
+    dispatch({ type: "SET_TOAST", msg: "视图:作者 · " + node.label + "(" + countWorks(node.id) + " 部作品)" });
   }
 }
 

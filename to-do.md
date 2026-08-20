@@ -30,7 +30,7 @@
   - `GET /api/stats` 数据统计
 - [x] Neo4j Aura 数据导入与约束(index)
 - [x] 导入管线重构:`data/real/*.csv` 为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
-- [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV;每次保存自动版本快照(`data/versions/`)
+- [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;一键导入 Neo4j 并刷新图谱;导出 JSON/CSV(后端接口已提供,前端导出按钮未实现);每次保存自动版本快照(`data/versions/`)
 - [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复、导入 Neo4j;保存时自动版本快照(`data/versions/`)
 - [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
 - [x] 真实数据接入:`data/real/*.csv` 已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
@@ -66,6 +66,7 @@
 - [x] 扩散范围滑动条(1–8 级):拖动时保持当前视角,实时显示"N 级 · M 本书"
 - [x] 修复:中文输入法候选框弹出导致左侧栏误隐藏(输入聚焦/组合期间不隐藏)
 - [x] 扩散滑动条防抖(拖动时数值即时更新,停止 400ms 后再请求)
+- [x] 快捷键:搜索下拉 ↑↓ 选择、Enter 确认;路径输入回车查询(全局 Esc 返回主视图不再实现)
 
 ## 5. 布局与 UI
 
@@ -102,7 +103,7 @@
 - [x] TypeScript 迁移:全部 `src` 转 `.ts`/`.tsx`(strict + tsc --noEmit),接入 typescript-eslint 与 CI typecheck;tsconfig 单一来源
 - [x] 渲染器内核完全受控化:`viewData` 重新入 store 并被 GraphCanvas effect 消费;`graph.ts` 只计算并 dispatch(SET_VIEW / SET_VIEW_DATA / SET_CAMERA),不再直接调渲染器;renderer 退化为 `update(kind, data)` 纯执行器(相机由 `data.camera` 驱动,默认相机上移到 React 侧);移除 onViewChange 注入
 - [x] 作品关联改为按 id:`works.csv` 的 `Author`(名字)列迁移为 `author_id`(UUID,多人逗号分隔);后端按 id 校验关联,前端 AuthorPicker 按 id 选择;作者改名不再破坏作品关联(修复改名死锁)
-- [x] 数据管理页表格:表头点击排序(升降序循环 + 指示符)、筛选行(下拉:reviewStatus/国籍/体裁/语言;按列搜索框:作者中文名/原文名、作品中文名/原著标题/作者、涟漪源/目标作品,按显示值包含匹配)、删除状态筛选;逻辑抽为纯函数 `applyAdminQuery` 并补单测;新增 `?admin=1` 深链直达
+- [x] 数据管理页表格:表头点击排序(升降序循环 + 指示符)、筛选行(下拉:reviewStatus/国籍/体裁/语言;按列搜索框:作者中文名/原文名、作品中文名/原著标题/作者、涟漪源/目标作品,按显示值包含匹配);删除状态筛选 UI 已移除(纯函数 `applyAdminQuery` 保留能力并补单测);新增 `?admin=1` 深链直达
 - ⬜ 部署到个人VPS服务器
 
 ## 遗留与下一步建议

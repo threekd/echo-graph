@@ -348,15 +348,23 @@ function forceLayoutChunked(
   edges: ForceEdge[],
   callback: (pos: Record<string, THREE.Vector3>) => void
 ): void {
-  // 优先用 Worker 异步计算;不可用时回退到主线程分帧计算(共用 layout.js 算法)
+  // 优先用 Worker 异步计算;不可用或超时(8s)时回退到主线程分帧计算(共用 layout.ts 算法)
   if (typeof Worker !== "undefined") {
+    let worker: Worker | null = null;
+    let done = false;
     try {
-      const worker = new Worker(new URL("./layout.worker.ts", import.meta.url), { type: "module" });
-      let done = false;
-      worker.onmessage = function (ev) {
-        worker.terminate();
+      worker = new Worker(new URL("./layout.worker.ts", import.meta.url), { type: "module" });
+      const timeout = window.setTimeout(() => {
         if (done) return;
         done = true;
+        if (worker) worker.terminate();
+        forceLayoutMainThread(ids, edges, callback); // worker 悬挂超时,回退主线程
+      }, 8000);
+      worker.onmessage = function (ev) {
+        window.clearTimeout(timeout);
+        if (done) return;
+        done = true;
+        if (worker) worker.terminate();
         const pos: Record<string, THREE.Vector3> = {};
         Object.keys(ev.data.positions || {}).forEach(function (id) {
           const p = ev.data.positions[id];
@@ -365,9 +373,10 @@ function forceLayoutChunked(
         callback(pos);
       };
       worker.onerror = function () {
-        worker.terminate();
+        window.clearTimeout(timeout);
         if (done) return;
         done = true;
+        if (worker) worker.terminate();
         forceLayoutMainThread(ids, edges, callback);
       };
       worker.postMessage({ ids: ids, edges: edges });

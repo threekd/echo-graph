@@ -45,6 +45,8 @@ export interface AppState {
   currentAuthorId: string | null;
   pathFromId: string | null;
   pathToId: string | null;
+  // 深链 #v=path:... 打开后回填到侧边栏路径输入框的显示文本(书名 - 作者)
+  pathInputs: { from: string; to: string };
   storeName: string;
   hideIslands: boolean;
   showAuthors: boolean;
@@ -67,6 +69,7 @@ export const initialState: AppState = {
   currentAuthorId: null,
   pathFromId: null,
   pathToId: null,
+  pathInputs: { from: "", to: "" },
   storeName: "",
   hideIslands: false,
   showAuthors: true,
@@ -91,6 +94,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, currentAuthorId: action.id };
     case "SET_PATH":
       return { ...state, pathFromId: action.from, pathToId: action.to };
+    case "SET_PATH_INPUTS":
+      return { ...state, pathInputs: action.inputs };
     case "SET_STORE":
       return { ...state, storeName: action.name };
     case "SET_CAMERA":

@@ -34,7 +34,6 @@ class ApiSmokeTest(unittest.TestCase):
             "/api/stats",
             "/api/health",
             "/assets/{path:path}",
-            "/vendor/{path:path}",
         ):
             self.assertIn(expected, paths)
 
@@ -71,11 +70,27 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(r.stats()["store"], "neo4j")
         self.assertEqual(r.stats()["fallbacks"], 0)
 
+    def test_resilient_store_fallback_error_returns_empty(self) -> None:
+        """Neo4j 与 JSON 兜底都失败时,返回安全空结果而不是抛 500。"""
+
+        class BoomPrimary:
+            name = "neo4j"
+
+            def graph(self, status=None):
+                raise RuntimeError("neo4j down")
+
+        class BoomFallback:
+            def graph(self, status=None):
+                raise RuntimeError("json down")
+
+        r = db.ResilientStore(BoomPrimary(), BoomFallback())
+        self.assertEqual(r.graph(), {"nodes": [], "edges": []})
+        self.assertEqual(r.fallback_count(), 1)
+
     def test_static_serving_rejects_path_traversal(self) -> None:
         cases = [
             (main.frontend_assets, "../../../pyproject.toml"),
             (main.frontend_assets, "..%2f..%2f.env"),
-            (main.frontend_vendor, "..\\..\\..\\pyproject.toml"),
             (main.frontend_assets, ""),
         ]
         for fn, path in cases:

@@ -20,7 +20,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Echo Graph 数据导入")
     parser.add_argument("--source", choices=["csv"], default="csv")
     parser.add_argument("--wipe", action="store_true", help="全量重建(删除旧数据)")
-    parser.add_argument("--version", default="1.0", help="数据集版本号")
+    parser.add_argument("--version", default="1.1", help="数据集版本号")
     parser.add_argument("--no-snapshot", action="store_true", help="跳过快照导出")
     args = parser.parse_args()
 

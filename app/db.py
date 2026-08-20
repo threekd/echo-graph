@@ -1,8 +1,9 @@
 """Data access layer for Echo Graph.
 
 Primary store is Neo4j (per README architecture). If Neo4j is unreachable,
-the app transparently falls back to the bundled demo JSON dataset so the demo
-always works. Set ECHO_STORE=json to force the JSON store.
+the app transparently falls back to the JSON in-memory store (bundled snapshot
+if data/seed.json exists, otherwise an empty graph). Set ECHO_STORE=json to
+force the JSON store.
 
 软删除(soft delete)只在 CSV 数据层表达:data/real/*.csv 中 deletedAt 非空的
 行在导入时直接从 Neo4j 中物理移除(DETACH DELETE),因此图中只存在活跃数据,
@@ -666,7 +667,29 @@ class ResilientStore:
             if now - self._last_warn_at >= 60:
                 logger.warning("Neo4j query '%s' failed (%s); falling back to JSON for this request", name, exc)
                 self._last_warn_at = now
-            return getattr(self.fallback, name)(*args, **kwargs)
+            try:
+                return getattr(self.fallback, name)(*args, **kwargs)
+            except Exception as fb_exc:  # noqa: BLE001 - 兜底自身出错时返回安全空结果
+                logger.error("JSON fallback for '%s' also failed (%s)", name, fb_exc)
+                return self._empty_result(name)
+
+    def _empty_result(self, name: str) -> Any:
+        """兜底也失败时的安全空结果,避免接口直接 500。"""
+        if name == "graph":
+            return {"nodes": [], "edges": []}
+        if name == "search":
+            return []
+        if name == "stats":
+            return {
+                "authors": 0,
+                "works": 0,
+                "echo_edges": 0,
+                "store": "json",
+                "demo": False,
+                "fallbacks": self._fallbacks,
+                "reviewStatus": {"authors": {}, "works": {}, "edges": {}},
+            }
+        return None  # path / work_detail / expansion
 
     def graph(self, status: str | None = None) -> dict:
         return self._call("graph", status)

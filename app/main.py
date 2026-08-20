@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 STATIC_BASES = {
     "assets": FRONTEND_DIST / "assets",
-    "vendor": FRONTEND_DIST / "vendor",
 }
 
 
@@ -74,11 +73,6 @@ def _serve_static(kind: str, path: str) -> FileResponse:
 @app.get("/assets/{path:path}")
 def frontend_assets(path: str) -> FileResponse:
     return _serve_static("assets", path)
-
-
-@app.get("/vendor/{path:path}")
-def frontend_vendor(path: str) -> FileResponse:
-    return _serve_static("vendor", path)
 
 
 @app.get("/api/stats")

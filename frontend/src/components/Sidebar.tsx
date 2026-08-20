@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ChangeEvent } from "react";
+import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
 import { search } from "../lib/api";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
@@ -14,23 +14,78 @@ export default function Sidebar() {
   const [to, setTo] = useState("");
   const [fromOpen, setFromOpen] = useState(false);
   const [toOpen, setToOpen] = useState(false);
+  const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lookups = useRef<WorkLookups>({ workLookup: {}, workById: {}, options: [] });
-  const expandText = state.expandHops + " 级";
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const composingRef = useRef(false);
+  const currentViewRef = useRef(state.currentView);
+  currentViewRef.current = state.currentView;
+  // 扩散滑条标签:当前视图(涟漪/作者)数据中的作品数
+  const expandWorks = state.viewData.nodes.filter((n) => n.type === "work").length;
+  const expandText = state.expandHops + " 级 · " + expandWorks + " 本书";
 
   useEffect(() => {
     lookups.current = buildWorkLookups(state.fullData);
   }, [state.fullData]);
 
+  // 深链 #v=path:... 打开后回填路径输入框
+  useEffect(() => {
+    if (state.pathInputs.from) setFrom(state.pathInputs.from);
+    if (state.pathInputs.to) setTo(state.pathInputs.to);
+  }, [state.pathInputs]);
+
   useEffect(() => {
     if (!q.trim()) { setQResults([]); return; }
     const t = setTimeout(() => {
       search(q.trim())
-        .then((r) => setQResults(r.hits || []))
+        .then((r) => { setQResults(r.hits || []); setQActive(-1); })
         .catch(() => { setQResults([]); dispatch({ type: "SET_TOAST", msg: "搜索失败" }); });
     }, 200);
     return () => clearTimeout(t);
   }, [q, dispatch]);
+
+  // 输入聚焦或中文输入法组合期间不隐藏侧栏(候选框弹出时鼠标已不在侧栏内)
+  useEffect(() => {
+    const panel = sidebarRef.current;
+    if (!panel) return;
+    const onCompositionStart = () => { composingRef.current = true; };
+    const onCompositionEnd = () => { composingRef.current = false; };
+    panel.addEventListener("compositionstart", onCompositionStart, true);
+    panel.addEventListener("compositionend", onCompositionEnd, true);
+    return () => {
+      panel.removeEventListener("compositionstart", onCompositionStart, true);
+      panel.removeEventListener("compositionend", onCompositionEnd, true);
+    };
+  }, []);
+
+  const keepSidebarOpen = () => {
+    const ae = document.activeElement;
+    return composingRef.current || (!!ae && !!sidebarRef.current && sidebarRef.current.contains(ae));
+  };
+
+  const chooseHit = (h: any) => {
+    setQ(h.label);
+    setQResults([]);
+    setQActive(-1);
+    selectNode(h.id);
+  };
+
+  // 搜索下拉键盘导航:↑↓ 选择,Enter 确认
+  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const n = qResults.length;
+    if (!n) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setQActive((v) => (v + 1) % n);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setQActive((v) => (v - 1 + n) % n);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      chooseHit(qActive >= 0 && qActive < n ? qResults[qActive] : qResults[0]);
+    }
+  };
 
   const doPath = () => {
     const fid = lookups.current.workLookup[from.trim()];
@@ -53,7 +108,7 @@ export default function Sidebar() {
     dispatch({ type: "SET_EXPAND", value: hops });
     if (expandTimer.current) clearTimeout(expandTimer.current);
     expandTimer.current = setTimeout(() => {
-      if (state.currentView === "author") expandAuthorDebounced(hops);
+      if (currentViewRef.current === "author") expandAuthorDebounced(hops);
       else expandRippleDebounced(hops);
     }, 400);
   };
@@ -86,6 +141,7 @@ export default function Sidebar() {
     const value = e.target.checked;
     dispatch({ type: "SET_SHOW_AUTHORS", value });
     rerenderCurrentView({ showAuthors: value });
+    dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点" });
   };
 
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
@@ -109,7 +165,9 @@ export default function Sidebar() {
       <div id="sidebar-zone-left"><span className="zone-icon">◀</span></div>
       <aside
         id="sidebar-left"
+        ref={sidebarRef}
         onMouseLeave={(e) => {
+          if (keepSidebarOpen()) return; // 输入聚焦/输入法组合期间不隐藏
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) e.currentTarget.classList.remove("show");
         }}
       >
@@ -130,11 +188,26 @@ export default function Sidebar() {
             返回全部图谱
           </button>
           <div className="field">
-            <input id="q" value={q} placeholder="搜索作家 / 作品…" onChange={(e) => setQ(e.target.value)} />
+            <input
+              id="q"
+              value={q}
+              placeholder="搜索作家 / 作品…"
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={onSearchKeyDown}
+              onBlur={() => {
+                // 点击外部关闭下拉(150ms 让点击项先触发,onMouseDown preventDefault 已阻止失焦)
+                setTimeout(() => { setQResults([]); setQActive(-1); }, 150);
+              }}
+            />
             {qResults.length > 0 && (
               <ul id="q-results" style={{ display: "block" }}>
-                {qResults.map((h) => (
-                  <li key={h.id} onClick={() => { setQ(h.label); setQResults([]); selectNode(h.id); }}>
+                {qResults.map((h, i) => (
+                  <li
+                    key={h.id}
+                    className={i === qActive ? "active" : undefined}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => chooseHit(h)}
+                  >
                     <strong>{h.label}</strong> <small>{h.sub || ""}</small>
                   </li>
                 ))}
@@ -151,7 +224,10 @@ export default function Sidebar() {
                   onChange={(e) => setFrom(e.target.value)}
                   onFocus={() => setFromOpen(true)}
                   onBlur={() => setFromOpen(false)}
-                  onKeyDown={(e) => { if (e.key === "Escape") setFromOpen(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setFromOpen(false);
+                    if (e.key === "Enter") { e.preventDefault(); doPath(); }
+                  }}
                 />
                 {fromOpen && filterOptions(from).length > 0 && (
                   <ul id="from-results" style={{ display: "block" }}>
@@ -179,7 +255,10 @@ export default function Sidebar() {
                   onChange={(e) => setTo(e.target.value)}
                   onFocus={() => setToOpen(true)}
                   onBlur={() => setToOpen(false)}
-                  onKeyDown={(e) => { if (e.key === "Escape") setToOpen(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setToOpen(false);
+                    if (e.key === "Enter") { e.preventDefault(); doPath(); }
+                  }}
                 />
                 {toOpen && filterOptions(to).length > 0 && (
                   <ul id="to-results" style={{ display: "block" }}>

@@ -51,8 +51,9 @@ let resizeContainer: HTMLElement | null = null;
 let zoneTouchStartX = 0;
 let zoneTouchStartY = 0;
 let zoneVerticalUp = false;
-// 自然转动(空闲自动旋转)速度:手机端稍快,桌面保持原速
-const AUTO_ROTATE_SPEED = window.matchMedia("(max-width: 768px)").matches ? 0.0024 : 0.0016;
+// 移动端渲染开关(窄屏判断)
+const IS_MOBILE_RENDER = window.matchMedia("(max-width: 768px)").matches;
+const AUTO_ROTATE_SPEED = IS_MOBILE_RENDER ? 0.0024 : 0.0016; // 手机端自然转动稍快
 
 export function setOnCameraChange(fn: (cam: CameraState) => void) {
   onCameraChange = fn;
@@ -445,6 +446,24 @@ function pathLayout(data: GraphData): Record<string, THREE.Vector3> {
   return positions;
 }
 
+// 手机端进入节点视图(涟漪/作者/路径)时,按节点包围球自动调整相机距离,
+// 避免窄屏横向视野下默认视角过近(占满甚至溢出屏幕)
+function autoFitViewRadius(kind: string): void {
+  if (!IS_MOBILE_RENDER || kind === "main") return;
+  let maxR = 0;
+  Object.keys(positions).forEach(function (id) {
+    const r = positions[id].length();
+    if (r > maxR) maxR = r;
+  });
+  if (maxR <= 0) return;
+  const halfV = (camera.fov * Math.PI) / 360;
+  const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+  const halfFit = Math.min(halfV, halfH); // 窄屏时横向视野是限制维度
+  cameraState.radius = Math.max(50, Math.min(8000, (maxR / Math.sin(halfFit)) * 1.15));
+  applyCamera();
+  syncCameraToStore();
+}
+
 // =============================== 视图管理 ===============================
 
 function disposeGroup(g: THREE.Group): void {
@@ -600,12 +619,14 @@ export function update(kind: string, data: GraphData): void {
         syncScene(data);
         currentKind = kind;
         finalize();
+        autoFitViewRadius(kind);
       });
     } else {
       positions = layoutFor(kind, data);
       syncScene(data);
       currentKind = kind;
       finalize();
+      autoFitViewRadius(kind);
     }
     return;
   }
@@ -618,6 +639,7 @@ export function update(kind: string, data: GraphData): void {
       buildScene(data);
       currentKind = kind;
       finalize();
+      autoFitViewRadius(kind);
     });
     return;
   }
@@ -625,6 +647,7 @@ export function update(kind: string, data: GraphData): void {
   buildScene(data);
   currentKind = kind;
   finalize();
+  autoFitViewRadius(kind);
 }
 
 function isolatedWorkIds(data: GraphData): Record<string, boolean> {

@@ -123,6 +123,37 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(s["reviewStatus"]["edges"]["reviewed"], 1)
         self.assertEqual(s["reviewStatus"]["edges"]["draft"], 2)
 
+    def test_reviewed_only_public_filter(self) -> None:
+        """公开视图(reviewed_only)只暴露审核通过的内容。"""
+        a, w, e = _fixture()
+        for row in a:
+            row["reviewStatus"] = "reviewed"
+        w[0]["reviewStatus"] = "reviewed"  # 只有局外人 reviewed
+        sqlite_store.rewrite_all(a, w, e)
+        store = db.SqliteStore(reviewed_only=True)
+
+        g = store.graph()
+        works = [n["id"] for n in g["nodes"] if n["type"] == "work"]
+        self.assertEqual(works, [W1])
+        echo_edges = [ed for ed in g["edges"] if ed["type"] == "echo"]
+        self.assertEqual(len(echo_edges), 1)  # 只有 e1 是 reviewed
+
+        self.assertEqual(store.search("狂人"), [])  # 草稿作品不可搜索
+        self.assertIsNone(store.work_detail(W2))  # 草稿作品详情 404
+        d = store.work_detail(W1)
+        self.assertEqual(len(d["mentions"]), 1)
+        self.assertIsNone(store.path(W1, W2, 5))  # 草稿作品不可作为路径端点
+
+        s = store.stats()
+        self.assertEqual(s["authors"], 2)
+        self.assertEqual(s["works"], 1)
+        self.assertEqual(s["echo_edges"], 1)
+
+    def test_reviewed_only_off_by_default(self) -> None:
+        """默认(未开 PUBLIC_REVIEWED_ONLY)仍返回全部状态。"""
+        store = db.SqliteStore(reviewed_only=False)
+        self.assertEqual(store.stats()["works"], 4)
+
     def test_close_is_noop(self) -> None:
         self.store.close()  # 无连接池,不应抛错;后续查询仍可用
         self.assertEqual(len(self.store.graph()["nodes"]), 6)

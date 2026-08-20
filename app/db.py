@@ -7,6 +7,7 @@ Neo4j 查询层与 JSON 兜底(seed.json)已退役(见 docs/sqlite-migration.md)
 
 from __future__ import annotations
 
+import os
 from collections import deque
 
 from app import db_sqlite
@@ -110,9 +111,24 @@ class SqliteStore:
 
     每次查询读取活跃(未软删除)数据;当前规模下开销可忽略,
     数据量增长后可在此层加进程内缓存(写入时失效)。
+
+    reviewed_only(公开视图):为 True 时所有公开接口只返回 reviewStatus=reviewed
+    的内容(草稿/驳回不可见)。默认读取环境变量 PUBLIC_REVIEWED_ONLY
+    (取值 1 / true / yes / on 开启),部署时在 .env 中配置。
     """
 
     name = "sqlite"
+
+    def __init__(self, reviewed_only: bool | None = None) -> None:
+        if reviewed_only is None:
+            reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        self.reviewed_only = reviewed_only
+
+    def _effective_status(self, status: str | None) -> str | None:
+        """公开视图强制 reviewed;内部/管理场景沿用显式 status。"""
+        return "reviewed" if self.reviewed_only else status
 
     def close(self) -> None:
         """无连接池,无需清理。"""
@@ -154,6 +170,7 @@ class SqliteStore:
 
     def graph(self, status: str | None = None) -> dict:
         authors, works, edges, work_authors = self._tables()
+        status = self._effective_status(status)
         if status:
             authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
             works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
@@ -175,6 +192,9 @@ class SqliteStore:
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
         authors, works, _, work_authors = self._tables()
+        if self.reviewed_only:
+            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == "reviewed"]
+            works = [w for w in works if (w.get("reviewStatus") or "draft") == "reviewed"]
         ql = q.lower()
         authors_by_id = {a["id"]: a for a in authors}
         hits: list[dict] = []
@@ -210,6 +230,10 @@ class SqliteStore:
 
     def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
         _, works, edges, _ = self._tables()
+        status = self._effective_status(None)
+        if status:
+            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
+            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
         work_ids = {w["id"] for w in works}
         if from_id not in work_ids or to_id not in work_ids:
             return None
@@ -257,6 +281,10 @@ class SqliteStore:
         w = next((x for x in works if x["id"] == work_id), None)
         if w is None:
             return None
+        if self.reviewed_only and (w.get("reviewStatus") or "draft") != "reviewed":
+            return None
+        if self.reviewed_only:
+            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == "reviewed"]
         works_by_id = {x["id"]: x for x in works}
         authors_by_id = {a["id"]: a for a in authors}
 
@@ -299,6 +327,11 @@ class SqliteStore:
     def expansion(self, work_id: str, hops: int) -> dict | None:
         """以 work_id 为中心,沿 ECHO 关系(无向)向外扩散 hops 级,返回子图。"""
         authors, works, edges, work_authors = self._tables()
+        status = self._effective_status(None)
+        if status:
+            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
+            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
+            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
         works_by_id = {w["id"]: w for w in works}
         if work_id not in works_by_id:
             return None
@@ -335,6 +368,11 @@ class SqliteStore:
 
     def stats(self) -> dict:
         authors, works, edges, _ = self._tables()
+        status = self._effective_status(None)
+        if status:
+            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
+            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
+            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
 
         def status_counts(items: list[dict]) -> dict[str, int]:
             counts = {"draft": 0, "reviewed": 0, "rejected": 0}

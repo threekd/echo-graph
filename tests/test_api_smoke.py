@@ -48,6 +48,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/contribute/echo", paths)
         self.assertIn("/api/admin/contributions", paths)
         self.assertIn("/api/admin/data", paths)
+        self.assertIn("/api/admin/backups", paths)
         self.assertIn("/api/admin/audit", paths)
 
     def test_version_matches_pyproject(self) -> None:

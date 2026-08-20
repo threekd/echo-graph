@@ -91,4 +91,4 @@ export interface AdminData {
 }
 
 export type AdminKind = "authors" | "works" | "edges";
-export type AdminTab = AdminKind | "contributions" | "audit";
+export type AdminTab = AdminKind | "contributions" | "audit" | "snapshots";

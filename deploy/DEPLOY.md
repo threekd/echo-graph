@@ -15,8 +15,9 @@ data/export/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)�
 ## 0. 上线前决策(请逐项确认)
 
 1. **域名与备案**:VPS 对外提供 80/443 服务,国内机房绑定域名需 ICP 备案;不想备案可选香港/新加坡 VPS。
-2. **公开数据范围**:`/api/graph` 默认返回全部审核状态;若希望线上只展示 `reviewed`,
-   需要增加"公开视图只返回 reviewed"的过滤(需改代码)。
+2. **公开数据范围**:公开接口默认返回全部审核状态(便于管理/开发);
+   **已在代码内置方案**——在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1`,公开视图即只返回
+   `reviewed` 内容(草稿/驳回不可见)。上线前请逐条人工审核并置 `reviewed`,再决定是否开启。
 3. **ADMIN_TOKEN**:生成强随机值,例如 `openssl rand -hex 32`,写入 `/opt/echo-graph/.env`。
 
 ## 1. 准备仓库
@@ -40,6 +41,7 @@ sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 
 ```bash
 sudo nano /opt/echo-graph/.env          # 填入 ADMIN_TOKEN
+# 可选:若只展示已审核内容,追加 PUBLIC_REVIEWED_ONLY=1
 sudo systemctl start echo-graph
 curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"sqlite"}
 ```
@@ -93,6 +95,10 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 | CSV 导出 `data/export/*.csv` | git 仓库 | push 到远端即备份 |
 | 编辑版本快照 `data/versions/` | VPS 本地 | `deploy.sh` 打包;建议 rsync(历史遗留,新代码不再写入) |
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
+
+> **快照恢复入口**:管理端「数据管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
+> `backups/` 的 SQLite 备份与 `data/versions/` 的历史 CSV 目录;恢复前会自动为当前库
+> 做安全备份,恢复后自动重新导出 CSV。
 
 如需要每日自动备份,可加一条 cron(复用 deploy.sh 里的 backup 逻辑):
 

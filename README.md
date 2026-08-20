@@ -118,6 +118,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。编辑保存后立即写入 SQLite 并自动导出 CSV。
 
+**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)与 `data/versions/`(历史 CSV 目录,校验后重建)下的快照——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
+
 > **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/echo-graph.db` 内 `contributions` 表),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(查看/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流)。
 
 策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、审计记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。

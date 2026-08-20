@@ -5,6 +5,7 @@ import type { AdminData, AdminTab } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
 import ContributionsPanel from "./admin/ContributionsPanel";
+import SnapshotsPanel from "./admin/SnapshotsPanel";
 import {
   AuthorPicker,
   CodePicker,
@@ -34,6 +35,7 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "edges", label: "涟漪" },
   { key: "contributions", label: "贡献" },
   { key: "audit", label: "审计" },
+  { key: "snapshots", label: "快照" },
 ];
 
 const COLS: Record<AdminTab, { key: string; label: string }[]> = {
@@ -58,6 +60,7 @@ const COLS: Record<AdminTab, { key: string; label: string }[]> = {
   ],
   contributions: [],
   audit: [],
+  snapshots: [],
 };
 
 // 表单字段配置
@@ -93,6 +96,7 @@ const FIELDS: Record<AdminTab, any[]> = {
   ],
   contributions: [],
   audit: [],
+  snapshots: [],
 };
 
 function contributionStatusLabel(s: string): string {
@@ -267,7 +271,7 @@ export default function Admin() {
   // Tab 角标计数:贡献/审计为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
     if (k === "contributions") return String(contribCount);
-    if (k === "audit") return "";
+    if (k === "audit" || k === "snapshots") return "";
     return counts[k] != null ? String(counts[k]) : (data ? String((data[k] || []).length) : "");
   };
 
@@ -296,6 +300,7 @@ export default function Admin() {
     ],
     contributions: [],
     audit: [],
+    snapshots: [],
   };
   const uniqueValues = (key: string): string[] =>
     Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -488,6 +493,7 @@ export default function Admin() {
     edges: [],
     contributions: [],
     audit: [],
+    snapshots: [],
   };
   const selfId = modal?.mode === "edit" ? modal.row.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {
@@ -540,7 +546,7 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "contributions" && kind !== "audit" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "contributions" && kind !== "audit" && kind !== "snapshots" && <button onClick={openAdd}>＋ 新增</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -635,6 +641,8 @@ export default function Admin() {
               onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
               onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
             />
+          ) : kind === "snapshots" ? (
+            <SnapshotsPanel authFetch={authFetch} />
           ) : loading ? <p>加载中…</p> : (
             <AdminTable
               kind={kind}

@@ -67,13 +67,18 @@ def _write_csv(path: Path, header: list[str], rows: list[dict]) -> None:
             os.unlink(tmp)
 
 
+def load_csv_rows_from(target_dir: Path) -> tuple[list[dict], list[dict], list[dict]]:
+    """从指定目录读取三份 CSV(迁移 / 快照恢复用)。"""
+    return (
+        _read_csv(target_dir / "authors.csv"),
+        _read_csv(target_dir / "works.csv"),
+        _read_csv(target_dir / "edges.csv"),
+    )
+
+
 def load_csv_rows() -> tuple[list[dict], list[dict], list[dict]]:
     """从 data/export/*.csv 读取(迁移 / 恢复用,权威来源是 SQLite)。"""
-    return (
-        _read_csv(EXPORT_DIR / "authors.csv"),
-        _read_csv(EXPORT_DIR / "works.csv"),
-        _read_csv(EXPORT_DIR / "edges.csv"),
-    )
+    return load_csv_rows_from(EXPORT_DIR)
 
 
 def export_csv_files(target_dir: Path | None = None) -> None:

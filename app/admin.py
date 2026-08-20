@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import db_sqlite, sqlite_store
+from app.backups import create_snapshot, list_snapshots, restore_snapshot
 from app.contributions import list_contributions, set_status
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
 from app.data_store import (
@@ -142,6 +143,37 @@ def get_data(
             },
         },
     }
+
+
+@router.get("/backups")
+def admin_backups() -> dict:
+    """可恢复的快照/备份列表(backups/ 与 data/versions/)。"""
+    return {"items": list_snapshots()}
+
+
+@router.post("/backups/create")
+def admin_create_backup() -> dict:
+    """为当前权威库创建一份快照(backups/echo-graph-<ts>.db)。"""
+    try:
+        return create_snapshot()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
+        raise HTTPException(status_code=500, detail=f"创建快照失败:{exc}") from exc
+
+
+@router.post("/backups/restore")
+def admin_restore(body: dict) -> dict:
+    """把指定快照恢复到权威库;恢复前自动安全备份当前库,成功后重新导出 CSV。"""
+    name = str((body or {}).get("file") or "").strip()
+    try:
+        result = restore_snapshot(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"恢复失败:\n{exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
+        raise HTTPException(status_code=500, detail=f"恢复失败:{exc}") from exc
+    export_csv_files()
+    return result
 
 
 @router.post("/{kind}")

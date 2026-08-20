@@ -155,7 +155,7 @@ export default function Contribute() {
         }
         setForm({ ...EMPTY });
         dispatch({ type: "SET_CONTRIBUTE", open: false });
-        dispatch({ type: "SET_TOAST", msg: d.msg || "提交成功,审核通过后展示" });
+        dispatch({ type: "SET_TOAST", msg: d.msg || "提交成功,审核通过后展示", kind: "success" });
       })
       .catch((e) => setError("请求失败: " + e.message))
       .finally(() => setBusy(false));

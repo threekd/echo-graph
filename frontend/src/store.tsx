@@ -34,6 +34,13 @@ export interface PanelState {
   [key: string]: any;
 }
 
+export type ToastKind = "success" | "info" | "error";
+
+export interface ToastPayload {
+  msg: string;
+  kind: ToastKind;
+}
+
 export interface AppState {
   fullData: GraphData;
   // 当前视图的绘制数据(受控化的单一事实来源):由 graph.ts 计算后 dispatch,
@@ -52,7 +59,7 @@ export interface AppState {
   showAuthors: boolean;
   expandHops: number;
   panel: PanelState;
-  toast: string | null;
+  toast: ToastPayload | null;
   adminOpen: boolean;
   adminReady: boolean; // 令牌有效时置 true,驱动"数据管理"按钮显隐
   contributeOpen: boolean; // "贡献数据"弹窗
@@ -113,7 +120,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_PANEL":
       return { ...state, panel: action.panel };
     case "SET_TOAST":
-      return { ...state, toast: action.msg };
+      // 所有 toast 统一顶部展示(Toast 组件按 kind 区分配色);未指定类型时按 info 处理
+      return {
+        ...state,
+        toast: action.msg ? { msg: action.msg, kind: action.kind || "info" } : null,
+      };
     case "SET_ADMIN":
       return { ...state, adminOpen: action.open };
     case "SET_ADMIN_READY":

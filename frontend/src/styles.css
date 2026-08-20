@@ -380,7 +380,7 @@ button.ghost { color: var(--muted); }
 
 #toast {
   position: fixed;
-  bottom: 28px;
+  top: calc(16px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
@@ -394,11 +394,17 @@ button.ghost { color: var(--muted); }
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease, transform 0.25s ease;
-  transform: translateX(-50%) translateY(8px);
+  transform: translateX(-50%) translateY(-12px);
 }
 #toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* 成功类提示绿色点缀(位置与 info/error 一样都在顶部) */
+#toast.success {
+  border-color: rgba(110, 231, 183, 0.45);
+  box-shadow: 0 0 24px rgba(110, 231, 183, 0.22);
 }
 
 #guide {
@@ -1034,9 +1040,6 @@ th.sortable.active .sort-icon {
     padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
-  #toast {
-    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  }
   #guide .guide-card {
     max-width: calc(100vw - 24px);
     padding: 24px 20px;

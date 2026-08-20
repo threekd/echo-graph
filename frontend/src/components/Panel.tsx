@@ -170,9 +170,14 @@ export default function Panel() {
 
   useEffect(() => {
     const el = document.getElementById("panel");
-    if (el && panel.type !== "empty") {
-      el.classList.add("show");
-      scheduleHide(); // 展示时启动倒计时,鼠标移入面板会取消
+    if (el) {
+      if (panel.type !== "empty") {
+        el.classList.add("show");
+        scheduleHide(); // 展示时启动倒计时,鼠标移入面板会取消
+      } else {
+        el.classList.remove("show"); // 内容置空时收起(手机端点击节点不弹详情栏)
+        wasInsideRef.current = false;
+      }
     }
   }, [panel, scheduleHide]);
   let content = null;

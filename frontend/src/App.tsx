@@ -106,12 +106,16 @@ function AppContent() {
       const hops = parseInt(seg[1], 10) || 1;
       const node = fullData.nodes.find((n) => n.id === id);
       if (node) {
-        if (node.type === "work") {
-          workDetail(id).then((d) => {
-            renderRipple(d, hops, flags);
-            dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-            if (hops > 1) expandRippleDebounced(hops, id, data);
-          }).catch(() => dispatch({ type: "SET_TOAST", msg: "加载作品详情失败" }));
+          if (node.type === "work") {
+            workDetail(id).then((d) => {
+              renderRipple(d, hops, flags);
+              // 手机端深链进入层级视图时不弹出详情栏
+              dispatch({
+                type: "SET_PANEL",
+                panel: isMobileLayout() ? { type: "empty" } : { type: "work", d },
+              });
+              if (hops > 1) expandRippleDebounced(hops, id, data);
+            }).catch(() => dispatch({ type: "SET_TOAST", msg: "加载作品详情失败" }));
         } else {
           renderAuthorView(node, flags);
         }

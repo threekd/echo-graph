@@ -141,7 +141,7 @@ export default function Sidebar() {
     const value = e.target.checked;
     dispatch({ type: "SET_SHOW_AUTHORS", value });
     rerenderCurrentView({ showAuthors: value });
-    dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点" });
+    dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点", kind: "success" });
   };
 
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
@@ -152,6 +152,7 @@ export default function Sidebar() {
     dispatch({
       type: "SET_TOAST",
       msg: value ? `孤岛星已隐藏:${n} 部作品无提及关系` : `孤岛星已显示:${n} 部无提及关系的作品恢复显示`,
+      kind: "success",
     });
   };
 

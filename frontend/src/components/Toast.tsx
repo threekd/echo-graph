@@ -3,10 +3,11 @@ import { useApp } from "../store";
 
 export default function Toast() {
   const { state, dispatch } = useApp();
+  const t = state.toast;
   useEffect(() => {
-    if (!state.toast) return;
-    const t = setTimeout(() => dispatch({ type: "SET_TOAST", msg: null }), 2200);
-    return () => clearTimeout(t);
-  }, [state.toast, dispatch]);
-  return <div id="toast" className={state.toast ? "show" : ""}>{state.toast || ""}</div>;
+    if (!t) return;
+    const timer = setTimeout(() => dispatch({ type: "SET_TOAST", msg: null }), 2200);
+    return () => clearTimeout(timer);
+  }, [t, dispatch]);
+  return <div id="toast" className={t ? "show " + t.kind : ""}>{t ? t.msg : ""}</div>;
 }

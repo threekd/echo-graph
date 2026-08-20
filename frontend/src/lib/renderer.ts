@@ -2,6 +2,7 @@
 
 import { el, MENTION_COLOR } from "./util";
 import { createForceLayout, type ForceEdge } from "./layout";
+import { isBottomGestureTouch } from "./mobileGestures";
 import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import type { CameraState, GraphData, GraphEdge, GraphNode } from "../store";
@@ -20,6 +21,7 @@ let flowParticles: { source: string; target: string; phase: number; speed: numbe
 let flowPoints: THREE.Points | null = null;         // 沿 ECHO 边流动的光点(仅数据)
 let flowTrails: THREE.Line[] = [];                  // 每条 ECHO 边的"流星"光尾(头亮尾暗的短光线)
 let positions: Record<string, THREE.Vector3> = {};  // id -> THREE.Vector3
+let edgePositionsDirty = true; // 边几何是否需重写(布局/视图变更后置位,避免每帧重写静态边)
 const cameraState: { radius: number; theta: number; phi: number } = {
   radius: 1500,
   theta: -Math.PI / 2 + 0.4,
@@ -45,6 +47,8 @@ let lastCameraSync = 0;
 let lastSyncedCam: CameraState | null = null;
 let wheelTimer: number | null = null;
 let resizeContainer: HTMLElement | null = null;
+// 自然转动(空闲自动旋转)速度:手机端稍快,桌面保持原速
+const AUTO_ROTATE_SPEED = window.matchMedia("(max-width: 768px)").matches ? 0.0024 : 0.0016;
 
 export function setOnCameraChange(fn: (cam: CameraState) => void) {
   onCameraChange = fn;
@@ -107,7 +111,11 @@ export function initThree(containerOrNull?: HTMLElement | null): void {
   camera = new THREE.PerspectiveCamera(55, w / h, 1, 12000);
   applyCamera();
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: true,
+    powerPreference: "high-performance", // 优先选择高性能 GPU,移动端帧率更稳
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(w, h);
   renderer.domElement.style.position = "absolute";
@@ -505,6 +513,7 @@ function clearScene(): void {
   clearNodes();
   clearEdges();
   positions = {};
+  edgePositionsDirty = true;
 }
 
 // 同视图增量更新:保留已有节点组与相机,只增删差异节点、重建边
@@ -535,6 +544,7 @@ function syncScene(data: GraphData): void {
   clearEdges();
   data.edges.forEach(createEdgeLine);
   initFlowParticles();
+  edgePositionsDirty = true; // 边已重建,下一帧用最新布局填充几何
 }
 
 function buildScene(data: GraphData): void {
@@ -550,6 +560,7 @@ function buildScene(data: GraphData): void {
   });
   data.edges.forEach(createEdgeLine);
   initFlowParticles();
+  edgePositionsDirty = true;
 }
 
 // 受控入口:React 持有 viewData/currentView/相机,渲染器只负责按传入数据绘制。
@@ -665,6 +676,12 @@ function bindControls(container: HTMLElement): void {
   });
   bindEvent(dom, "pointermove", function (e) {
     if (dragging) {
+      // 触摸起点在底部手势区(呼出功能栏/详情栏)时,图谱不参与平移/旋转/缩放
+      if (e.pointerType === "touch" && isBottomGestureTouch()) {
+        lastX = e.clientX;
+        lastY = e.clientY;
+        return;
+      }
       const ids = Object.keys(activePointers);
       if (ids.length >= 2 && activePointers[e.pointerId]) {
         // 双指手势:间距变化 → 缩放,中点位移 → 旋转(同时生效)
@@ -833,7 +850,7 @@ function animate() {
   animFrameId = requestAnimationFrame(animate);
   const now = Date.now();
     if (!hovering && now - lastInteraction > 1000) {
-      cameraState.theta += 0.0016;
+      cameraState.theta += AUTO_ROTATE_SPEED;
       applyCamera();
     }
   const t = now * 0.001;
@@ -881,7 +898,10 @@ function animate() {
       });
       attr.needsUpdate = true;
     }
-    updateEdgeLines();
+    if (edgePositionsDirty) {
+      updateEdgeLines();
+      edgePositionsDirty = false;
+    }
     renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }

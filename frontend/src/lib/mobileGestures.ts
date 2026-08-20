@@ -19,6 +19,14 @@ interface SwipeState {
   opened: boolean; // 本次手势已触发上划
 }
 
+// 底部手势区触摸标记:渲染器据此暂停图谱平移/旋转/缩放,
+// 避免"呼出栏的同时页面跟着平移"
+let bottomGestureTouch = false;
+
+export function isBottomGestureTouch(): boolean {
+  return bottomGestureTouch;
+}
+
 export function useMobileGestures(): void {
   useEffect(() => {
     if (!isMobileLayout()) return;
@@ -44,6 +52,7 @@ export function useMobileGestures(): void {
               opened: false,
             }
           : null;
+      bottomGestureTouch = !!st && st.startY >= window.innerHeight - BOTTOM_ZONE;
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -73,6 +82,7 @@ export function useMobileGestures(): void {
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      bottomGestureTouch = false;
       if (!st || !e.changedTouches[0]) return;
       const t = e.changedTouches[0];
       const dist = Math.hypot(t.clientX - st.startX, t.clientY - st.startY);
@@ -86,6 +96,7 @@ export function useMobileGestures(): void {
     };
 
     const onTouchCancel = () => {
+      bottomGestureTouch = false;
       st = null;
     };
 

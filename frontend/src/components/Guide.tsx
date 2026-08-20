@@ -14,7 +14,7 @@ export default function Guide() {
   return (
     <div id="guide">
       <div className="guide-card">
-        <h3>回声图谱 · 快速上手</h3>
+        <h3>Litnebula · 快速上手</h3>
         <ul>
           <li><b>悬停</b>节点 → 暂停旋转，右侧显示详情</li>
           <li><b>点击</b>作品星 → 展开涟漪；点击作者星 → 该作者与全部作品</li>

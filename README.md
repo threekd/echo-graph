@@ -1,6 +1,6 @@
 **项目全称**  
-The Echo Graph — A Ripple Atlas of World Literature  
-中文名：**回声图谱——世界文学的涟漪地图**
+项目名称： Litnebula
+副标题：**回声图谱——世界文学的涟漪地图**(A Ripple Atlas of World Literature)
 
 **一句话定义**  
 构建一张跨语言、跨文化的世界文学影响图谱，让人清晰看见一部作品、一位作家如何穿越时间与语言，在后世产生回响与涟漪。

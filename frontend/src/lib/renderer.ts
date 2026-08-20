@@ -223,6 +223,14 @@ function createNodeGroup(n: GraphNode, pos: THREE.Vector3): void {
   const group = new THREE.Group();
   group.add(core);
   group.add(sprite);
+  // 不可见的放大命中球:仅用于拾取(悬停/点击),让瞄准更宽容
+  const hit = new THREE.Mesh(
+    new THREE.SphereGeometry(r * 3, 8, 8),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  hit.userData.node = n;
+  group.add(hit);
+  group.userData.hit = hit;
   group.position.copy(pos);
   group.userData.core = core;
   group.userData.sprite = sprite;
@@ -727,7 +735,7 @@ export function pickNode(clientX: number, clientY: number): string | null {
   mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
   const meshes = Object.keys(nodeGroups).map(function (id) {
-    return nodeGroups[id].userData.core;
+    return nodeGroups[id].userData.hit || nodeGroups[id].userData.core;
   });
   const hits = raycaster.intersectObjects(meshes, false);
   return hits.length ? (hits[0].object.userData.node as GraphNode).id : null;

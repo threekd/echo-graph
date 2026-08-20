@@ -6,8 +6,9 @@ import { selectNode, showNodeDetail } from "../lib/graph";
 export default function GraphCanvas() {
   const { state } = useApp();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const hoveredRef = useRef<string | null>(null);
-  const pendingHover = useRef<string | null>(null); // 指针当前命中的节点(待停留确认)
+  const hoveredRef = useRef<string | null>(null); // 已确认的悬停节点
+  const pendingHover = useRef<string | null>(null); // 悬停候选(进入节点即锁定)
+  const hoverEnterPos = useRef<{ x: number; y: number } | null>(null);
   const hoverTimer = useRef<number | null>(null);
   const dragRef = useRef<{ down: boolean; moved: boolean; x: number; y: number }>({
     down: false,
@@ -16,12 +17,23 @@ export default function GraphCanvas() {
     y: 0,
   });
   const rafRef = useRef<number>(0);
-  const HOVER_DELAY_MS = 100; // 停留超过该时长才视为悬停(暂停旋转 + 显示详情)
+  const HOVER_DELAY_MS = 300; // 停住约 0.3 秒后暂停旋转并显示详情
+  const HOVER_RELEASE_PX = 30; // 移出该距离视为离开节点(容忍旋转漂移与微抖)
 
   const cancelHoverTimer = () => {
     if (hoverTimer.current !== null) {
       window.clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
+    }
+  };
+
+  const releaseHover = () => {
+    pendingHover.current = null;
+    hoverEnterPos.current = null;
+    cancelHoverTimer();
+    if (hoveredRef.current) {
+      hoveredRef.current = null;
+      setHoveredNode(null);
     }
   };
 
@@ -78,24 +90,32 @@ export default function GraphCanvas() {
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
       const id = pickNode(x, y);
-      pendingHover.current = id;
-      if (id === hoveredRef.current) return; // 已在悬停态,无需变化
-      cancelHoverTimer();
-      if (!id) {
-        // 离开节点:立即清除悬停态
-        hoveredRef.current = null;
-        setHoveredNode(null);
+      if (id) {
+        if (id !== pendingHover.current) {
+          // 命中新节点:结束旧悬停,锁定新候选并开始 0.3s 计时
+          if (hoveredRef.current && hoveredRef.current !== id) {
+            hoveredRef.current = null;
+            setHoveredNode(null);
+          }
+          pendingHover.current = id;
+          hoverEnterPos.current = { x, y };
+          cancelHoverTimer();
+          hoverTimer.current = window.setTimeout(() => {
+            hoverTimer.current = null;
+            if (pendingHover.current === id) {
+              hoveredRef.current = id;
+              setHoveredNode(id);
+              showNodeDetail(id);
+            }
+          }, HOVER_DELAY_MS);
+        }
         return;
       }
-      // 短暂经过不触发;停留 HOVER_DELAY_MS 后,暂停旋转与显示详情同时生效
-      hoverTimer.current = window.setTimeout(() => {
-        hoverTimer.current = null;
-        if (pendingHover.current === id) {
-          hoveredRef.current = id;
-          setHoveredNode(id);
-          showNodeDetail(id);
-        }
-      }, HOVER_DELAY_MS);
+      // 未命中节点:离上次进入点足够远才释放候选(容忍漂移与微抖),避免悬停难以触发
+      const pos = hoverEnterPos.current;
+      if (pendingHover.current && pos) {
+        if (Math.hypot(x - pos.x, y - pos.y) > HOVER_RELEASE_PX) releaseHover();
+      }
     });
   };
 
@@ -104,12 +124,7 @@ export default function GraphCanvas() {
       cancelAnimationFrame(rafRef.current); // 取消排队的拾取,避免离开画布后悬停残留
       rafRef.current = 0;
     }
-    cancelHoverTimer();
-    pendingHover.current = null;
-    if (hoveredRef.current) {
-      hoveredRef.current = null;
-      setHoveredNode(null);
-    }
+    releaseHover();
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {

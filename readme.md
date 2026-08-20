@@ -20,7 +20,7 @@ The Echo Graph — A Ripple Atlas of World Literature
 1. **影响力图谱**：总体类似于一张立体星云图，以节点代表作品和作家，边代表连接关系（一本书提及了另一本书，则这本书指向另一本书并连接），支持点击展开、拖拽浏览。
 2. **时间涟漪视图**：选择一部作品，其所提及的作品成球状散开。
 3. **跨语言路径**：输入任意两部作品，计算并展示它们之间的影响传播链。
-5. **来源追溯**：每条关系都附有一小段原文片段。
+4. **来源追溯**：每条关系都附有一小段原文片段。
 
 **技术架构**
 - 数据存储：Neo4j 图数据库
@@ -109,9 +109,13 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 注意事项:国内机房绑域名对外提供 80/443 服务需要 ICP 备案,不想备案可选香港/新加坡 VPS;Neo4j 继续用 Aura,不在 VPS 上自建图库;`data/real/*.csv` 是数据事实源,配合 git 即完成备份。
 
-> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`;前端「数据管理」页顶部输入令牌并保存后即可操作。
+> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。
 
-真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,推荐通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
+> **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/contributions.db`,已 gitignore),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(通过/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流)。
+
+真实数据以 `data/real/authors.csv` / `works.csv` / `edges.csv` 三份表格为准,授权后通过页面左侧「**数据管理**」入口编辑(表单校验 + 一键导入 Neo4j + 版本快照),字段说明见 `data/real/README.md`;导入前会自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),通过后批量写入并导出 JSON 快照到 `data/snapshots/`。
+
+**软删除设计**:`deletedAt` 仅在 CSV 数据层表达——被删除的行保留在 CSV 存档(`deletedAt` 非空),但不会进入 Neo4j:导入时这类行会从图中物理移除(DETACH DELETE),图中只存活跃数据,节点/关系上不写入 `deletedAt` 属性,查询层也不按该属性过滤。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 
@@ -124,9 +128,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 | 涟漪 | 以某作品为中心的 3D 扩散球(N 级扩散) | `http://127.0.0.1:8000/#v=ripple:{workId}:2` |
 | 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:{authorId}` |
 
-URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,由"分享链接"生成)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
-
-左侧栏提供"分享链接 / 导出图片":分享链接复制含相机位置的完整 URL;导出图片为当前视图 PNG(含节点文字标签)。
+URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,仍兼容解析)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
 
 ### API
 

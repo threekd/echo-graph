@@ -81,18 +81,6 @@ def load_csv_rows() -> tuple[list[dict], list[dict], list[dict]]:
     )
 
 
-def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
-    """读取策展数据(权威来源:SQLite)。"""
-    data = sqlite_store.list_all()
-    return data["authors"], data["works"], data["edges"]
-
-
-def save_rows(authors: list[dict], works: list[dict], edges: list[dict]) -> None:
-    """事务写入 SQLite 并刷新确定性 CSV 导出。"""
-    sqlite_store.rewrite_all(authors, works, edges)
-    export_csv_files()
-
-
 def export_csv_files(target_dir: Path | None = None) -> None:
     """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/real/。"""
     data = sqlite_store.list_all()

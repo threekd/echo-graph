@@ -15,7 +15,7 @@ from neo4j import GraphDatabase
 from pydantic import BaseModel
 
 from app.data_models import AuthorRow, EchoRow, WorkRow, parse_rows
-from app.data_store import load_rows
+from app.sqlite_store import load_rows
 
 load_dotenv()
 

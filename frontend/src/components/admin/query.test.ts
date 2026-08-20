@@ -116,6 +116,11 @@ describe("authorDisplayNames", () => {
     expect(authorDisplayNames("a1, a2", authorsById, labelOf)).toBe("甲-1920、乙");
   });
 
+  it("优先使用 author_ids 数组", () => {
+    expect(authorDisplayNames({ author_id: "a1", author_ids: ["a2", "a1"] }, authorsById, labelOf))
+      .toBe("乙、甲-1920");
+  });
+
   it("未知 id 保留原样(trim 后)", () => {
     expect(authorDisplayNames(" x1 , a2", authorsById, labelOf)).toBe("x1、乙");
   });

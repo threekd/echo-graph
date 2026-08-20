@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.data_store as ds
-from app import db_sqlite
+from app import db_sqlite, sqlite_store
 
 
 def _rows():
@@ -46,8 +46,9 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_save_then_load_roundtrip(self) -> None:
         a, w, e = _rows()
-        ds.save_rows(a, w, e)
-        a2, w2, e2 = ds.load_rows()
+        sqlite_store.rewrite_all(a, w, e)
+        ds.export_csv_files()
+        a2, w2, e2 = sqlite_store.load_rows()
         self.assertEqual(len(a2), 2)
         self.assertEqual(len(w2), 2)
         self.assertEqual(len(e2), 1)
@@ -60,7 +61,8 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_export_is_deterministic(self) -> None:
         a, w, e = _rows()
-        ds.save_rows(a, w, e)
+        sqlite_store.rewrite_all(a, w, e)
+        ds.export_csv_files()
         content = (self.real / "authors.csv").read_bytes()
         other = Path(self.tmp.name) / "other"
         other.mkdir()
@@ -69,7 +71,8 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_snapshot_backs_up_db_and_csv(self) -> None:
         a, w, e = _rows()
-        ds.save_rows(a, w, e)
+        sqlite_store.rewrite_all(a, w, e)
+        ds.export_csv_files()
         path = ds.snapshot("test")
         self.assertIsNotNone(path)
         snap = Path(path)
@@ -79,7 +82,8 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_load_csv_rows_reads_export_files(self) -> None:
         a, w, e = _rows()
-        ds.save_rows(a, w, e)
+        sqlite_store.rewrite_all(a, w, e)
+        ds.export_csv_files()
         a2, w2, e2 = ds.load_csv_rows()
         self.assertEqual(len(a2), 2)
         self.assertEqual(len(w2), 2)

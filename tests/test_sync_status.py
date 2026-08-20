@@ -103,8 +103,8 @@ class SyncStatusTest(unittest.TestCase):
         sqlite_store.rewrite_all(*fixture)
 
     def test_csv_payload_normalizes(self) -> None:
-        with patch("app.admin.load_rows", return_value=_csv_fixture()):
-            p = admin._source_sync_payload()
+        self._seed(_csv_fixture())
+        p = admin._source_sync_payload()
         self.assertEqual(p["authors"][0]["nationality"], "FR")
         self.assertEqual(p["authors"][0]["birthYear"], 1913)
         self.assertEqual(p["works"][0]["language"], "fr")
@@ -115,7 +115,6 @@ class SyncStatusTest(unittest.TestCase):
         authors, works, authored, echoes = _neo_fixture()
         self._seed(_csv_fixture())
         with (
-            patch("app.admin.load_rows", return_value=_csv_fixture()),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),
         ):
             d = admin.admin_sync()
@@ -127,7 +126,6 @@ class SyncStatusTest(unittest.TestCase):
         csv[0][0]["Name_CN"] = "加缪(改名)"  # 只改 CSV,Neo4j 未同步
         self._seed(csv)
         with (
-            patch("app.admin.load_rows", return_value=csv),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),
         ):
             d = admin.admin_sync()
@@ -140,7 +138,6 @@ class SyncStatusTest(unittest.TestCase):
         csv[1][0]["Title_CN"] = "婚礼"
         self._seed(csv)
         with (
-            patch("app.admin.load_rows", return_value=csv),
             patch("app.admin.get_store", return_value=_fake_store(authors, works, authored, echoes)),
         ):
             d = admin.admin_sync()

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
 import { clearAdminToken, getAdminToken, setAdminToken } from "../lib/adminAuth";
+import type { AdminData, AdminTab } from "../lib/adminTypes";
+import AdminTable from "./admin/AdminTable";
+import AuditPanel from "./admin/AuditPanel";
+import ContributionsPanel from "./admin/ContributionsPanel";
 import {
   AuthorPicker,
   CodePicker,
@@ -12,9 +16,7 @@ import {
   workLabel,
   WorkPicker,
 } from "./admin/pickers";
-import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./admin/query";
-
-type Kind = "authors" | "works" | "edges" | "contributions";
+import { authorDisplayNames, edgeDisplayLabel } from "./admin/query";
 
 // 从 URL 中移除 admin 入口参数/片段,恢复到普通页面状态
 function stripAdminFromUrl(): void {
@@ -26,14 +28,15 @@ function stripAdminFromUrl(): void {
   } catch { /* ignore */ }
 }
 
-const KINDS: { key: Kind; label: string }[] = [
+const KINDS: { key: AdminTab; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
   { key: "contributions", label: "贡献" },
+  { key: "audit", label: "审计" },
 ];
 
-const COLS: Record<Kind, { key: string; label: string }[]> = {
+const COLS: Record<AdminTab, { key: string; label: string }[]> = {
   authors: [
     { key: "Name_CN", label: "中文名" },
     { key: "originalName", label: "原文名" },
@@ -54,10 +57,11 @@ const COLS: Record<Kind, { key: string; label: string }[]> = {
     { key: "evidenceSource", label: "出处" },
   ],
   contributions: [],
+  audit: [],
 };
 
 // 表单字段配置
-const FIELDS: Record<Kind, any[]> = {
+const FIELDS: Record<AdminTab, any[]> = {
   authors: [
     { key: "originalName", label: "原文名", required: true },
     { key: "nationality", label: "国家", type: "countryPicker" },
@@ -88,15 +92,12 @@ const FIELDS: Record<Kind, any[]> = {
     { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   contributions: [],
+  audit: [],
 };
 
 // 边有独立 id;source:target 仅作历史数据的兜底复合标识
 function edgeKey(r: any): string {
   return (r.source_work_id || "") + ":" + (r.target_work_id || "");
-}
-
-function truncate(s: string, n: number): string {
-  return s && s.length > n ? s.slice(0, n) + "…" : (s || "");
 }
 
 function contributionStatusLabel(s: string): string {
@@ -105,12 +106,11 @@ function contributionStatusLabel(s: string): string {
 
 export default function Admin() {
   const { state, dispatch } = useApp();
-  const [kind, setKind] = useState<Kind>("authors");
+  const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [contribs, setContribs] = useState<any[]>([]);
-  const [contribStatus, setContribStatus] = useState("pending");
   const [contribsLoading, setContribsLoading] = useState(false);
   const [contribCount, setContribCount] = useState(0);
   const [viewContrib, setViewContrib] = useState<any>(null);
@@ -249,36 +249,28 @@ export default function Admin() {
   useEffect(() => { load(); loadSync(); }, [load, loadSync]);
 
   // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
-  const loadContribs = useCallback((status: string) => {
+  const loadContribs = useCallback(() => {
     setContribsLoading(true);
-    authFetch("/api/admin/contributions?status=" + encodeURIComponent(status) + "&limit=500")
+    authFetch("/api/admin/contributions?limit=500")
       .then((r) => r.json())
       .then((d) => {
-        setContribs(d.items || []);
-        if (status === "pending") setContribCount(d.total != null ? d.total : (d.items || []).length);
+        const items = d.items || [];
+        setContribs(items);
+        // Tab 角标保持"待审核"数(筛选/排序由表格内完成)
+        setContribCount(items.filter((c: any) => c.status === "pending").length);
         setContribsLoading(false);
       })
       .catch((e) => { setStatus("加载贡献失败: " + e.message); setContribsLoading(false); });
   }, [authFetch]);
 
   useEffect(() => {
-    if (kind === "contributions") loadContribs(contribStatus);
-  }, [kind, contribStatus, loadContribs]);
+    if (kind === "contributions") loadContribs();
+  }, [kind, loadContribs]);
 
   // 打开管理页即加载待审核数,让"贡献"Tab 角标未切换过去时也显示正确数字
   useEffect(() => {
-    loadContribs("pending");
+    loadContribs();
   }, [loadContribs]);
-
-  // 固定筛选行:实测表头行高度,作为筛选行的 sticky 吸附偏移
-  const tableRef = useRef<HTMLTableElement | null>(null);
-  useEffect(() => {
-    const table = tableRef.current;
-    const firstRow = table?.querySelector("thead tr") as HTMLElement | null;
-    if (table && firstRow) {
-      table.style.setProperty("--filter-sticky-top", firstRow.offsetHeight + "px");
-    }
-  }, [kind, data]);
 
   if (!state.adminOpen) return null;
 
@@ -286,8 +278,15 @@ export default function Admin() {
   const cols = COLS[kind];
   const counts = data ? data.counts || {} : {};
 
+  // Tab 角标计数:贡献/审计为特殊 Tab,避免对不存在的 data[k] 取值
+  const tabCount = (k: AdminTab): string => {
+    if (k === "contributions") return String(contribCount);
+    if (k === "audit") return "";
+    return counts[k] != null ? String(counts[k]) : (data ? String((data[k] || []).length) : "");
+  };
+
   // 每类数据的可筛选列:select 为精确下拉,text 为按列搜索框
-  const filterCols: Record<Kind, { key: string; type: "select" | "text" }[]> = {
+  const filterCols: Record<AdminTab, { key: string; type: "select" | "text" }[]> = {
     authors: [
       { key: "reviewStatus", type: "select" },
       { key: "nationality", type: "select" },
@@ -310,6 +309,7 @@ export default function Admin() {
       { key: "evidenceSource", type: "text" },
     ],
     contributions: [],
+    audit: [],
   };
   const uniqueValues = (key: string): string[] =>
     Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -321,7 +321,7 @@ export default function Admin() {
     });
   };
 
-  const switchKind = (k: Kind) => {
+  const switchKind = (k: AdminTab) => {
     setKind(k);
     setModal(null);
     setFilters({});
@@ -339,6 +339,11 @@ export default function Admin() {
     setForm({ ...row });
     setFormError("");
     setModal({ mode: "edit", row });
+  };
+
+  // 乐观更新:成功后直接改本地 data,不再整页重拉(仅刷新同步状态)
+  const applyLocal = (updater: (prev: AdminData) => AdminData) => {
+    if (data) setData(updater(data));
   };
 
   const doDelete = (row: any) => {
@@ -360,9 +365,16 @@ export default function Admin() {
                 ? `已软删除「${rowLabel(row)}」${parts.length ? ",连带 " + parts.join(" / ") : ""}`
                 : (d.detail || "删除失败")
             );
-            setWarnings(d.warnings || null);
-            if (d.ok) setModal(null); // 从编辑弹窗删除后关闭弹窗
-            load();
+            if (d.ok) {
+              setModal(null); // 从编辑弹窗删除后关闭弹窗
+              const key = kind as "authors" | "works" | "edges";
+              applyLocal((prev) => ({
+                ...prev,
+                [key]: (prev[key] || []).map((r: any) =>
+                  r.id === id ? { ...r, deletedAt: d.deletedAt } : r
+                ),
+              }));
+            }
             loadSync();
           })
           .catch((e) => setStatus("删除失败: " + e.message));
@@ -385,8 +397,15 @@ export default function Admin() {
             ? `已恢复「${rowLabel(row)}」${parts.length ? ",连带恢复 " + parts.join(" / ") : ""},需重新导入 Neo4j 后生效`
             : (d.detail || "恢复失败")
         );
-        setWarnings(d.warnings || null);
-        load();
+        if (d.ok) {
+          const key = kind as "authors" | "works" | "edges";
+          applyLocal((prev) => ({
+            ...prev,
+            [key]: (prev[key] || []).map((r: any) =>
+              r.id === id ? { ...r, deletedAt: null } : r
+            ),
+          }));
+        }
         loadSync();
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
@@ -411,6 +430,29 @@ export default function Admin() {
           .catch((e) => setStatus("导入失败: " + e.message));
       },
     });
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportJson = () => {
+    authFetch("/api/admin/export/json")
+      .then((r) => r.blob())
+      .then((b) => downloadBlob(b, "echo-graph-data.json"));
+  };
+
+  const exportCsv = () => {
+    authFetch("/api/admin/export/csv/" + kind)
+      .then((r) => r.blob())
+      .then((b) => downloadBlob(b, kind + ".csv"));
   };
 
   const saveForm = () => {
@@ -443,16 +485,31 @@ export default function Admin() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+      .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, data: d })))
       .then((res) => {
         if (!res.ok) {
+          if (res.status === 409) {
+            setFormError(res.data.detail || "数据已被其他人修改");
+            setConfirmState({
+              title: "版本冲突",
+              message: "数据已被其他人修改,是否重新加载最新数据?(你的修改将丢失)",
+              onConfirm: () => { setModal(null); load(); },
+            });
+            return;
+          }
           setFormError(res.data.detail || "保存失败");
           return;
         }
         setModal(null);
         setStatus(modal.mode === "edit" ? "已更新" : "已新增");
-        setWarnings(res.data.warnings || null);
-        load();
+        const key = kind as "authors" | "works" | "edges";
+        applyLocal((prev) => {
+          const list = (prev[key] || []) as any[];
+          if (modal.mode === "edit") {
+            return { ...prev, [key]: list.map((r: any) => (r.id === res.data.row.id ? res.data.row : r)) };
+          }
+          return { ...prev, [key]: [...list, res.data.row] };
+        });
         loadSync();
       })
       .catch((e) => setFormError("请求失败: " + e.message));
@@ -479,25 +536,19 @@ export default function Admin() {
       return w ? workLabel(w) : String(r[key] ?? "");
     }
     if (kind === "works" && key === "author_id") {
-      return authorDisplayNames(r.author_id, authorsById, authorLabelOf);
+      return authorDisplayNames(r, authorsById, authorLabelOf);
     }
     const v = r[key];
     return v == null ? "" : String(v);
   };
 
-  const rows = applyAdminQuery(allRows, {
-    filters,
-    textFilters,
-    sort,
-    cellValue,
-  });
-
   // ---- 去重即时提示(L2):表单字段失焦 / 涟漪对选定后本地比对 ----
-  const dupFields: Record<Kind, string[]> = {
+  const dupFields: Record<AdminTab, string[]> = {
     authors: ["Name_CN", "originalName"],
     works: ["Title_CN", "originalTitle"],
     edges: [],
     contributions: [],
+    audit: [],
   };
   const selfId = modal?.mode === "edit" ? modal.row.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {
@@ -544,14 +595,16 @@ export default function Admin() {
                   data-kind={k.key}
                   onClick={() => switchKind(k.key)}
                 >
-                  {k.label} <span className="cnt">{k.key === "contributions" ? contribCount : (counts[k.key] != null ? counts[k.key] : (data ? data[k.key].length : ""))}</span>
+                  {k.label} <span className="cnt">{tabCount(k.key)}</span>
                 </button>
               ))}
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "contributions" && <button onClick={openAdd}>＋ 新增</button>}
-            {kind !== "contributions" && <button onClick={doImport}>上传↑</button>}
+            {kind !== "contributions" && kind !== "audit" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "contributions" && kind !== "audit" && <button onClick={doImport}>上传↑</button>}
+            {kind !== "contributions" && kind !== "audit" && <button onClick={exportJson}>导出 JSON</button>}
+            {kind !== "contributions" && kind !== "audit" && <button onClick={exportCsv}>导出 CSV</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -628,131 +681,47 @@ export default function Admin() {
         )}
         <div className="admin-body">
           {kind === "contributions" ? (
-            <div className="contrib-body">
-              <div className="contrib-toolbar">
-                <select value={contribStatus} onChange={(e) => setContribStatus(e.target.value)} title="按审核状态筛选">
-                  <option value="pending">待审核</option>
-                  <option value="approved">已通过</option>
-                  <option value="rejected">已驳回</option>
-                  <option value="">全部</option>
-                </select>
-                <span className="contrib-count">{contribsLoading ? "加载中…" : contribs.length + " 条"}</span>
-              </div>
-              <table id="admin-table">
-                <thead>
-                  <tr>
-                    <th>源作品</th>
-                    <th>源作品作者</th>
-                    <th>目标作品</th>
-                    <th>目标作品作者</th>
-                    <th>原文片段</th>
-                    <th>出处</th>
-                    <th>联系方式</th>
-                    <th>提交时间</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contribs.length === 0 ? (
-                    <tr><td className="empty-cell" colSpan={9}>暂无提交</td></tr>
-                  ) : contribs.map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.source_work}</td>
-                      <td>{c.source_author}</td>
-                      <td>{c.target_work}</td>
-                      <td>{c.target_author}</td>
-                      <td className="contrib-evidence" title={c.evidence}>{truncate(c.evidence, 60)}</td>
-                      <td>{c.evidence_source || ""}</td>
-                      <td>{c.contact || ""}</td>
-                      <td>{c.created_at}</td>
-                      <td>
-                        <button onClick={() => setViewContrib(c)}>查看</button>
-                        {c.status !== "pending" && (
-                          <span className={c.status === "approved" ? "badge-reviewed" : "badge-rejected"}>
-                            {c.status === "approved" ? "已通过" : "已驳回"}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ContributionsPanel
+              items={contribs}
+              loading={contribsLoading}
+              sort={sort}
+              filters={filters}
+              textFilters={textFilters}
+              onSort={toggleSort}
+              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
+              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
+              onView={setViewContrib}
+            />
+          ) : kind === "audit" ? (
+            <AuditPanel
+              authFetch={authFetch}
+              sort={sort}
+              filters={filters}
+              textFilters={textFilters}
+              onSort={toggleSort}
+              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
+              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
+            />
           ) : loading ? <p>加载中…</p> : (
-            <table id="admin-table" ref={tableRef}>
-              <thead>
-                <tr>
-                  {cols.map((c) => {
-                    const active = sort?.key === c.key;
-                    const icon = active ? (sort!.dir === 1 ? "▲" : "▼") : "↕";
-                    return (
-                      <th
-                        key={c.key}
-                        className={"sortable" + (active ? " active" : "")}
-                        onClick={() => toggleSort(c.key)}
-                        title="点击排序(再点切换升降序)"
-                      >
-                        {c.label} <span className="sort-icon">{icon}</span>
-                      </th>
-                    );
-                  })}
-                  <th>操作</th>
-                </tr>
-                <tr className="filter-row">
-                  {cols.map((c) => {
-                    const fc = filterCols[kind].find((f) => f.key === c.key);
-                    if (!fc) {
-                      return <td key={c.key} className="filter-cell" />;
-                    }
-                    if (fc.type === "select") {
-                      const options = c.key === "reviewStatus"
-                        ? ["draft", "reviewed", "rejected"]
-                        : c.key === "genre"
-                          ? ["Fiction", "Non-fiction", "Poetry", "Drama"]
-                          : uniqueValues(c.key);
-                      return (
-                        <td key={c.key} className="filter-cell">
-                          <select
-                            value={filters[c.key] || ""}
-                            onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))}
-                            title={'筛选「' + c.label + '」'}
-                          >
-                            <option value="">全部</option>
-                            {options.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                        </td>
-                      );
-                    }
-                    return (
-                      <td key={c.key} className="filter-cell">
-                        <input
-                          type="text"
-                          placeholder={'搜索' + c.label}
-                          value={textFilters[c.key] || ""}
-                          onChange={(e) => setTextFilters((f) => ({ ...f, [c.key]: e.target.value }))}
-                          title={'搜索「' + c.label + '」'}
-                        />
-                      </td>
-                    );
-                  })}
-                  <td className="filter-cell" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr><td className="empty-cell" colSpan={cols.length + 1}>无匹配记录</td></tr>
-                ) : rows.map((r) => (
-                  <tr key={r.id || edgeKey(r)} className={r.deletedAt ? "deleted" : ""}>
-                    {cols.map((c) => <td key={c.key}>{cellValue(r, c.key)}</td>)}
-                    <td>
-                      {r.deletedAt
-                        ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
-                        : <button onClick={() => openEdit(r)}>编辑</button>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <AdminTable
+              kind={kind}
+              cols={cols}
+              rows={allRows}
+              filterCols={filterCols[kind]}
+              filters={filters}
+              textFilters={textFilters}
+              sort={sort}
+              cellValue={cellValue}
+              uniqueValues={uniqueValues}
+              onSort={toggleSort}
+              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
+              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
+              renderActions={(r) =>
+                r.deletedAt
+                  ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
+                  : <button onClick={() => openEdit(r)}>编辑</button>
+              }
+            />
           )}
         </div>
         {viewContrib && (

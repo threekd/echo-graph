@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
 import {
   AppProvider,
   useApp,
@@ -12,8 +12,6 @@ import Sidebar from "./components/Sidebar";
 import Panel from "./components/Panel";
 import Toast from "./components/Toast";
 import Guide from "./components/Guide";
-import Admin from "./components/Admin";
-import Contribute from "./components/Contribute";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
 import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
 import {
@@ -21,6 +19,27 @@ import {
   isSelfWrittenHash,
 } from "./lib/graph";
 import { setOnCameraChange } from "./lib/renderer";
+
+// 管理页与贡献弹窗按需加载(普通用户默认不可见,不打进首屏包)
+const Admin = lazy(() => import("./components/Admin"));
+const Contribute = lazy(() => import("./components/Contribute"));
+
+// 懒加载 chunk 渲染异常时降级为空,避免整页白屏(图谱仍可用)
+class ChunkBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("按需加载模块渲染失败:", error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 function parseCam(s: string): CameraState | null {
   const parts = String(s || "").split(",").map((x) => parseFloat(x));
@@ -184,8 +203,20 @@ function AppContent() {
       <Panel />
       <Toast />
       <Guide />
-      {state.adminOpen && <Admin />}
-      {state.contributeOpen && <Contribute />}
+      {state.adminOpen && (
+        <ChunkBoundary>
+          <Suspense fallback={null}>
+            <Admin />
+          </Suspense>
+        </ChunkBoundary>
+      )}
+      {state.contributeOpen && (
+        <ChunkBoundary>
+          <Suspense fallback={null}>
+            <Contribute />
+          </Suspense>
+        </ChunkBoundary>
+      )}
     </div>
   );
 }

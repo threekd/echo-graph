@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.data_models import parse_rows
-from app.data_store import load_rows
+from app.sqlite_store import load_rows
 
 ROOT = Path(__file__).resolve().parent.parent
 

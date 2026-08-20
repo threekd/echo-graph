@@ -44,6 +44,12 @@ def get_row(conn, kind: str, row_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def row_exists(conn, kind: str, row_id: str) -> bool:
+    return conn.execute(
+        f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)
+    ).fetchone() is not None
+
+
 def insert_row(conn, kind: str, row: dict) -> None:
     row = _norm_row(row)
     cols = KIND_COLS[kind]
@@ -54,14 +60,24 @@ def insert_row(conn, kind: str, row: dict) -> None:
     )
 
 
-def update_row(conn, kind: str, row_id: str, row: dict) -> bool:
+def update_row(conn, kind: str, row_id: str, row: dict, expected_updated_at: str | None = None) -> int:
+    """更新一行。返回 1=成功, 0=行不存在, -1=乐观锁冲突(updatedAt 已变化)。"""
     row = _norm_row(row)
     cols = [c for c in KIND_COLS[kind] if c != "id"]
+    if expected_updated_at is not None:
+        cur = conn.execute(
+            f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols)
+            + " WHERE id = ? AND updatedAt = ?",
+            [row.get(c) for c in cols] + [row_id, expected_updated_at],
+        )
+        if cur.rowcount == 0:
+            return -1 if row_exists(conn, kind, row_id) else 0
+        return 1
     cur = conn.execute(
         f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?",
         [row.get(c) for c in cols] + [row_id],
     )
-    return cur.rowcount > 0
+    return 1 if cur.rowcount > 0 else 0
 
 
 def set_work_authors(conn, work_id: str, author_ids: list[str]) -> None:
@@ -77,8 +93,8 @@ def mark_deleted(conn, kind: str, ids: list[str], deleted_at: str) -> int:
         return 0
     placeholders = ",".join("?" for _ in ids)
     cur = conn.execute(
-        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ? WHERE id IN ({placeholders})",
-        [deleted_at] + list(ids),
+        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ? WHERE id IN ({placeholders})",
+        [deleted_at, deleted_at] + list(ids),
     )
     return cur.rowcount
 
@@ -94,6 +110,91 @@ def restore_by_ts(conn, kind: str, ids: list[str], ts: str, updated_at: str) -> 
         [updated_at, ts] + list(ids),
     )
     return cur.rowcount
+
+
+# ---- 级联删除/恢复(纯 SQL,不读取全量数据) ----
+
+
+def cascade_work_edge_ids(conn, work_id: str) -> list[str]:
+    """作品相关的活跃涟漪边 id(删除/恢复时用)。"""
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM edges WHERE deletedAt IS NULL"
+            " AND (source_work_id = ? OR target_work_id = ?)",
+            (work_id, work_id),
+        )
+    ]
+
+
+def cascade_author_work_ids(conn, author_id: str) -> list[str]:
+    """作者名下活跃作品 id。"""
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM works WHERE deletedAt IS NULL"
+            " AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?)",
+            (author_id,),
+        )
+    ]
+
+
+def cascade_author_edge_ids(conn, author_id: str) -> list[str]:
+    """作者名下作品相关的活跃涟漪边 id。"""
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM edges WHERE deletedAt IS NULL AND ("
+            " source_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?)"
+            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))",
+            (author_id, author_id),
+        )
+    ]
+
+
+def restore_work_edge_ids(conn, work_id: str, ts: str) -> list[str]:
+    """同批删除(相同 deletedAt)且涉及该作品的涟漪边 id。"""
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM edges WHERE deletedAt = ?"
+            " AND (source_work_id = ? OR target_work_id = ?)",
+            (ts, work_id, work_id),
+        )
+    ]
+
+
+def restore_author_work_ids(conn, author_id: str, ts: str) -> list[str]:
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM works WHERE deletedAt = ?"
+            " AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?)",
+            (ts, author_id),
+        )
+    ]
+
+
+def restore_author_edge_ids(conn, author_id: str, ts: str) -> list[str]:
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM edges WHERE deletedAt = ? AND ("
+            " source_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?)"
+            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))",
+            (ts, author_id, author_id),
+        )
+    ]
+
+
+def restore_edge_work_ids(conn, source_id: str, target_id: str, ts: str) -> list[str]:
+    return [
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM works WHERE deletedAt = ? AND id IN (?, ?)",
+            (ts, source_id, target_id),
+        )
+    ]
 
 
 def active_counts() -> dict:
@@ -194,8 +295,38 @@ def list_all() -> dict:
     for r in wa_rows:
         work_authors.setdefault(r["work_id"], []).append(r["author_id"])
     for w in works:
-        w["author_id"] = ",".join(work_authors.get(w["id"], []))
+        ids = work_authors.get(w["id"], [])
+        w["author_id"] = ",".join(ids)
+        w["author_ids"] = ids
     return {"authors": authors, "works": works, "edges": edges, "work_authors": work_authors}
+
+
+def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
+    """读取策展数据(权威来源:SQLite),与 CSV load_rows 同形状。"""
+    data = list_all()
+    return data["authors"], data["works"], data["edges"]
+
+
+def list_audit(limit: int = 100, offset: int = 0, action: str | None = None, kind: str | None = None) -> dict:
+    """审计记录查询(管理端)。"""
+    where: list[str] = []
+    params: list = []
+    if action:
+        where.append("action = ?")
+        params.append(action)
+    if kind:
+        where.append("kind = ?")
+        params.append(kind)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with db_sqlite._db() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM audit_log{clause} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        ).fetchall()
+        total = conn.execute(
+            f"SELECT count(*) AS c FROM audit_log{clause}", params
+        ).fetchone()["c"]
+    return {"items": [dict(r) for r in rows], "total": total}
 
 
 # ---- 同步比对规范化(与 Neo4j 比对共用) ----

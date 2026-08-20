@@ -25,7 +25,6 @@ class ApiSmokeTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "echo-graph.db").start()
         patch("app.admin.export_csv_files", lambda: None).start()
-        patch("app.admin.snapshot", return_value=None).start()
         self.addCleanup(self.tmp.cleanup)
 
     def test_expected_routes_registered(self) -> None:
@@ -54,6 +53,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/admin/contributions", paths)
         self.assertIn("/api/admin/data", paths)
         self.assertIn("/api/admin/sync", paths)
+        self.assertIn("/api/admin/audit", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -134,14 +134,10 @@ class ApiSmokeTest(unittest.TestCase):
     def test_admin_create_sets_timestamps_and_default_status(self) -> None:
         import app.admin as admin
 
-        with (
-            patch("app.admin.load_rows", return_value=([], [], [])),
-            patch("app.admin.snapshot", return_value=None),
-        ):
-            res = admin.create(
-                "authors",
-                {"originalName": "  \u200b某作家\u200b  ", "Name_CN": "  某\u200b  "},
-            )
+        res = admin.create(
+            "authors",
+            {"originalName": "  \u200b某作家\u200b  ", "Name_CN": "  某\u200b  "},
+        )
         row = res["row"]
         self.assertTrue(row["createdAt"])
         self.assertTrue(row["updatedAt"])
@@ -161,18 +157,35 @@ class ApiSmokeTest(unittest.TestCase):
             "createdAt": "2026-01-01T00:00:00+00:00",
         }
         sqlite_store.rewrite_all([author], [], [])
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.update(
-                "authors",
-                author["id"],
-                {"originalName": "新名", "Name_CN": "新中文名"},
-            )
+        res = admin.update(
+            "authors",
+            author["id"],
+            {"originalName": "新名", "Name_CN": "新中文名"},
+        )
         row = res["row"]
         self.assertEqual(row["createdAt"], "2026-01-01T00:00:00+00:00")
         self.assertTrue(row["updatedAt"])
         saved = sqlite_store.list_all()["authors"][0]
         self.assertEqual(saved["originalName"], "新名")
         self.assertEqual(saved["createdAt"], "2026-01-01T00:00:00+00:00")
+
+    def test_admin_update_optimistic_lock_conflict(self) -> None:
+        """更新时 updatedAt 已被他人改动 -> 409 乐观锁冲突。"""
+        import app.admin as admin
+
+        author = {
+            "id": "01a013e6-e885-766b-b9db-315d518adeeb",
+            "originalName": "A", "Name_CN": "甲",
+            "updatedAt": "2026-08-20T08:00:00+00:00",
+        }
+        sqlite_store.rewrite_all([author], [], [])
+        with self.assertRaises(HTTPException) as ctx:
+            admin.update(
+                "authors",
+                author["id"],
+                {"originalName": "B", "Name_CN": "乙", "updatedAt": "2026-08-20T09:00:00+00:00"},
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
 
     def test_admin_get_data_includes_warnings(self) -> None:
         import app.admin as admin
@@ -181,8 +194,8 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": "01a013e6-e885-766b-b9db-315d518adeeb", "originalName": "X", "Name_CN": "甲"},
             {"id": "01a013e6-e885-766b-b9db-315d518adeec", "originalName": "Y", "Name_CN": "甲"},
         ]
-        with patch("app.admin.load_rows", return_value=(authors, [], [])):
-            d = admin.get_data()
+        sqlite_store.rewrite_all(authors, [], [])
+        d = admin.get_data()
         self.assertIn("warnings", d)
         self.assertEqual(len(d["warnings"]["duplicateAuthorNames"]), 1)
 
@@ -193,8 +206,8 @@ class ApiSmokeTest(unittest.TestCase):
         w1 = "01a013e8-907e-77f3-83c6-bce355a36268"
         w2 = "01a013e8-907e-77f3-83c6-bce48f19b60d"
         works = [
-            {"id": w1, "Title_CN": "反与正"},
-            {"id": w2, "Title_CN": "婚礼"},
+            {"id": w1, "language": "fr", "originalTitle": "L'Envers et l'Endroit", "Title_CN": "反与正"},
+            {"id": w2, "language": "fr", "originalTitle": "Noces", "Title_CN": "婚礼"},
         ]
         edges = [{
             "id": "01a0155e-33a7-772a-8efc-4ad2766bc830",
@@ -202,12 +215,9 @@ class ApiSmokeTest(unittest.TestCase):
             "target_work_id": w2,
             "evidence": "x",
         }]
-        with (
-            patch("app.admin.load_rows", return_value=([], works, edges)),
-            patch("app.admin.snapshot", return_value=None),
-        ):
-            with self.assertRaises(HTTPException) as ctx:
-                admin.create("edges", {"source_work_id": w1, "target_work_id": w2, "evidence": "y"})
+        sqlite_store.rewrite_all([], works, edges)
+        with self.assertRaises(HTTPException) as ctx:
+            admin.create("edges", {"source_work_id": w1, "target_work_id": w2, "evidence": "y"})
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("反与正", ctx.exception.detail)
         self.assertIn("婚礼", ctx.exception.detail)
@@ -226,8 +236,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y"},
         ]
         sqlite_store.rewrite_all([], works, edges)
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.delete("works", w1)
+        res = admin.delete("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["edges"]), sorted([e1, e2]))
         data = sqlite_store.list_all()
@@ -253,8 +262,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"},
         ]
         sqlite_store.rewrite_all(authors, works, edges)
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.delete("authors", a1)
+        res = admin.delete("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
         self.assertEqual(res["cascade"]["edges"], [e1])
@@ -279,8 +287,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y", "deletedAt": "2026-08-20T09:00:00+00:00"},
         ]
         sqlite_store.rewrite_all([], works, edges)
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.restore("works", w1)
+        res = admin.restore("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["edges"], [e1])
         data = sqlite_store.list_all()
@@ -307,8 +314,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
         sqlite_store.rewrite_all(authors, works, edges)
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.restore("authors", a1)
+        res = admin.restore("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
         self.assertEqual(res["cascade"]["edges"], [e1])
@@ -331,23 +337,25 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
         sqlite_store.rewrite_all([], works, edges)
-        with patch("app.admin.snapshot", return_value=None):
-            res = admin.restore("edges", e1)
+        res = admin.restore("edges", e1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["works"]), sorted([w1, w2]))
         saved_works = sqlite_store.list_all()["works"]
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
 
-    def test_admin_create_response_has_warnings(self) -> None:
+    def test_admin_create_persists_and_audits(self) -> None:
         import app.admin as admin
 
-        with (
-            patch("app.admin.load_rows", return_value=([], [], [])),
-            patch("app.admin.snapshot", return_value=None),
-        ):
-            res = admin.create("authors", {"originalName": "某", "Name_CN": "某"})
-        self.assertIn("warnings", res)
+        res = admin.create("authors", {"originalName": "某", "Name_CN": "某"})
+        self.assertTrue(res["ok"])
+        # 行级写入落库 + 审计记录
+        data = sqlite_store.list_all()
+        self.assertEqual(len(data["authors"]), 1)
+        audit = sqlite_store.list_audit()
+        self.assertEqual(audit["total"], 1)
+        self.assertEqual(audit["items"][0]["action"], "create")
+        self.assertEqual(audit["items"][0]["kind"], "authors")
 
     def test_admin_token_rejects_placeholder(self) -> None:
         import app.admin as admin

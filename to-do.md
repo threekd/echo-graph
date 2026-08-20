@@ -49,6 +49,8 @@
 - [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区)
 - [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `docs/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 审计表;同步计数预检
+- [x] SQLite 迁移后优化(P3a-e):级联删除/恢复纯 SQL;行级校验(目标行+SQL 交叉引用);乐观并发(updatedAt 守卫 409);快照降频+分层清理(load_rows 迁入 sqlite_store,移除 save_rows,删除更新 updatedAt);`GET /api/admin/audit` 审计查询
+- [x] 前端优化(A/B):数据行类型化(`lib/adminTypes.ts`)+ Admin 拆分(AdminTable/ContributionsPanel/AuditPanel)+ jsdom 组件测试;Admin/Contribute 懒加载(首屏减约 30KB);乐观更新+409 版本冲突弹窗;审计 Tab;导出 JSON/CSV 按钮;`author_ids` 数组化;`/api/admin/data?include_deleted=` 按需拉取
 
 ## 3. 可视化效果
 

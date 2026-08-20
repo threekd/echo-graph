@@ -1,6 +1,6 @@
 # Echo Graph 策展数据迁移方案：CSV 事实源 → SQLite 主存 + 确定性 CSV 导出
 
-> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。本文档记录完整方案。
+> 状态：Phase 1-3 已实现（SQLite 主存、admin/importer/sync 切换、自动 CSV 导出、CI 导出门禁、贡献表并入同库）。P0-P2 优化已完成：行级 CRUD、统一连接层、schema 迁移 runner、索引、时间戳归一、DB CHECK、审计表、同步计数预检。P3a-e 已完成：级联纯 SQL、行级校验、乐观并发、快照降频与分层清理、审计查询接口。前端 A/B 优化已完成：类型化与组件拆分、懒加载、乐观更新、审计 UI、导出按钮、author_ids 数组化。本文档记录完整方案。
 
 ## 一、背景与目标
 
@@ -73,6 +73,24 @@
 - **时间戳归一**：所有 createdAt/updatedAt/deletedAt 统一为 UTC `+00:00`（一次性数据迁移 + 写入归一）；
 - **审计表** `audit_log`：每次管理写操作记录 action/kind/row_id/detail；
 - **同步计数预检**：`/api/admin/sync` 先比 3 个活跃计数（单次查询），不一致即判未同步，一致才做全量比对。
+
+## 五之三、P3a-e 优化清单（已完成）
+
+- **P3a 级联纯 SQL**：删除/恢复作品的涟漪边、作者名下作品与边，全部下推为 SQL（`UPDATE ... WHERE`/子查询），不再整库读取 + Python 算 id 集合；
+- **P3b 行级校验**：create/update 改为“目标行 Pydantic 校验 + SQL 交叉引用（作者/作品存在性、边对唯一性）”，全量 `parse_rows` 仅保留给导入/迁移；变更响应不再附带全量重复警告（由 `get_data` 统一提供）；
+- **P3c 乐观并发**：update 以客户端 `updatedAt` 为版本守卫，冲突返回 409；
+- **P3d 快照降频与分层清理**：管理写操作不再每次做整库文件快照（由 audit_log + git CSV 承担历史）；`load_rows` 迁入 `sqlite_store`，删除残留的 `data_store.save_rows`；删除/级联同时更新 `updatedAt`；
+- **P3e 审计查询**：新增 `GET /api/admin/audit`（按 action/kind/limit/offset 过滤审计记录）。
+
+## 五之四、前端优化清单（A/B,已完成）
+
+- **A1 类型化 + 拆分**：`lib/adminTypes.ts` 定义行/审计类型;Admin 拆出 `AdminTable`(通用表格)、`ContributionsPanel`、`AuditPanel`;引入 jsdom + testing-library,补组件测试(表格排序/筛选/软删除行);
+- **A2 懒加载**：Admin/Contribute 改为 `React.lazy`,普通用户首屏不再下载管理代码(主 chunk 约 -30KB,Admin 独立 chunk 31KB);
+- **A3 乐观更新 + 409**：增删改/恢复成功后本地更新行,不再整页重拉;409 版本冲突弹出「重新加载最新数据」确认框;
+- **A4 审计 UI**：管理页新增「审计」Tab,按操作过滤查看 audit_log;
+- **A5 导出按钮**：管理页头部新增「导出 JSON / 导出 CSV(当前表)」;
+- **B6 author_ids 数组化**：API works 行附带 `author_ids` 数组,前端显示/编辑优先消费数组;
+- **B7 include_deleted**：`/api/admin/data?include_deleted=` 支持按需拉取(服务端分页/筛选留待规模驱动)。
 
 ## 六、模块改动点
 

@@ -21,14 +21,19 @@ export interface AdminQueryOptions<T extends Record<string, any>> {
 
 // 作品表作者列显示:把逗号分隔的 author_id(可能带空格)逐个解析为作者名,未知 id 保留原样
 export function authorDisplayNames(
-  authorIdValue: string | null | undefined,
+  value: string | { author_id?: string | null; author_ids?: string[] } | null | undefined,
   authorsById: Record<string, any>,
   labelOf: (a: any) => string,
 ): string {
-  return String(authorIdValue || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean)
+  let ids: string[];
+  if (value && typeof value === "object") {
+    ids = Array.isArray(value.author_ids)
+      ? value.author_ids
+      : String(value.author_id || "").split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    ids = String(value || "").split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return ids
     .map((id) => {
       const a = authorsById[id];
       return a ? labelOf(a) : id;

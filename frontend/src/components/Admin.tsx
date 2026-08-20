@@ -114,6 +114,13 @@ export default function Admin() {
   const [contribsLoading, setContribsLoading] = useState(false);
   const [contribCount, setContribCount] = useState(0);
   const [viewContrib, setViewContrib] = useState<any>(null);
+  const [synced, setSynced] = useState<boolean | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    message: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
@@ -231,7 +238,15 @@ export default function Admin() {
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
   }, [authFetch]);
 
-  useEffect(() => { load(); }, [load]);
+  // 同步状态独立请求:不阻塞管理数据加载,提示异步到达
+  const loadSync = useCallback(() => {
+    authFetch("/api/admin/sync")
+      .then((r) => r.json())
+      .then((d) => setSynced(d.synced != null ? d.synced : null))
+      .catch(() => setSynced(null));
+  }, [authFetch]);
+
+  useEffect(() => { load(); loadSync(); }, [load, loadSync]);
 
   // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
   const loadContribs = useCallback((status: string) => {
@@ -328,24 +343,31 @@ export default function Admin() {
 
   const doDelete = (row: any) => {
     const id = row.id || edgeKey(row);
-    if (!window.confirm(`确认删除「${rowLabel(row)}」?(软删除,可恢复,关联的作品/涟漪将一并软删除)`)) return;
-    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
-      .then((r) => r.json())
-      .then((d) => {
-        const cascade = d.cascade || {};
-        const parts: string[] = [];
-        if (cascade.works && cascade.works.length) parts.push(cascade.works.length + " 部作品");
-        if (cascade.edges && cascade.edges.length) parts.push(cascade.edges.length + " 条涟漪");
-        setStatus(
-          d.ok
-            ? `已软删除「${rowLabel(row)}」${parts.length ? ",连带 " + parts.join(" / ") : ""}`
-            : (d.detail || "删除失败")
-        );
-        setWarnings(d.warnings || null);
-        if (d.ok) setModal(null); // 从编辑弹窗删除后关闭弹窗
-        load();
-      })
-      .catch((e) => setStatus("删除失败: " + e.message));
+    setConfirmState({
+      title: "确认删除",
+      message: `确认删除「${rowLabel(row)}」?(软删除,可恢复,关联的作品/涟漪将一并软删除)`,
+      danger: true,
+      onConfirm: () => {
+        authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
+          .then((r) => r.json())
+          .then((d) => {
+            const cascade = d.cascade || {};
+            const parts: string[] = [];
+            if (cascade.works && cascade.works.length) parts.push(cascade.works.length + " 部作品");
+            if (cascade.edges && cascade.edges.length) parts.push(cascade.edges.length + " 条涟漪");
+            setStatus(
+              d.ok
+                ? `已软删除「${rowLabel(row)}」${parts.length ? ",连带 " + parts.join(" / ") : ""}`
+                : (d.detail || "删除失败")
+            );
+            setWarnings(d.warnings || null);
+            if (d.ok) setModal(null); // 从编辑弹窗删除后关闭弹窗
+            load();
+            loadSync();
+          })
+          .catch((e) => setStatus("删除失败: " + e.message));
+      },
+    });
   };
 
   const doRestore = (id: string) => {
@@ -365,24 +387,30 @@ export default function Admin() {
         );
         setWarnings(d.warnings || null);
         load();
+        loadSync();
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
   };
 
   const doImport = () => {
-    if (!window.confirm("将 data/real/*.csv 写入 Neo4j(增量合并),继续?")) return;
-    setStatus("导入中…");
-    authFetch("/api/admin/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wipe: false, version: "1.1" }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        setStatus(d.ok ? "导入完成" : (d.detail || "导入失败"));
-        setTimeout(() => window.location.reload(), 1200);
-      })
-      .catch((e) => setStatus("导入失败: " + e.message));
+    setConfirmState({
+      title: "上传到 Neo4j",
+      message: "将 data/real/*.csv 写入 Neo4j(增量合并),继续?",
+      onConfirm: () => {
+        setStatus("导入中…");
+        authFetch("/api/admin/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wipe: false, version: "1.1" }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            setStatus(d.ok ? "导入完成" : (d.detail || "导入失败"));
+            setTimeout(() => window.location.reload(), 1200);
+          })
+          .catch((e) => setStatus("导入失败: " + e.message));
+      },
+    });
   };
 
   const saveForm = () => {
@@ -425,6 +453,7 @@ export default function Admin() {
         setStatus(modal.mode === "edit" ? "已更新" : "已新增");
         setWarnings(res.data.warnings || null);
         load();
+        loadSync();
       })
       .catch((e) => setFormError("请求失败: " + e.message));
   };
@@ -527,6 +556,9 @@ export default function Admin() {
           </div>
         </div>
         <div id="admin-status">{status}</div>
+        {synced === false && (
+          <div id="admin-sync-hint">数据未上传,点击「上传↑」同步至 Neo4j</div>
+        )}
         {warnings && Boolean(warnings.duplicateAuthorNames?.length || warnings.duplicateWorkTitles?.length || warnings.duplicateEdgePairs?.length) && (
           <div id="admin-warnings">
             ⚠ 重复提醒:
@@ -569,6 +601,27 @@ export default function Admin() {
               <div className="admin-modal-actions">
                 <button className="del" onClick={doLogout}>确认</button>
                 <button onClick={() => setLogoutOpen(false)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {confirmState && (
+          <div id="auth-modal">
+            <div className="auth-modal-card">
+              <h3>{confirmState.title}</h3>
+              <p>{confirmState.message}</p>
+              <div className="admin-modal-actions">
+                <button
+                  className={confirmState.danger ? "del" : undefined}
+                  onClick={() => {
+                    const run = confirmState.onConfirm;
+                    setConfirmState(null);
+                    run();
+                  }}
+                >
+                  确认
+                </button>
+                <button onClick={() => setConfirmState(null)}>取消</button>
               </div>
             </div>
           </div>

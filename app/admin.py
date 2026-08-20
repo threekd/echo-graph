@@ -21,6 +21,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.contributions import list_contributions, set_status
 from app.data_models import find_duplicates, parse_rows
 from app.data_store import AUTHOR_HEADER, EDGE_HEADER, WORK_HEADER, clean_row, load_rows, save_rows, snapshot
+from app.db import get_store
 from app.importer import run_import
 
 _admin_bearer = HTTPBearer(auto_error=False)
@@ -102,6 +103,146 @@ def _author_ids_contain(value, author_id: str) -> bool:
     return any(v.strip() == author_id for v in str(value or "").split(",") if v.strip())
 
 
+def _sync_norm(value):
+    """同步比对用的字段归一化:去空白、数值字符串转 int、空串统一为 None。"""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            return int(s)
+        except ValueError:
+            return s
+    return value
+
+
+def _csv_sync_payload() -> dict:
+    """CSV 活跃数据的规范化载荷(忽略时间戳,用于与 Neo4j 比对)。"""
+    a, w, e = load_rows()
+    active_a = [r for r in a if not r.get("deletedAt")]
+    active_w = [r for r in w if not r.get("deletedAt")]
+    active_e = [r for r in e if not r.get("deletedAt")]
+
+    authors = []
+    for r in active_a:
+        authors.append({
+            "id": _sync_norm(r.get("id")),
+            "originalName": _sync_norm(r.get("originalName")),
+            "Name_CN": _sync_norm(r.get("Name_CN")),
+            "Name_EN": _sync_norm(r.get("Name_EN")),
+            "nationality": _sync_norm((r.get("nationality") or "").upper()),
+            "birthYear": _sync_norm(r.get("birthYear")),
+            "deathYear": _sync_norm(r.get("deathYear")),
+            "reviewStatus": _sync_norm(r.get("reviewStatus") or "draft"),
+        })
+    works = []
+    for r in active_w:
+        works.append({
+            "id": _sync_norm(r.get("id")),
+            "language": _sync_norm((r.get("language") or "").lower()),
+            "originalTitle": _sync_norm(r.get("originalTitle")),
+            "Title_CN": _sync_norm(r.get("Title_CN")),
+            "Title_EN": _sync_norm(r.get("Title_EN")),
+            "Title_Other": _sync_norm(r.get("Title_Other")),
+            "publicationYear": _sync_norm(r.get("publicationYear")),
+            "creationYear": _sync_norm(r.get("creationYear")),
+            "genre": _sync_norm(r.get("genre")),
+            "reviewStatus": _sync_norm(r.get("reviewStatus") or "draft"),
+            "author_ids": sorted(
+                _sync_norm(x) for x in (r.get("author_id") or "").split(",") if x.strip()
+            ),
+        })
+    echoes = []
+    for r in active_e:
+        echoes.append({
+            "id": _sync_norm(r.get("id")),
+            "source": _sync_norm(r.get("source_work_id")),
+            "target": _sync_norm(r.get("target_work_id")),
+            "evidence": _sync_norm(r.get("evidence")),
+            "evidenceSource": _sync_norm(r.get("evidenceSource")),
+            "note": _sync_norm(r.get("note")),
+            "reviewStatus": _sync_norm(r.get("reviewStatus") or "draft"),
+        })
+    return {
+        "authors": sorted(authors, key=lambda x: x["id"]),
+        "works": sorted(works, key=lambda x: x["id"]),
+        "echoes": sorted(echoes, key=lambda x: x["id"]),
+    }
+
+
+def _neo4j_sync_payload() -> dict | None:
+    """Neo4j 主存储的规范化载荷;不可用(JSON 兜底/连接失败)时返回 None。
+
+    合并查询:作者/作品与归属关系用一次查询取回(labels 区分类型),
+    ECHO 关系一次取回,共 2 次网络往返。
+    """
+    store = get_store()
+    primary = getattr(store, "primary", None)
+    if primary is None or getattr(primary, "name", None) != "neo4j":
+        return None
+    try:
+        q = primary._query
+        node_rows = q(
+            "MATCH (n) WHERE n:Author OR n:Work "
+            "OPTIONAL MATCH (n)-[:AUTHORED_BY]->(a:Author) "
+            "RETURN labels(n) AS ls, properties(n) AS p, collect(DISTINCT a.id) AS author_ids"
+        )
+        echo_rows = q("MATCH (s:Work)-[r:ECHO]->(t:Work) RETURN s.id AS s, t.id AS t, properties(r) AS p")
+    except Exception:  # noqa: BLE001 - Neo4j 不可用时视为无法比对
+        return None
+
+    authors = []
+    works = []
+    for r in node_rows:
+        p = r["p"]
+        ls = r.get("ls") or []
+        if "Author" in ls:
+            authors.append({
+                "id": _sync_norm(p.get("id")),
+                "originalName": _sync_norm(p.get("originalName")),
+                "Name_CN": _sync_norm(p.get("Name_CN")),
+                "Name_EN": _sync_norm(p.get("Name_EN")),
+                "nationality": _sync_norm((p.get("nationality") or "").upper()),
+                "birthYear": _sync_norm(p.get("birthYear")),
+                "deathYear": _sync_norm(p.get("deathYear")),
+                "reviewStatus": _sync_norm(p.get("reviewStatus") or "draft"),
+            })
+        elif "Work" in ls:
+            aids = [x for x in (r.get("author_ids") or []) if x]
+            works.append({
+                "id": _sync_norm(p.get("id")),
+                "language": _sync_norm((p.get("language") or "").lower()),
+                "originalTitle": _sync_norm(p.get("originalTitle")),
+                "Title_CN": _sync_norm(p.get("Title_CN")),
+                "Title_EN": _sync_norm(p.get("Title_EN")),
+                "Title_Other": _sync_norm(p.get("Title_Other")),
+                "publicationYear": _sync_norm(p.get("publicationYear")),
+                "creationYear": _sync_norm(p.get("creationYear")),
+                "genre": _sync_norm(p.get("genre")),
+                "reviewStatus": _sync_norm(p.get("reviewStatus") or "draft"),
+                "author_ids": sorted(_sync_norm(x) for x in aids),
+            })
+    echoes = []
+    for r in echo_rows:
+        p = r["p"]
+        echoes.append({
+            "id": _sync_norm(p.get("id")),
+            "source": _sync_norm(r["s"]),
+            "target": _sync_norm(r["t"]),
+            "evidence": _sync_norm(p.get("evidence")),
+            "evidenceSource": _sync_norm(p.get("evidenceSource")),
+            "note": _sync_norm(p.get("note")),
+            "reviewStatus": _sync_norm(p.get("reviewStatus") or "draft"),
+        })
+    return {
+        "authors": sorted(authors, key=lambda x: x["id"]),
+        "works": sorted(works, key=lambda x: x["id"]),
+        "echoes": sorted(echoes, key=lambda x: x["id"]),
+    }
+
+
 @router.get("/data")
 def get_data() -> dict:
     a, w, e = load_rows()
@@ -120,6 +261,17 @@ def get_data() -> dict:
                 "edges": sum(1 for r in e if r.get("deletedAt")),
             },
         },
+    }
+
+
+@router.get("/sync")
+def admin_sync() -> dict:
+    """CSV 与 Neo4j 的同步状态(独立接口,不拖慢管理数据加载)。"""
+    csv_payload = _csv_sync_payload()
+    neo_payload = _neo4j_sync_payload()
+    return {
+        # Neo4j 不可用时为 None(前端不提示)
+        "synced": (csv_payload == neo_payload) if neo_payload is not None else None,
     }
 
 

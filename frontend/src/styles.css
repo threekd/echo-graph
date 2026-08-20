@@ -674,6 +674,8 @@ th.sortable.active .sort-icon {
 #admin-table tr.deleted td { opacity: 0.45; }
 #admin-table td button {
   padding: 4px 9px;
+  min-width: 42px; /* 两个汉字的最小宽度,避免"编辑"被挤成上下两个字 */
+  white-space: nowrap;
   border-radius: 7px;
   border: 1px solid rgba(148, 163, 255, 0.3);
   background: rgba(30, 44, 90, 0.5);
@@ -893,6 +895,15 @@ th.sortable.active .sort-icon {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.admin-modal-actions-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.admin-modal-actions button.del {
+  border-color: rgba(255, 120, 120, 0.45);
+  color: #ffb0b0;
 }
 .admin-modal-actions button {
   padding: 8px 16px;

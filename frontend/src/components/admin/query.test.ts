@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAdminQuery } from "./query";
+import { applyAdminQuery, authorDisplayNames } from "./query";
 
 const authors = [
   { id: "a1", Name_CN: "加缪", originalName: "Albert Camus", reviewStatus: "reviewed", nationality: "CN", birthYear: 1920, deletedAt: "" },
@@ -102,5 +102,26 @@ describe("applyAdminQuery", () => {
       cellValue: edgeCellValue,
     });
     expect(byTitle.map((r) => r.id)).toEqual(["e1"]);
+  });
+});
+
+describe("authorDisplayNames", () => {
+  const authorsById: Record<string, any> = {
+    a1: { Name_CN: "甲", birthYear: 1920 },
+    a2: { Name_CN: "乙" },
+  };
+  const labelOf = (a: any) => a.Name_CN + (a.birthYear ? "-" + a.birthYear : "");
+
+  it("多作者全部解析为名称,容忍逗号后空格", () => {
+    expect(authorDisplayNames("a1, a2", authorsById, labelOf)).toBe("甲-1920、乙");
+  });
+
+  it("未知 id 保留原样(trim 后)", () => {
+    expect(authorDisplayNames(" x1 , a2", authorsById, labelOf)).toBe("x1、乙");
+  });
+
+  it("空值返回空串", () => {
+    expect(authorDisplayNames("", authorsById, labelOf)).toBe("");
+    expect(authorDisplayNames(null, authorsById, labelOf)).toBe("");
   });
 });

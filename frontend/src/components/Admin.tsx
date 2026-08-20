@@ -11,7 +11,7 @@ import {
   workLabel,
   WorkPicker,
 } from "./admin/pickers";
-import { applyAdminQuery } from "./admin/query";
+import { applyAdminQuery, authorDisplayNames } from "./admin/query";
 
 type Kind = "authors" | "works" | "edges";
 
@@ -256,6 +256,7 @@ export default function Admin() {
       .then((d) => {
         setStatus(d.ok ? "已软删除" : (d.detail || "删除失败"));
         setWarnings(d.warnings || null);
+        if (d.ok) setModal(null); // 从编辑弹窗删除后关闭弹窗
         load();
       })
       .catch((e) => setStatus("删除失败: " + e.message));
@@ -352,14 +353,7 @@ export default function Admin() {
       return w ? workLabel(w) : String(r[key] ?? "");
     }
     if (kind === "works" && key === "author_id") {
-      return String(r.author_id || "")
-        .split(",")
-        .filter(Boolean)
-        .map((id: string) => {
-          const a = authorsById[id];
-          return a ? authorLabelOf(a) : id;
-        })
-        .join("、");
+      return authorDisplayNames(r.author_id, authorsById, authorLabelOf);
     }
     const v = r[key];
     return v == null ? "" : String(v);
@@ -536,12 +530,7 @@ export default function Admin() {
                     <td>
                       {r.deletedAt
                         ? <button onClick={() => doRestore(r.id || edgeKey(r))}>恢复</button>
-                        : (
-                          <>
-                            <button onClick={() => openEdit(r)}>编辑</button>
-                            <button className="del" onClick={() => doDelete(r.id || edgeKey(r))}>删除</button>
-                          </>
-                        )}
+                        : <button onClick={() => openEdit(r)}>编辑</button>}
                     </td>
                   </tr>
                 ))}
@@ -674,8 +663,13 @@ export default function Admin() {
             </div>
             {formError && <div id="admin-form-errors">{formError}</div>}
             <div className="admin-modal-actions">
-              <button onClick={saveForm}>保存</button>
-              <button onClick={() => setModal(null)}>取消</button>
+              {modal.mode === "edit" && (
+                <button className="del" onClick={() => doDelete(modal.row.id || edgeKey(modal.row))}>删除</button>
+              )}
+              <div className="admin-modal-actions-right">
+                <button onClick={saveForm}>保存</button>
+                <button onClick={() => setModal(null)}>取消</button>
+              </div>
             </div>
           </div>
         </div>

@@ -280,7 +280,7 @@ export function AuthorPicker({
 
   const commit = (next: { value: string; label: string }[]) => {
     setSelected(next);
-    onChange(next.map((s) => s.value).join(", "));
+    onChange(next.map((s) => s.value).join(","));
   };
 
   const addAuthor = (a: any) => {

@@ -19,6 +19,23 @@ export interface AdminQueryOptions<T extends Record<string, any>> {
   cellValue: (row: T, key: string) => string;
 }
 
+// 作品表作者列显示:把逗号分隔的 author_id(可能带空格)逐个解析为作者名,未知 id 保留原样
+export function authorDisplayNames(
+  authorIdValue: string | null | undefined,
+  authorsById: Record<string, any>,
+  labelOf: (a: any) => string,
+): string {
+  return String(authorIdValue || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((id) => {
+      const a = authorsById[id];
+      return a ? labelOf(a) : id;
+    })
+    .join("、");
+}
+
 export function applyAdminQuery<T extends Record<string, any>>(
   rows: T[],
   opts: AdminQueryOptions<T>

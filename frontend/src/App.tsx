@@ -53,6 +53,7 @@ function AppContent() {
   const stateRef = useRef<{ state: AppState; dispatch: (a: AppAction) => void } | null>(null);
   stateRef.current = { state, dispatch };
   useMobileGestures();
+  const backSentinelPushed = useRef(false);
   // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
   const lastAppliedHash = useRef<string | null>(null);
   const lastAppliedAt = useRef(0);
@@ -169,6 +170,38 @@ function AppContent() {
       });
   }, [applyHash, dispatch]);
 
+  // 手机端返回:有栏先收栏;非主视图回主视图;主视图且无栏则放行系统返回。
+  // 加载时压入一个"哨兵"历史条目,视图变化用 replaceState 改写 URL(不产生视图历史),
+  // 因此每次返回都先回到哨兵之下的条目,由这里决定消费(补回哨兵)还是放行。
+  useEffect(() => {
+    if (!isMobileLayout()) return;
+    if (!backSentinelPushed.current) {
+      history.pushState({ litnebulaBack: true }, "", location.href);
+      backSentinelPushed.current = true;
+    }
+    const onPopState = () => {
+      const s = document.getElementById("sidebar-left");
+      const p = document.getElementById("panel");
+      const barsOpen =
+        !!(s && s.classList.contains("show")) || !!(p && p.classList.contains("show"));
+      const st = stateRef.current && stateRef.current.state;
+      const notMain = !!st && st.currentView !== "main";
+      if (barsOpen) {
+        if (s) s.classList.remove("show");
+        if (p) p.classList.remove("show");
+      } else if (notMain) {
+        renderMain({});
+        dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
+      } else {
+        return; // 主视图且无栏:放行,让浏览器退出/回上一页
+      }
+      // 消费本次返回后补一个哨兵条目,保证下一次返回仍可拦截
+      history.pushState({ litnebulaBack: true }, "", location.href);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [dispatch]);
+
   // 左右侧边栏边缘感应:鼠标靠近屏幕边缘时滑出
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -186,10 +219,12 @@ function AppContent() {
   useEffect(() => {
     let lastFocusHash = location.hash;
     const onHashChange = () => {
+      if (isMobileLayout()) return; // 手机端返回由应用层接管,不按 URL 历史导航
       lastFocusHash = location.hash;
       applyHash();
     };
     const onFocus = () => {
+      if (isMobileLayout()) return;
       if (location.hash !== lastFocusHash) applyHash(); // 失焦期间 hash 被改动(地址栏编辑)才处理
       lastFocusHash = location.hash;
     };

@@ -139,7 +139,12 @@ export function syncUrl(opts: ViewOpts) {
   const hash = buildHash(opts || {});
   if (location.hash.replace(/^#/, "") !== hash) {
     lastWrittenHash = "#" + hash;
-    location.hash = hash;
+    if (isMobileLayout()) {
+      // 手机端视图变化不产生历史条目:返回由应用层接管(见 App.tsx 的返回处理)
+      history.replaceState(null, "", "#" + hash);
+    } else {
+      location.hash = hash;
+    }
   }
 }
 

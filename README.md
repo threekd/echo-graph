@@ -91,7 +91,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 2. VPS 上执行初始化(第二个参数是 certbot 邮箱,用于自动签发 HTTPS 证书):
 
    ```bash
-   sudo bash deploy/setup-vps.sh <你的域名> <certbot邮箱>
+   sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
    ```
 
 3. 编辑 `/opt/echo-graph/.env`,填入 `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` / `ADMIN_TOKEN`。
@@ -99,7 +99,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
    ```bash
    sudo systemctl start echo-graph
-   curl https://<你的域名>/api/health
+   curl https://litnebula.com/api/health
    ```
 
 5. 之后每次更新代码(`deploy.sh` 会自动备份数据、重新生成 JSON 兜底种子、构建前端并重启):

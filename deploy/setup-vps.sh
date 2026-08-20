@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Echo Graph VPS 一键初始化(Ubuntu 22.04 / 24.04+)
 # 用法: sudo bash setup-vps.sh <域名> [certbot邮箱]
-# 示例: sudo bash setup-vps.sh graph.example.com admin@example.com
+# 示例: sudo bash setup-vps.sh litnebula.com admin@example.com
 set -euo pipefail
 
 DOMAIN="${1:-}"

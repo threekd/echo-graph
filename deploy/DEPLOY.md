@@ -33,7 +33,7 @@
 ## 2. 首次初始化
 
 ```bash
-sudo bash deploy/setup-vps.sh <你的域名> <certbot邮箱>
+sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 ```
 
 脚本会:装系统依赖 → Node 24 + pnpm → 建 `echograph` 用户 → 装 uv → 拉代码 →
@@ -45,7 +45,7 @@ sudo bash deploy/setup-vps.sh <你的域名> <certbot邮箱>
 ```bash
 sudo nano /opt/echo-graph/.env          # 填入 NEO4J_* 与 ADMIN_TOKEN
 sudo systemctl start echo-graph
-curl https://<你的域名>/api/health       # 期望 {"status":"ok","store":"neo4j","fallbacks":0}
+curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"neo4j","fallbacks":0}
 ```
 
 防火墙(可选但推荐):

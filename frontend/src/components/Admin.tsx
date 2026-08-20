@@ -432,29 +432,6 @@ export default function Admin() {
     });
   };
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportJson = () => {
-    authFetch("/api/admin/export/json")
-      .then((r) => r.blob())
-      .then((b) => downloadBlob(b, "echo-graph-data.json"));
-  };
-
-  const exportCsv = () => {
-    authFetch("/api/admin/export/csv/" + kind)
-      .then((r) => r.blob())
-      .then((b) => downloadBlob(b, kind + ".csv"));
-  };
-
   const saveForm = () => {
     // 前端必填校验
     const fields = FIELDS[kind];
@@ -603,8 +580,6 @@ export default function Admin() {
           <div className="admin-actions">
             {kind !== "contributions" && kind !== "audit" && <button onClick={openAdd}>＋ 新增</button>}
             {kind !== "contributions" && kind !== "audit" && <button onClick={doImport}>上传↑</button>}
-            {kind !== "contributions" && kind !== "audit" && <button onClick={exportJson}>导出 JSON</button>}
-            {kind !== "contributions" && kind !== "audit" && <button onClick={exportCsv}>导出 CSV</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>

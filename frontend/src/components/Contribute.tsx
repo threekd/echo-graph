@@ -170,12 +170,12 @@ export default function Contribute() {
         </p>
         <div id="admin-form">
           <label>
-            <span>源作品(提及方) <span className="req">*</span></span>
+            <span>源作品 <span className="req">*</span></span>
             <SuggestionInput
               value={form.source_work}
               onChange={(v) => set("source_work", v)}
               suggestions={workSuggestions}
-              placeholder="如:局外人 / L'Étranger"
+              placeholder=""
               onPick={fillWorkAuthor("source")}
             />
           </label>
@@ -185,16 +185,16 @@ export default function Contribute() {
               value={form.source_author}
               onChange={(v) => set("source_author", v)}
               suggestions={authorSuggestions}
-              placeholder="如:加缪 / Albert Camus"
+              placeholder=""
             />
           </label>
           <label>
-            <span>目标作品(被提及方) <span className="req">*</span></span>
+            <span>目标作品 <span className="req">*</span></span>
             <SuggestionInput
               value={form.target_work}
               onChange={(v) => set("target_work", v)}
               suggestions={workSuggestions}
-              placeholder="如:鼠疫 / La Peste"
+              placeholder=""
               onPick={fillWorkAuthor("target")}
             />
           </label>
@@ -204,7 +204,7 @@ export default function Contribute() {
               value={form.target_author}
               onChange={(v) => set("target_author", v)}
               suggestions={authorSuggestions}
-              placeholder="如:加缪 / Albert Camus"
+              placeholder=""
             />
           </label>
           <label className="full">
@@ -216,19 +216,23 @@ export default function Contribute() {
             />
           </label>
           <label>
-            <span>出处(章节/页码/译本) <span className="req">*</span></span>
-            <input value={form.evidence_source} onChange={(e) => set("evidence_source", e.target.value)} />
+            <span>出处 <span className="req">*</span></span>
+            <input 
+              value={form.evidence_source} 
+              onChange={(e) => set("evidence_source", e.target.value)} 
+              placeholder="章节-译本"
+            />
           </label>
           <label className="full">
             <span>备注</span>
             <textarea value={form.note} onChange={(e) => set("note", e.target.value)} />
           </label>
           <label>
-            <span>联系方式(选填)</span>
+            <span>联系方式</span>
             <input
               value={form.contact}
               onChange={(e) => set("contact", e.target.value)}
-              placeholder="邮箱 / 社交账号,便于后续联系"
+              placeholder="邮箱,便于后续联系"
             />
           </label>
         </div>

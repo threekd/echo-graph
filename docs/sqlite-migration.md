@@ -88,7 +88,7 @@
 - **A2 懒加载**：Admin/Contribute 改为 `React.lazy`,普通用户首屏不再下载管理代码(主 chunk 约 -30KB,Admin 独立 chunk 31KB);
 - **A3 乐观更新 + 409**：增删改/恢复成功后本地更新行,不再整页重拉;409 版本冲突弹出「重新加载最新数据」确认框;
 - **A4 审计 UI**：管理页新增「审计」Tab,按操作过滤查看 audit_log;
-- **A5 导出按钮**：管理页头部新增「导出 JSON / 导出 CSV(当前表)」;
+- **A5 导出按钮**：管理页导出 JSON / CSV 已移除(含 `/api/admin/export/*` 接口),备份由每次写入的自动 CSV 导出 + git 承担;
 - **B6 author_ids 数组化**：API works 行附带 `author_ids` 数组,前端显示/编辑优先消费数组;
 - **B7 include_deleted**：`/api/admin/data?include_deleted=` 支持按需拉取(服务端分页/筛选留待规模驱动)。
 

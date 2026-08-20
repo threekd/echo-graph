@@ -5,26 +5,19 @@
 
 from __future__ import annotations
 
-import csv
 import datetime as dt
 import hmac
-import io
-import json
 import os
 import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import db_sqlite, sqlite_store
 from app.contributions import list_contributions, set_status
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
 from app.data_store import (
-    AUTHOR_HEADER,
-    EDGE_HEADER,
-    WORK_HEADER,
     clean_row,
     export_csv_files,
 )
@@ -61,12 +54,6 @@ router = APIRouter(
 )
 
 Kind = Literal["authors", "works", "edges"]
-HEADERS = {"authors": AUTHOR_HEADER, "works": WORK_HEADER, "edges": EDGE_HEADER}
-
-
-def _rows(kind: Kind) -> list[dict]:
-    a, w, e = sqlite_store.load_rows()
-    return {"authors": a, "works": w, "edges": e}[kind]
 
 
 def _warnings(a: list[dict], w: list[dict], e: list[dict]) -> dict[str, list[str]]:
@@ -432,30 +419,3 @@ def admin_audit(
 ) -> dict:
     """管理写操作审计记录。"""
     return sqlite_store.list_audit(limit, offset, action, kind)
-
-
-@router.get("/export/json")
-def export_json() -> Response:
-    a, w, e = sqlite_store.load_rows()
-    payload = {"authors": a, "works": w, "edges": e, "exportedAt": _now()}
-    body = json.dumps(payload, ensure_ascii=False, indent=2)
-    return Response(
-        body,
-        media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="echo-graph-data.json"'},
-    )
-
-
-@router.get("/export/csv/{kind}")
-def export_csv(kind: Kind) -> Response:
-    rows = _rows(kind)
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=HEADERS[kind], extrasaction="ignore")
-    writer.writeheader()
-    for r in rows:
-        writer.writerow({h: (r.get(h) if r.get(h) is not None else "") for h in HEADERS[kind]})
-    return Response(
-        "\ufeff" + buf.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{kind}.csv"'},
-    )

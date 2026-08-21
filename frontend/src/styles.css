@@ -898,6 +898,17 @@ th.sortable.active .sort-icon {
   border-color: rgba(138, 184, 255, 0.7);
   box-shadow: 0 0 12px rgba(138, 184, 255, 0.25);
 }
+#btn-jump {
+  margin-top: 8px;
+  border-color: rgba(167, 139, 250, 0.5);
+  background: linear-gradient(120deg, rgba(124, 58, 237, 0.25), rgba(34, 211, 238, 0.18));
+  color: #e3d6ff;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.3);
+}
+#btn-jump:hover {
+  border-color: rgba(196, 181, 253, 0.9);
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.55);
+}
 #admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
 #admin-form .full { grid-column: 1 / -1; }
 #admin-form label {

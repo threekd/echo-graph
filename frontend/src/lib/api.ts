@@ -47,6 +47,11 @@ export interface SpaceRows {
   edges: Record<string, any>[];
 }
 
+export interface SpaceJumpResult extends GraphData {
+  spaceId: string;
+  displayName: string;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
   return r.json() as Promise<T>;
@@ -90,4 +95,13 @@ export async function loadMyRows(): Promise<SpaceRows> {
   const r = await fetch("/api/me/data");
   if (!r.ok) throw new Error("加载我的数据失败");
   return r.json() as Promise<SpaceRows>;
+}
+
+export async function jumpToRandomSpace(): Promise<SpaceJumpResult> {
+  const r = await fetch("/api/space/random/graph");
+  if (!r.ok) {
+    const d = await r.json().catch(() => null);
+    throw new Error((d && d.detail) || "暂无公开星云可跃迁");
+  }
+  return r.json() as Promise<SpaceJumpResult>;
 }

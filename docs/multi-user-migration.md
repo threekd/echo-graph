@@ -92,3 +92,8 @@
   - 文档同步(README / DEPLOY.md / data_schema / .env.example)。
   - 遗留说明:`.env` 中旧 `ADMIN_TOKEN` 无害可删;admin「贡献」Tab 与
     `/api/contribute/echo` 保留为兼容入口(前端已不使用,待后台发布管线取代)。
+- 2026-08-22:星际跃迁功能落地——左侧栏「公共星云 / 我的星云」下方新增
+  「✦ 星际跃迁」按钮;数据源标签改为所在星云账号(公共星云显示 public);
+  空间接口附 `displayName`(当前用邮箱,公网部署前建议脱敏/显示名)。
+  生成测试账号 jump-test-1/2/3@test.local(密码 jump-test-123,各 3-5 位作者
+  + 若干作品/涟漪),随机跃迁 10 次命中 5 个公开星云,定向访问与 404 均正常。

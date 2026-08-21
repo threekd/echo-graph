@@ -68,6 +68,7 @@ export interface AppState {
   authOpen: boolean; // 登录/注册弹窗
   user: AuthUser | null; // 当前登录用户(未登录为 null)
   space: Space; // 当前浏览空间:public = 公共星云,mine = 我的星云(私有)
+  spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
   guideVisible: boolean;
 }
 
@@ -96,6 +97,7 @@ export const initialState: AppState = {
   authOpen: false,
   user: null,
   space: "public",
+  spaceOwner: "public",
   guideVisible: false,
 };
 
@@ -145,6 +147,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, user: action.user || null };
     case "SET_SPACE":
       return { ...state, space: action.space };
+    case "SET_SPACE_OWNER":
+      return { ...state, spaceOwner: action.owner };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

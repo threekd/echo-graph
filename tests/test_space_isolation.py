@@ -128,6 +128,7 @@ class SpaceIsolationTest(unittest.TestCase):
         # 随机跃迁命中唯一公开星云
         r = space.random_space_graph(_FakeReq())
         self.assertEqual(r["spaceId"], self.alice["id"])
+        self.assertEqual(r["displayName"], self.alice["email"])
         self.assertEqual(len(r["nodes"]), 1)
         # 设为 private:游客 404,owner 与 admin 可读
         with db_sqlite._db() as conn:

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
-import { loadGraphData, search, type Space } from "../lib/api";
+import { jumpToRandomSpace, loadGraphData, search, type Space } from "../lib/api";
 import { logout } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
@@ -24,6 +24,10 @@ export default function Sidebar() {
       return;
     }
     dispatch({ type: "SET_SPACE", space });
+    dispatch({
+      type: "SET_SPACE_OWNER",
+      owner: space === "public" ? "public" : (state.user?.email || "我的星云"),
+    });
     loadGraphData(space)
       .then((data) => {
         dispatch({ type: "SET_DATA", data });
@@ -35,6 +39,23 @@ export default function Sidebar() {
           msg: "加载「" + (space === "mine" ? "我的星云" : "公共星云") + "」失败: " + e.message,
           kind: "error",
         })
+      );
+  };
+
+  const doJump = () => {
+    jumpToRandomSpace()
+      .then((d) => {
+        dispatch({ type: "SET_DATA", data: d });
+        dispatch({ type: "SET_SPACE_OWNER", owner: d.displayName || "未知星云" });
+        renderMain({}, d);
+        dispatch({
+          type: "SET_TOAST",
+          msg: "已跃迁到「" + (d.displayName || "未知星云") + "」的星云",
+          kind: "info",
+        });
+      })
+      .catch((e) =>
+        dispatch({ type: "SET_TOAST", msg: "跃迁失败: " + e.message, kind: "error" })
       );
   };
   const lookups = useRef<WorkLookups>({ workLookup: {}, workById: {}, options: [] });
@@ -217,7 +238,7 @@ export default function Sidebar() {
             </button>
           )}
           <div className="store-badge">
-            数据源:{state.storeName ? "个人整理及书友分享" : "加载中…"} 
+            数据源:{state.spaceOwner || "public"}
           </div>
         </div>
         <div className="space-switch">
@@ -234,6 +255,9 @@ export default function Sidebar() {
             我的星云
           </button>
         </div>
+        <button id="btn-jump" className="side-btn jump-btn" onClick={doJump}>
+          ✦ 星际跃迁
+        </button>
         <nav>
           <div id="view-status">视图:{viewLabel(state.currentView)}</div>
           <button

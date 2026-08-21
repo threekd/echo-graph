@@ -2,7 +2,8 @@
 
 可见性:users.space_visibility(默认 public)。private 空间对访客不可见(404);
 本人通过 /api/me/* 访问;admin 可访问任意空间(审核/运营)。
-读取返回与 /api/graph 同形状的图谱数据,不包含任何用户隐私字段。
+读取返回与 /api/graph 同形状的图谱数据,附 spaceId / displayName(星云账号,
+当前用邮箱;正式公网部署前建议改为显示名或脱敏,避免暴露邮箱)。
 """
 
 from __future__ import annotations
@@ -45,16 +46,24 @@ def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
     with db_sqlite._db() as conn:
         row = conn.execute(
-            "SELECT id FROM users WHERE space_visibility = 'public'"
+            "SELECT id, email FROM users WHERE space_visibility = 'public'"
             " ORDER BY RANDOM() LIMIT 1"
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="暂无可公开访问的星云")
-    return {"spaceId": row["id"], **SqliteStore(owner_id=row["id"]).graph()}
+    return {
+        "spaceId": row["id"],
+        "displayName": row["email"],
+        **SqliteStore(owner_id=row["id"]).graph(),
+    }
 
 
 @router.get("/{user_id}/graph")
 def space_graph(user_id: str, request: Request) -> dict:
     """定向访问:读取某用户公开的星云。"""
     row = _require_visible(user_id, _viewer(request))
-    return SqliteStore(owner_id=row["id"]).graph()
+    return {
+        "spaceId": row["id"],
+        "displayName": row["email"],
+        **SqliteStore(owner_id=row["id"]).graph(),
+    }

@@ -164,6 +164,8 @@ export function renderMain(opts: any, dataOverride?: GraphData | null, overrides
   data = filterAuthorsWith(data, showAuthors);
   commitView("main", data, opts || {});
   syncUrl({ view: "main", hideIslands, showAuthors });
+  // 详情栏内容取决于当前视图:主视图无中心节点,一律清空
+  dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
 }
 
 function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
@@ -323,6 +325,7 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
   dispatch({ type: "SET_EXPAND_MAX", value: expandMax });
   dispatch({ type: "SET_EXPAND", value: hops });
   dispatch({ type: "SET_AUTHOR", id: author.id });
+  dispatch({ type: "SET_PANEL", panel: { type: "author", author } });
   let data = authorViewData(author, hops, fullData);
   if (hideIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛星
   commitView("author", data, opts || {});
@@ -405,7 +408,6 @@ export function selectNode(id: string) {
     }).catch(failToast);
   } else {
     renderAuthorView(node);
-    dispatch({ type: "SET_PANEL", panel: { type: "author", author: node } });
     dispatch({
       type: "SET_TOAST",
       msg: "视图:作者 · " + node.label + "(" + countWorks(node.id) + " 部作品)",

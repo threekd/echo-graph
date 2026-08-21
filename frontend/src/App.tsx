@@ -187,10 +187,7 @@ function AppContent() {
         if (s) s.classList.remove("show");
         if (p) p.classList.remove("show");
       } else if (notMain) {
-        renderMain({});
-        // 收起面板但保留节点信息,右侧上划仍可查看
-        const panelEl = document.getElementById("panel");
-        if (panelEl) panelEl.classList.remove("show");
+        renderMain({}); // 回主视图:详情栏内容随之清空并收起
       } else {
         return; // 主视图且无栏:放行,让浏览器退出/回上一页
       }

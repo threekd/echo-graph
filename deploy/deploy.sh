@@ -6,6 +6,10 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/echo-graph}"
 cd "$APP_DIR"
 
+# sudo -u echograph 会重置 PATH;uv 装在用户目录下,需显式加入,
+# 否则非登录 shell 下执行会报 uv: command not found
+export PATH="$HOME/.local/bin:$PATH"
+
 echo "==> 备份本地数据(data/export、历史目录、SQLite 权威库)"
 mkdir -p backups
 BK_FILE="backups/data-$(date +%Y%m%d-%H%M%S).tgz"

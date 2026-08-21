@@ -85,3 +85,10 @@
   (后端隔离要求引用必须归属自己);无匹配时仍显示「添加新节点」第一行。
 - 2026-08-22:确认单表方案;实施可见性标志(默认 public)与星际跃迁只读接口
   (`/api/space/{user_id}/graph`、`/api/space/random/graph`)。
+- 2026-08-22:全量遗留审查与修复——
+  - 修复:CSV 导出只含公共星云(此前若 admin 写入会带出用户私有行,已加过滤);
+  - 修复:`deploy.sh` 不再从 CSV 重建 SQLite(避免每次部署清空用户星云),迁移由启动自动执行;
+  - 修复:CSV 快照恢复改为只重建公共星云、保留用户私有行(新增 `replace_public_rows`);
+  - 文档同步(README / DEPLOY.md / data_schema / .env.example)。
+  - 遗留说明:`.env` 中旧 `ADMIN_TOKEN` 无害可删;admin「贡献」Tab 与
+    `/api/contribute/echo` 保留为兼容入口(前端已不使用,待后台发布管线取代)。

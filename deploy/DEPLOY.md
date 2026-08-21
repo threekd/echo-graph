@@ -65,16 +65,16 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 ```
 
 `deploy.sh` 会:备份 `data/`(SQLite 走 `sqlite3 .backup` 一致性快照,保留 14 份)→
-`git pull --ff-only` → `uv sync --frozen` → 从仓库 CSV 重建 SQLite(contributions / audit_log 表不受影响)
-→ 构建前端 → 重启服务 → 等待健康检查。
+`git pull --ff-only` → `uv sync --frozen` → 构建前端 → 重启服务 → 等待健康检查。
+SQLite 为权威库,日常更新**不再从 CSV 重建**(避免清空用户星云);schema 迁移由服务启动时自动执行。
 
 ## 4. 数据回传(重要)
 
-`data/echo-graph.db` 不在 git 中;**`data/export/*.csv` 是跨机器传输与审计通道**:
+`data/echo-graph.db` 不在 git 中。`data/export/*.csv` 是**公共星云的确定性导出**
+(git 跟踪,审计/回滚通道),**只含公共数据,不含用户私有空间**:
 
-- 在 VPS 上通过「数据管理」页编辑时,改动写入 `/opt/echo-graph/data/echo-graph.db`,
-  并自动导出 `data/export/*.csv`(文件进 git)。
-- 每次在 VPS 上改完数据,请提交并推送 CSV:
+- 在 VPS 上通过「数据管理」编辑公共星云时,改动写入 SQLite 并自动导出公共 CSV(文件进 git)。
+- 每次在 VPS 上改完公共数据,请提交并推送 CSV:
 
   ```bash
   sudo -u echograph bash -lc "cd /opt/echo-graph && \
@@ -85,7 +85,9 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
     git push"
   ```
 
-- 其他机器/新机器拉取后,`deploy.sh` 会用新 CSV 重建本地 SQLite。
+- 新机器首次初始化仍走 `setup-vps.sh` 的 CSV 引导(公共星云)。
+- **用户私有空间不在 CSV 中**:跨机器迁移完整数据(含用户星云)需手动同步
+  `backups/echo-graph-*.db` 快照(部署时自动生成),不要依赖 git。
 - 若 VPS 本地有未提交的数据改动,`git pull --ff-only` 会失败——先按上面提交推送再部署。
 - 也可反向操作:本机改好数据 → 提交 CSV 推远端 → VPS 上跑 `deploy.sh` 同步。
 

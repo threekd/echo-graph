@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.data_store as ds
-from app import db_sqlite, sqlite_store
+from app import auth, db_sqlite, sqlite_store
 
 
 def _rows():
@@ -75,6 +75,25 @@ class DataStoreDbTest(unittest.TestCase):
         self.assertEqual(len(a2), 2)
         self.assertEqual(len(w2), 2)
         self.assertEqual(len(e2), 1)
+
+    def test_export_excludes_user_private_rows(self) -> None:
+        """CSV 只导出公共星云(admin 认领),用户私有空间不得进 git 审计产物。"""
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local"):
+            admin = auth.register("admin@test.local", "admin-password-123")
+            user = auth.register("user@test.local", "user-password-123")
+        a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
+        a2 = "01a013e6-e885-766b-b9db-315d518adeec"
+        sqlite_store.rewrite_all(
+            [
+                {"id": a1, "originalName": "公共", "Name_CN": "公共", "owner_id": admin["id"]},
+                {"id": a2, "originalName": "私有", "Name_CN": "私有", "owner_id": user["id"]},
+            ],
+            [],
+            [],
+        )
+        ds.export_csv_files()
+        exported_authors, _, _ = ds.load_csv_rows()
+        self.assertEqual([r["id"] for r in exported_authors], [a1])
 
 
 if __name__ == "__main__":

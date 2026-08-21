@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Litnebula 更新部署(备份数据 → 拉代码 → 装依赖 → 重建 SQLite → 构建前端 → 重启服务)
+# Litnebula 更新部署(备份数据 → 拉代码 → 装依赖 → 构建前端 → 重启服务)
 # 用法: sudo -u echograph bash deploy/deploy.sh
 set -euo pipefail
 
@@ -44,8 +44,8 @@ fi
 echo "==> 后端依赖"
 uv sync --frozen
 
-echo "==> 从仓库 CSV 重建 SQLite(贡献与审计表不受影响;数据回传请先按 DEPLOY.md 提交)"
-uv run python scripts/migrate_csv_to_sqlite.py
+echo "==> SQLite 为权威库,不再从 CSV 重建(避免清空用户星云数据)"
+echo "    schema 迁移由服务启动时自动执行;全新环境初始化仍走 setup-vps.sh 的 CSV 引导"
 
 echo "==> 构建前端"
 cd frontend

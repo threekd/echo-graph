@@ -13,7 +13,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # 统一在此加载 .env:所有数据层/管理/公开接口都经由本模块导入,
-# 保证本地 `uvicorn` 运行时 ADMIN_TOKEN、PUBLIC_REVIEWED_ONLY 等配置生效
+# 保证本地 `uvicorn` 运行时 ADMIN_BOOTSTRAP_EMAIL、PUBLIC_REVIEWED_ONLY 等配置生效
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent

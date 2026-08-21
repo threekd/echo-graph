@@ -73,8 +73,20 @@ def load_csv_rows() -> tuple[list[dict], list[dict], list[dict]]:
 
 
 def export_csv_files(target_dir: Path | None = None) -> None:
-    """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/export/。"""
+    """按 id 排序导出三份 CSV(确定性,UTF-8 BOM);默认写入 data/export/。
+
+    只导出公共星云数据(admin 认领 + 尚未认领的历史行),用户私有空间不进 CSV。
+    """
+    from app.auth import admin_user_id
+
+    admin = admin_user_id()
     data = sqlite_store.list_all()
+    for key in ("authors", "works", "edges"):
+        rows = data[key]
+        if admin is None:
+            data[key] = [r for r in rows if not r.get("owner_id")]
+        else:
+            data[key] = [r for r in rows if not r.get("owner_id") or r["owner_id"] == admin]
     out = Path(target_dir) if target_dir is not None else EXPORT_DIR
     _write_csv(out / "authors.csv", AUTHOR_HEADER, data["authors"])
     _write_csv(out / "works.csv", WORK_HEADER, data["works"])

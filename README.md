@@ -49,7 +49,7 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.1)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(1:N,允许合著);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,作者/作品/涟漪与贡献收件箱同库;公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为每次写入自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
@@ -58,11 +58,12 @@
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
 cd frontend && pnpm install && pnpm typecheck && pnpm build   # 构建 React 前端(产物进入 frontend/dist)
-uv run python scripts/migrate_csv_to_sqlite.py   # 从仓库 CSV 重建 SQLite(全新环境引导/恢复)
+uv run python scripts/migrate_csv_to_sqlite.py   # 全新环境引导:从仓库 CSV 初始化 SQLite
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-SQLite 库缺失或想从 CSV 重置数据时执行 `scripts/migrate_csv_to_sqlite.py`(贡献收件箱与日志表不受影响)。
+SQLite 库缺失时执行 `scripts/migrate_csv_to_sqlite.py` 从 CSV 初始化(仅限全新环境;已有用户数据时
+不要执行——它会整库重建策展表,清空用户星云)。
 
 质量检查(已在 CI 中自动执行):
 
@@ -84,7 +85,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 `deploy/` 目录提供开箱模板:
 
 - `setup-vps.sh` — 一键初始化:装系统依赖、建应用用户、拉代码、由 uv 托管 Python 3.14、构建前端、配置 systemd + nginx + HTTPS
-- `deploy.sh` — 日常更新:备份数据(含 SQLite)→ 拉代码 → 装依赖 → 重建 SQLite → 构建前端 → 重启服务
+- `deploy.sh` — 日常更新:备份数据(含 SQLite)→ 拉代码 → 装依赖 → 构建前端 → 重启服务
+  (SQLite 为权威库,不再从 CSV 重建;schema 迁移由服务启动时自动执行)
 - `echo-graph.service` — systemd 单元模板
 - `nginx.conf` — nginx 站点模板(手动部署用)
 
@@ -105,7 +107,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
    curl https://litnebula.com/api/health
    ```
 
-5. 之后每次更新代码(`deploy.sh` 会自动备份数据(含 SQLite)、从 CSV 重建 SQLite、构建前端并重启):
+5. 之后每次更新代码(`deploy.sh` 会自动备份数据(含 SQLite)、拉代码、装依赖、构建前端并重启):
 
    ```bash
    sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
@@ -134,11 +136,13 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   admin 额外拥有贡献审核、审计日志与快照恢复能力。
 - 点亮星空(添加到我的星云):登录后打开,直接向自己的星云写入作者/作品/涟漪
   (搜不到时下拉框第一行可打开标准新增弹窗),不再进入贡献收件箱。
-- 贡献归属:登录用户提交「点亮星空」自动归属到该账号(未登录仍可匿名提交)。
+- 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
 
 **发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)与 `data/versions/`(历史 CSV 目录,校验后重建)下的快照——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
 
-> **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/echo-graph.db` 内 `contributions` 表),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(查看/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流:默认每 IP 每小时 20 条,策略详见 `deploy/DEPLOY.md`)。
+> **遗留说明**:早期「贡献数据」收件箱(`POST /api/contribute/echo` 与 admin「贡献」Tab)已不再被前端使用——
+> 「点亮星空」已改为向自己的星云添加数据。收件箱接口保留兼容;用户数据进入公共星云将走后续的
+> 后台发布管线(AI 预审 + 人工确认,见 `docs/multi-user-migration.md`,暂缓)。
 
 策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
 

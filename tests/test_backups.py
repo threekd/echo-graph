@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import app.backups as backups
 import app.data_store as ds
-from app import db_sqlite
+from app import auth, db_sqlite, sqlite_store
 
 
 class BackupsTest(unittest.TestCase):
@@ -32,8 +32,8 @@ class BackupsTest(unittest.TestCase):
     @staticmethod
     def _make_db(path: Path, marker: str) -> None:
         conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT INTO meta VALUES ('marker', ?)", (marker,))
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('marker', ?)", (marker,))
         conn.commit()
         conn.close()
 
@@ -112,6 +112,8 @@ class BackupsTest(unittest.TestCase):
             backups.create_snapshot()
 
     def test_restore_csv_snapshot_rebuilds_db(self) -> None:
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local"):
+            auth.register("admin@test.local", "admin-password-123")
         vdir = self.versions_dir / "20260820-120000-admin"
         vdir.mkdir()
         export_dir = self.root / "export"
@@ -131,13 +133,30 @@ class BackupsTest(unittest.TestCase):
         self._write_csv(vdir / "edges.csv", ds.EDGE_HEADER, [])
 
         self._make_db(db_sqlite.DB_PATH, "current")
+        # 用户私有行:CSV 恢复后必须原样保留
+        user = auth.register("user@test.local", "user-password-123")
+        sqlite_store.rewrite_all(
+            [{
+                "id": "01a013e6-e885-766b-b9db-315d518adeec",
+                "originalName": "私有作者",
+                "Name_CN": "私有作者",
+                "owner_id": user["id"],
+            }],
+            [],
+            [],
+        )
         result = backups.restore_snapshot("versions/20260820-120000-admin")
         self.assertEqual(result["kind"], "csv")
         self.assertTrue(result["safety_backup"])
         conn = sqlite3.connect(db_sqlite.DB_PATH)
         try:
-            self.assertEqual(conn.execute("SELECT count(*) FROM authors").fetchone()[0], 1)
+            # 1 条公共(来自 CSV)+ 1 条用户私有(保留)
+            self.assertEqual(conn.execute("SELECT count(*) FROM authors").fetchone()[0], 2)
             self.assertEqual(conn.execute("SELECT count(*) FROM works").fetchone()[0], 1)
+            user_rows = conn.execute(
+                "SELECT count(*) FROM authors WHERE owner_id = ?", (user["id"],)
+            ).fetchone()[0]
+            self.assertEqual(user_rows, 1)
         finally:
             conn.close()
         self.assertTrue((export_dir / "authors.csv").exists())

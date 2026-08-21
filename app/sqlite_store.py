@@ -274,6 +274,49 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
     invalidate_cache()
 
 
+def replace_public_rows(
+    author_models,
+    work_models,
+    echo_models,
+    work_authors: dict[str, list[str]],
+    owner_id: str | None,
+) -> None:
+    """单事务重建公共星云(admin 空间 + 未认领行),用户私有空间原样保留。
+
+    快照 CSV 恢复用:CSV 只含公共数据,恢复时不得清空用户星云。
+    """
+    def insert(table: str, cols: list[str], models: list[Any]) -> None:
+        placeholders = ",".join("?" for _ in cols)
+        rows = [{**m.model_dump(), "owner_id": owner_id} for m in models]
+        conn.executemany(
+            f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
+            [tuple(r[c] for c in cols) for r in rows],
+        )
+
+    with db_sqlite._db() as conn:
+        if owner_id is None:
+            scope = "owner_id IS NULL"
+            params: tuple = ()
+        else:
+            scope = "(owner_id IS NULL OR owner_id = ?)"
+            params = (owner_id,)
+        conn.execute(
+            f"DELETE FROM work_authors WHERE work_id IN (SELECT id FROM works WHERE {scope})",
+            params,
+        )
+        conn.execute(f"DELETE FROM edges WHERE {scope}", params)
+        conn.execute(f"DELETE FROM works WHERE {scope}", params)
+        conn.execute(f"DELETE FROM authors WHERE {scope}", params)
+        insert("authors", AUTHOR_COLS + ["owner_id"], author_models)
+        insert("works", WORK_COLS + ["owner_id"], work_models)
+        insert("edges", EDGE_COLS + ["owner_id"], echo_models)
+        conn.executemany(
+            "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+            [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
+        )
+    invalidate_cache()
+
+
 def rewrite_all(author_rows, work_rows, edge_rows) -> None:
     """单事务整库重写(测试 / 恢复工具;admin 已改行级写入)。入参为与 load_rows 同形状的行 dict。
 

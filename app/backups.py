@@ -175,14 +175,18 @@ def _restore_snapshot_locked(name: str) -> dict:
         return {"ok": True, "restored": name, "safety_backup": safety, "kind": "db"}
 
     if target.is_dir() and all((target / n).is_file() for n in ("authors.csv", "works.csv", "edges.csv")):
-        # 先校验再落盘:坏快照不污染 data/export
+        # 先校验再落盘:坏快照不污染 data/export;CSV 只含公共数据,恢复时保留用户星云
         authors, works, edges = load_csv_rows_from(target)
-        parse_rows(authors, works, edges)
+        models = parse_rows(authors, works, edges)
         for csv_name in ("authors.csv", "works.csv", "edges.csv"):
             shutil.copyfile(target / csv_name, EXPORT_DIR / csv_name)
-        from app.sqlite_store import migrate_from_csv
+        from app.auth import admin_user_id
+        from app.sqlite_store import replace_public_rows
 
-        migrate_from_csv(Path(db_sqlite.DB_PATH), check=True)
+        admin = admin_user_id()
+        if admin is None:
+            raise ValueError("引导管理员尚未注册,无法执行 CSV 恢复(请先注册管理员账号)")
+        replace_public_rows(*models, owner_id=admin)
         return {"ok": True, "restored": name, "safety_backup": safety, "kind": "csv"}
 
     raise ValueError("快照既不是 .db 文件,也不是含三份 CSV 的目录")

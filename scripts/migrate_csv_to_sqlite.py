@@ -17,7 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.sqlite_store import DB_PATH, migrate_from_csv  # noqa: E402
+from app.db_sqlite import DB_PATH  # noqa: E402
+from app.sqlite_store import migrate_from_csv  # noqa: E402
 
 
 def main() -> None:

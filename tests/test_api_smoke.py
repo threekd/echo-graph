@@ -50,6 +50,11 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/admin/data", paths)
         self.assertIn("/api/admin/backups", paths)
         self.assertIn("/api/admin/audit", paths)
+        self.assertIn("/api/auth/register", paths)
+        self.assertIn("/api/auth/login", paths)
+        self.assertIn("/api/auth/logout", paths)
+        self.assertIn("/api/auth/me", paths)
+        self.assertIn("/api/auth/config", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"

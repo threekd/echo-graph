@@ -1,4 +1,5 @@
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from "react";
+import type { AuthUser } from "./lib/auth";
 
 export interface CameraState {
   theta: number;
@@ -64,6 +65,8 @@ export interface AppState {
   adminOpen: boolean;
   adminReady: boolean; // 令牌有效时置 true,驱动"数据管理"按钮显隐
   contributeOpen: boolean; // "贡献数据"弹窗
+  authOpen: boolean; // 登录/注册弹窗
+  user: AuthUser | null; // 当前登录用户(未登录为 null)
   guideVisible: boolean;
 }
 
@@ -90,6 +93,8 @@ export const initialState: AppState = {
   adminOpen: false,
   adminReady: false,
   contributeOpen: false,
+  authOpen: false,
+  user: null,
   guideVisible: false,
 };
 
@@ -135,6 +140,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, adminReady: action.value };
     case "SET_CONTRIBUTE":
       return { ...state, contributeOpen: action.open };
+    case "SET_AUTH":
+      return { ...state, authOpen: action.open };
+    case "SET_USER":
+      return { ...state, user: action.user || null };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

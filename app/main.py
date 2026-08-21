@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.admin import router as admin_router
+from app.auth import router as auth_router
 from app.contributions import router as contributions_router
 from app.db import get_store
 
@@ -148,6 +149,7 @@ def path(
 
 app.include_router(admin_router)
 app.include_router(contributions_router)
+app.include_router(auth_router)
 
 
 if __name__ == "__main__":

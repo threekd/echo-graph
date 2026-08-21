@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
 import { search } from "../lib/api";
+import { logout } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
@@ -308,6 +309,29 @@ export default function Sidebar() {
             />
             <span>隐藏孤岛节点</span>
           </label>
+          {state.user ? (
+            <div className="auth-user">
+              <span className="auth-email" title={state.user.email}>{state.user.email}</span>
+              <button
+                id="btn-logout"
+                className="side-btn"
+                onClick={() => {
+                  logout().finally(() => dispatch({ type: "SET_USER", user: null }));
+                  dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
+                }}
+              >
+                退出登录
+              </button>
+            </div>
+          ) : (
+            <button
+              id="btn-login"
+              className="side-btn"
+              onClick={() => dispatch({ type: "SET_AUTH", open: true })}
+            >
+              登录 / 注册
+            </button>
+          )}
           <button id="btn-contribute" className="side-btn" onClick={() => dispatch({ type: "SET_CONTRIBUTE", open: true })}>点亮星空</button>
           {state.adminReady && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>

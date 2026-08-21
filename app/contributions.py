@@ -4,8 +4,9 @@
 审核通过后由后续流程(如人工录入 / AI 校正)再并入正式数据。
 
 限流策略(三层):
-1. 应用层:进程内滑动窗口,默认每 IP 每小时最多 SUBMIT_LIMIT(20) 条;
-   单 worker 部署下计数精确,多 worker 需依赖 nginx 层或换共享存储。
+1. 应用层:进程内滑动窗口(实现见 app/ratelimit.py),默认每 IP 每小时最多
+   SUBMIT_LIMIT(20) 条;单 worker 部署下计数精确,多 worker 需依赖 nginx 层
+   或换共享存储(如 Redis)。
 2. 信任边界:仅当连接来源属于 TRUSTED_PROXIES(默认 127.0.0.1,::1)时,
    才解析 X-Forwarded-For 取最左客户端 IP;直连 uvicorn 时伪造头无效。
 3. nginx 层:deploy 模板提供 limit_req 防洪(粗粒度,不替代应用策略)。
@@ -14,28 +15,20 @@
 from __future__ import annotations
 
 import datetime as dt
-import ipaddress
 import logging
-import os
-import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 
 from app import db_sqlite
 from app.data_store import remove_invisible_chars
+from app.ratelimit import client_ip, sliding_limited
 
 logger = logging.getLogger("echo_graph")
 
 # 应用层限流:同一 IP 每小时最多 SUBMIT_LIMIT 条
 SUBMIT_LIMIT = 20
 WINDOW_SECONDS = 3600.0
-# 进程内计数键数上限:超过后整体重置(防内存无限增长,限流短暂放开)
-_MAX_RATE_KEYS = 10_000
-# 可信代理列表(逗号分隔的 IP / CIDR):只有来自这些来源的连接才解析 X-Forwarded-For
-TRUSTED_PROXIES = os.getenv("TRUSTED_PROXIES", "127.0.0.1,::1")
-_rate: dict[str, list[float]] = {}
-_trusted_networks: list[ipaddress.ip_network] | None = None
 
 MAX_LEN = {
     "source_work": 200,
@@ -159,77 +152,14 @@ def set_status(contribution_id: str, status: str) -> bool:
         return cur.rowcount > 0
 
 
-def _trusted_networks_list() -> list[ipaddress.ip_network]:
-    """解析 TRUSTED_PROXIES 为网络对象列表(进程内缓存一次)。"""
-    global _trusted_networks
-    if _trusted_networks is None:
-        nets: list[ipaddress.ip_network] = []
-        for item in TRUSTED_PROXIES.split(","):
-            item = item.strip()
-            if not item:
-                continue
-            try:
-                nets.append(ipaddress.ip_network(item, strict=False))
-            except ValueError:
-                logger.warning("忽略无效的 TRUSTED_PROXIES 项:%r", item)
-        _trusted_networks = nets
-    return _trusted_networks
-
-
-def _client_ip(request: Request) -> str:
-    """解析限流用客户端 IP。
-
-    仅当对端地址属于可信代理列表时才取 X-Forwarded-For 的最左有效 IP;
-    否则(直连 uvicorn / 伪造头)一律使用对端地址,防伪造绕过。
-    """
-    peer = request.client.host if request.client else ""
-    if not peer:
-        return "unknown"
-    try:
-        peer_addr = ipaddress.ip_address(peer)
-    except ValueError:
-        return peer
-    if not any(peer_addr in net for net in _trusted_networks_list()):
-        return peer
-    xff = request.headers.get("x-forwarded-for", "")
-    for hop in xff.split(","):
-        hop = hop.strip()
-        if not hop:
-            continue
-        try:
-            ipaddress.ip_address(hop)
-            return hop
-        except ValueError:
-            continue
-    return peer
-
-
-def _prune_rate_map() -> None:
-    """防内存无限增长:键数超限时整体重置(限流短暂放开)。"""
-    if len(_rate) > _MAX_RATE_KEYS:
-        _rate.clear()
-
-
-def _rate_limited(client_ip: str) -> bool:
-    now = time.monotonic()
-    _prune_rate_map()
-    ts = [t for t in _rate.get(client_ip, []) if now - t < WINDOW_SECONDS]
-    if len(ts) >= SUBMIT_LIMIT:
-        _rate[client_ip] = ts
-        return True
-    ts.append(now)
-    _rate[client_ip] = ts
-    return False
-
-
 router = APIRouter(prefix="/api/contribute", tags=["contribute"])
 
 
 @router.post("/echo")
 def submit_echo(payload: dict, request: Request) -> dict:
     """公开提交:涟漪建议(源/目标作品自由填写,不需要是已收录作品)。"""
-    ip = _client_ip(request)
-    if _rate_limited(ip):
+    ip = client_ip(request)
+    if sliding_limited(f"contribute:{ip}", SUBMIT_LIMIT, WINDOW_SECONDS):
         raise HTTPException(status_code=429, detail="提交过于频繁,请稍后再试")
     try:
         row = submit_contribution(payload)

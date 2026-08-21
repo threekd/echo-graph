@@ -287,6 +287,41 @@ def _migration_v7(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN note TEXT")
 
 
+def _migration_v8(conn: sqlite3.Connection) -> None:
+    """多用户账号体系:users(邮箱+Argon2 密码哈希)+ sessions(httpOnly Cookie 会话)。
+
+    sessions 只存 token 的 SHA-256 哈希,泄露数据库也无法伪造会话;
+    users.status 为 active / disabled(禁用即不可登录)。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+            createdAt TEXT,
+            updatedAt TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_seen_at TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -295,6 +330,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (5, _migration_v5),
     (6, _migration_v6),
     (7, _migration_v7),
+    (8, _migration_v8),
 ]
 
 

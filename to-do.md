@@ -48,6 +48,12 @@
 - [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
 - [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
 - ⬜ 贡献数据后续:AI 校正、审核通过后自动录入策展 CSV、验证码/持久化限流、按联系方式跟进用户
+- [x] 账号体系(多用户第一步):users/sessions 表(Argon2 密码哈希 + httpOnly Cookie 会话,
+      DB 只存 token 的 SHA-256 哈希);`/api/auth/register|login|logout|me|config`;
+      注册 Cloudflare Turnstile 人机验证;注册/登录 IP 滑动窗口限流
+      (限流抽为 app/ratelimit.py,与贡献接口共用);带 Origin 头的跨站状态请求拒绝
+- ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、用户空间数据隔离、
+      管理权限从 ADMIN_TOKEN 迁移为 user/admin 角色
 - [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
 - [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `docs/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 日志表;同步计数预检

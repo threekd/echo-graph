@@ -805,9 +805,62 @@ th.sortable.active .sort-icon {
   color: var(--ink);
   font-size: 12.5px;
 }
+.auth-modal-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 9px;
+  border: 1px solid rgba(148, 163, 255, 0.2);
+  background: rgba(30, 44, 90, 0.4);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.auth-tab.active {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.7);
+  box-shadow: 0 0 12px rgba(138, 184, 255, 0.25);
+}
+.captcha-box {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
 .auth-error {
   color: #ffb0b0;
   font-size: 12px;
+}
+.auth-user {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(30, 44, 90, 0.35);
+  border: 1px solid rgba(148, 163, 255, 0.18);
+  border-radius: 10px;
+}
+.auth-email {
+  font-size: 12px;
+  color: #9cc3ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
 #admin-form .full { grid-column: 1 / -1; }

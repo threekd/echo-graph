@@ -12,7 +12,9 @@ import Sidebar from "./components/Sidebar";
 import Panel from "./components/Panel";
 import Toast from "./components/Toast";
 import Guide from "./components/Guide";
+import AuthModal from "./components/AuthModal";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
+import { fetchMe } from "./lib/auth";
 import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import {
@@ -142,6 +144,13 @@ function AppContent() {
     });
   }, [dispatch]);
 
+  // 启动时恢复会话(带 httpOnly Cookie,浏览器自动携带):有登录态则展示用户信息
+  useEffect(() => {
+    fetchMe().then((user) => {
+      if (user) dispatch({ type: "SET_USER", user });
+    });
+  }, [dispatch]);
+
   useEffect(() => {
     setStateRef(stateRef);
     setOnCameraChange((camera) => {
@@ -255,6 +264,7 @@ function AppContent() {
           </Suspense>
         </ChunkBoundary>
       )}
+      {state.authOpen && <AuthModal />}
     </div>
   );
 }

@@ -1,0 +1,81 @@
+/* 账号 API:注册 / 登录 / 登出 / 会话查询(httpOnly Cookie 由浏览器自动携带)。 */
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: string;
+}
+
+export interface AuthConfig {
+  turnstileSiteKey: string;
+}
+
+export interface AuthResult {
+  user: AuthUser | null;
+  error: string;
+}
+
+async function parseAuthResponse(r: Response): Promise<AuthResult> {
+  let data: any = null;
+  try {
+    data = await r.json();
+  } catch {
+    /* 非 JSON 响应,保留 status 文案 */
+  }
+  if (r.ok) {
+    return { user: (data && data.user) || null, error: "" };
+  }
+  return { user: null, error: (data && data.detail) || "请求失败(" + r.status + ")" };
+}
+
+export async function fetchAuthConfig(): Promise<AuthConfig> {
+  try {
+    const r = await fetch("/api/auth/config");
+    if (!r.ok) return { turnstileSiteKey: "" };
+    const d = await r.json();
+    return { turnstileSiteKey: d.turnstileSiteKey || "" };
+  } catch {
+    return { turnstileSiteKey: "" };
+  }
+}
+
+export async function fetchMe(): Promise<AuthUser | null> {
+  try {
+    const r = await fetch("/api/auth/me");
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.user || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function register(
+  email: string,
+  password: string,
+  turnstileToken?: string
+): Promise<AuthResult> {
+  const r = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, turnstile: turnstileToken || null }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function login(email: string, password: string): Promise<AuthResult> {
+  const r = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* 网络异常也照常清除本地登录态 */
+  }
+}

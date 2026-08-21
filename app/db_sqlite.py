@@ -279,6 +279,14 @@ def _migration_v6(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)")
 
 
+def _migration_v7(conn: sqlite3.Connection) -> None:
+    """authors / works 增加可选备注列 note。"""
+    for table in ("authors", "works"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "note" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN note TEXT")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -286,6 +294,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (4, _migration_v4),
     (5, _migration_v5),
     (6, _migration_v6),
+    (7, _migration_v7),
 ]
 
 

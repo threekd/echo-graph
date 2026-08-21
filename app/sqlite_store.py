@@ -11,11 +11,11 @@ from app.db import invalidate_cache
 
 AUTHOR_COLS = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
-    "birthYear", "deathYear", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
+    "birthYear", "deathYear", "note", "reviewStatus", "createdAt", "updatedAt", "deletedAt",
 ]
 WORK_COLS = [
     "id", "language", "originalTitle", "Title_CN", "Title_EN",
-    "Title_Other", "publicationYear", "creationYear", "genre", "reviewStatus",
+    "Title_Other", "publicationYear", "creationYear", "genre", "note", "reviewStatus",
     "createdAt", "updatedAt", "deletedAt",
 ]
 EDGE_COLS = [
@@ -365,6 +365,7 @@ def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
             "nationality": sync_norm((r.get("nationality") or "").upper()),
             "birthYear": sync_norm(r.get("birthYear")),
             "deathYear": sync_norm(r.get("deathYear")),
+            "note": sync_norm(r.get("note")),
             "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),
         })
     works = []
@@ -379,6 +380,7 @@ def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
             "publicationYear": sync_norm(r.get("publicationYear")),
             "creationYear": sync_norm(r.get("creationYear")),
             "genre": sync_norm(r.get("genre")),
+            "note": sync_norm(r.get("note")),
             "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),
             "author_ids": sorted(
                 sync_norm(x) for x in (r.get("author_id") or "").split(",") if x.strip()

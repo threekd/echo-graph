@@ -11,6 +11,7 @@ export interface AuthorRow {
   nationality?: string | null;
   birthYear?: number | null;
   deathYear?: number | null;
+  note?: string | null;
   reviewStatus: ReviewStatus;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -29,6 +30,7 @@ export interface WorkRow {
   publicationYear?: number | null;
   creationYear?: number | null;
   genre?: string | null;
+  note?: string | null;
   reviewStatus: ReviewStatus;
   createdAt?: string | null;
   updatedAt?: string | null;

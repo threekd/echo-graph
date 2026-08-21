@@ -45,6 +45,7 @@ class AuthorRow(BaseModel):
     nationality: str | None = None
     birthYear: int | None = Field(default=None, ge=-9999, le=9999)
     deathYear: int | None = Field(default=None, ge=-9999, le=9999)
+    note: str | None = None
     reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
     createdAt: str | None = None
     updatedAt: str | None = None
@@ -110,6 +111,7 @@ class WorkRow(BaseModel):
     publicationYear: int | None = None
     creationYear: int | None = None
     genre: Literal["Fiction", "Non-fiction", "Poetry", "Drama"] | None = None
+    note: str | None = None
     reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
     createdAt: str | None = None
     updatedAt: str | None = None

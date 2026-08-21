@@ -80,11 +80,11 @@ def _author_id_list(value) -> list[str]:
 AUDIT_FIELDS: dict[Kind, list[str]] = {
     "authors": [
         "originalName", "Name_CN", "Name_EN", "nationality",
-        "birthYear", "deathYear", "reviewStatus",
+        "birthYear", "deathYear", "note", "reviewStatus",
     ],
     "works": [
         "language", "originalTitle", "Title_CN", "Title_EN", "Title_Other",
-        "publicationYear", "creationYear", "genre", "reviewStatus",
+        "publicationYear", "creationYear", "genre", "note", "reviewStatus",
     ],
     "edges": [
         "source_work_id", "target_work_id", "evidence",

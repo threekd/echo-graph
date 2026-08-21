@@ -72,6 +72,7 @@ const FIELDS: Record<AdminTab, any[]> = {
     { key: "Name_EN", label: "英文名" },
     { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
     { key: "deathYear", label: "去世年份", type: "number", min: -9999, max: 9999 },
+    { key: "note", label: "备注", type: "textarea" },
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   works: [
@@ -80,10 +81,11 @@ const FIELDS: Record<AdminTab, any[]> = {
     { key: "Title_CN", label: "中文名", required: true },
     { key: "Title_EN", label: "英文名" },
     { key: "Title_Other", label: "其他标题" },
-    { key: "author_id", label: "作者", type: "authorPicker" },
+    { key: "author_id", label: "作者", required: true, type: "authorPicker" },
     { key: "publicationYear", label: "出版年份", type: "number" },
     { key: "creationYear", label: "创作年份", type: "number" },
     { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
+    { key: "note", label: "备注", type: "textarea" },
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   edges: [

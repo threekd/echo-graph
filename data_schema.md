@@ -27,6 +27,7 @@
 | `publicationYear` | Integer | 否 | 出版年份 |
 | `creationYear` | Integer | 否 | 创作年份 |
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
+| `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
 | `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
@@ -43,6 +44,7 @@
 | `nationality` | String | 否 | 国籍(ISO 3166-1 alpha-2 大写代码,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` | Integer | 否 | 出生年份(取值 -9999 ~ 9999) |
 | `deathYear` | Integer | 否 | 去世年份(取值 -9999 ~ 9999) |
+| `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
 | `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |

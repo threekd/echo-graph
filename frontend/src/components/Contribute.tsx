@@ -164,7 +164,7 @@ export default function Contribute() {
   return (
     <div id="admin-modal" style={{ display: "flex" }}>
       <div className="admin-modal-card">
-        <h3>贡献数据</h3>
+        <h3>点亮星空（贡献数据）</h3>
         <p className="contribute-hint">
           感谢你的贡献!提交内容会先进入待审核队列,审核通过后才会展示。作品/作者可下拉选择已有数据,也可直接输入新名称。
         </p>
@@ -225,7 +225,11 @@ export default function Contribute() {
           </label>
           <label className="full">
             <span>备注</span>
-            <textarea value={form.note} onChange={(e) => set("note", e.target.value)} />
+            <textarea 
+              value={form.note} 
+              onChange={(e) => set("note", e.target.value)} 
+              placeholder="补充原著原文或您想勘误某个条目也可以在此说明"
+            />
           </label>
           <label>
             <span>联系方式</span>

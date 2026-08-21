@@ -62,7 +62,7 @@ uv run python scripts/migrate_csv_to_sqlite.py   # 从仓库 CSV 重建 SQLite(�
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-SQLite 库缺失或想从 CSV 重置数据时执行 `scripts/migrate_csv_to_sqlite.py`(贡献收件箱与审计表不受影响)。
+SQLite 库缺失或想从 CSV 重置数据时执行 `scripts/migrate_csv_to_sqlite.py`(贡献收件箱与日志表不受影响)。
 
 质量检查(已在 CI 中自动执行):
 
@@ -121,7 +121,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > **贡献数据**:普通用户可通过左侧栏「贡献数据」按钮提交涟漪建议(源/目标作品与作者可下拉选择已有数据或自由填写新名称;必填项:源作品、源作品作者、目标作品、目标作品作者、原文片段、出处;备注与联系方式选填)。提交只写入待审核收件箱(SQLite `data/echo-graph.db` 内 `contributions` 表),不会直接进入图谱;管理员在「数据管理 → 贡献」Tab 中审核(查看/驳回),通过后由后续流程(人工录入 / AI 校正)再并入正式数据。公开接口为 `POST /api/contribute/echo`(带基础 IP 限流:默认每 IP 每小时 20 条,策略详见 `deploy/DEPLOY.md`)。
 
-策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、审计记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
+策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
 
 **软删除设计**:`deletedAt` 仅在 SQLite/CSV 数据层表达——被删除的行保留在库中与 CSV 存档(`deletedAt` 非空),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
 

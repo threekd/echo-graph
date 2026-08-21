@@ -34,7 +34,7 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
   { key: "contributions", label: "贡献" },
-  { key: "audit", label: "审计" },
+  { key: "audit", label: "日志" },
   { key: "snapshots", label: "快照" },
 ];
 
@@ -268,7 +268,7 @@ export default function Admin() {
   const cols = COLS[kind];
   const counts = data ? data.counts || {} : {};
 
-  // Tab 角标计数:贡献/审计为特殊 Tab,避免对不存在的 data[k] 取值
+  // Tab 角标计数:贡献/日志为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
     if (k === "contributions") return String(contribCount);
     if (k === "audit" || k === "snapshots") return "";

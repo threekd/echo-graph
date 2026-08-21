@@ -60,8 +60,11 @@ export default function Sidebar() {
   }, []);
 
   const keepSidebarOpen = () => {
+    if (composingRef.current) return true; // 中文输入法组合期间不隐藏
     const ae = document.activeElement;
-    return composingRef.current || (!!ae && !!sidebarRef.current && sidebarRef.current.contains(ae));
+    if (!ae || !sidebarRef.current || !sidebarRef.current.contains(ae)) return false;
+    // 仅文本输入(搜索/路径)聚焦时保持打开;复选框/按钮点击后焦点残留不应阻止收起
+    return ae instanceof HTMLInputElement && (ae.type === "text" || ae.type === "search");
   };
 
   const chooseHit = (h: any) => {
@@ -141,7 +144,7 @@ export default function Sidebar() {
     const value = e.target.checked;
     dispatch({ type: "SET_SHOW_AUTHORS", value });
     rerenderCurrentView({ showAuthors: value });
-    dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点", kind: "success" });
+    dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点", kind: "info" });
   };
 
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
@@ -151,8 +154,8 @@ export default function Sidebar() {
     const n = islandWorkCount(state.fullData);
     dispatch({
       type: "SET_TOAST",
-      msg: value ? `孤岛星已隐藏:${n} 部作品无提及关系` : `孤岛星已显示:${n} 部无提及关系的作品恢复显示`,
-      kind: "success",
+      msg: value ? `${n} 部作品已隐藏` : `${n} 部作品已显示`,
+      kind: "info",
     });
   };
 
@@ -176,7 +179,7 @@ export default function Sidebar() {
           <h1>Litnebula</h1>
           <span className="badge">回声图谱</span>
           <div className="store-badge">
-            数据源:{state.storeName ? "SQLite" : "加载中…"}
+            数据源:{state.storeName ? "个人整理及书友分享" : "加载中…"} 
           </div>
         </div>
         <nav>
@@ -303,9 +306,9 @@ export default function Sidebar() {
               type="checkbox" id="hide-islands" checked={state.hideIslands}
               onChange={onToggleIslands}
             />
-            <span>隐藏孤岛星</span>
+            <span>隐藏孤岛节点</span>
           </label>
-          <button id="btn-contribute" className="side-btn" onClick={() => dispatch({ type: "SET_CONTRIBUTE", open: true })}>贡献数据</button>
+          <button id="btn-contribute" className="side-btn" onClick={() => dispatch({ type: "SET_CONTRIBUTE", open: true })}>点亮星空</button>
           {state.adminReady && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
           )}

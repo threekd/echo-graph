@@ -404,14 +404,14 @@ export function selectNode(id: string) {
       renderRipple(d);
       // 手机端也保存节点信息供右侧上划查看,但不自动呼出(Panel 按 isMobileLayout 控制)
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
-      dispatch({ type: "SET_TOAST", msg: "已展开《" + node.label + "》的涟漪", kind: "success" });
+      dispatch({ type: "SET_TOAST", msg: "已展开《" + node.label + "》的涟漪", kind: "info" });
     }).catch(failToast);
   } else {
     renderAuthorView(node);
     dispatch({
       type: "SET_TOAST",
       msg: "视图:作者 · " + node.label + "(" + countWorks(node.id) + " 部作品)",
-      kind: "success",
+      kind: "info",
     });
   }
 }

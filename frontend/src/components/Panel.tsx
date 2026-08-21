@@ -4,6 +4,7 @@ import { selectNode } from "../lib/graph";
 import { workAuthorIds } from "../lib/graphData";
 import { isMobileLayout } from "../lib/mobileGestures";
 import iso3166 from "../lib/iso3166-1.json";
+import GuideItems from "./GuideItems";
 
 const iso3166Map = iso3166 as Record<string, string>;
 
@@ -187,11 +188,8 @@ export default function Panel() {
   if (panel.type === "empty") {
     content = (
       <div id="panel-empty">
-        <p>点击任意星星,自动展开它的涟漪;</p>
-        <p>桌面:右键拖拽旋转 · 左键拖拽平移 · 滚轮缩放。</p>
-        <p>手机:单指平移 · 双指旋转 / 缩放。</p>
-        <p>手机:点击节点进入层级后,右侧上划可查看该节点详情。</p>
-        <p>顶部可搜索作品、查找提及链。</p>
+        {/* 主视图详情栏空状态:操作说明按设备定制,内容与新手导引同源 */}
+        <GuideItems mobile={isMobileLayout()} />
       </div>
     );
   } else if (panel.type === "author") {

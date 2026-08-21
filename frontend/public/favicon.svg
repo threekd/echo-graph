@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Litnebula">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111a3d"/>
+      <stop offset="1" stop-color="#04050d"/>
+    </linearGradient>
+    <radialGradient id="haloCyan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#eaffff" stop-opacity="0.95"/>
+      <stop offset="0.4" stop-color="#67e8f9" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haloBlue" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#dbe9ff" stop-opacity="0.95"/>
+      <stop offset="0.4" stop-color="#8ab8ff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8ab8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haloGold" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff3d6" stop-opacity="0.95"/>
+      <stop offset="0.4" stop-color="#ffd27d" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffd27d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="rgba(148,163,255,0.45)" stroke-width="1.5"/>
+  <g fill="none" stroke="#67e8f9" stroke-linecap="round">
+    <path d="M24 15 L24 31 L24 47 L37 47 L50 47" stroke-width="5" opacity="0.16"/>
+    <path d="M24 15 L24 31 L24 47 L37 47 L50 47" stroke-width="1.7" opacity="0.85"/>
+  </g>
+  <circle cx="24" cy="15" r="6.5" fill="url(#haloBlue)"/>
+  <circle cx="24" cy="31" r="7" fill="url(#haloBlue)"/>
+  <circle cx="24" cy="47" r="8" fill="url(#haloGold)"/>
+  <circle cx="37" cy="47" r="7" fill="url(#haloCyan)"/>
+  <circle cx="50" cy="47" r="7.5" fill="url(#haloCyan)"/>
+  <circle cx="24" cy="15" r="2.2" fill="#dbe9ff"/>
+  <circle cx="24" cy="31" r="2.4" fill="#dbe9ff"/>
+  <circle cx="24" cy="47" r="2.8" fill="#ffe7b3"/>
+  <circle cx="37" cy="47" r="2.3" fill="#eaffff"/>
+  <circle cx="50" cy="47" r="2.5" fill="#f3fbff"/>
+</svg>

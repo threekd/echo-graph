@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 STATIC_BASES = {
     "assets": FRONTEND_DIST / "assets",
+    "root": FRONTEND_DIST,
 }
 
 
@@ -74,6 +75,21 @@ def _serve_static(kind: str, path: str) -> FileResponse:
 @app.get("/assets/{path:path}")
 def frontend_assets(path: str) -> FileResponse:
     return _serve_static("assets", path)
+
+
+@app.get("/favicon.svg")
+def favicon_svg() -> FileResponse:
+    return _serve_static("root", "favicon.svg")
+
+
+@app.get("/favicon-32x32.png")
+def favicon_png_32() -> FileResponse:
+    return _serve_static("root", "favicon-32x32.png")
+
+
+@app.get("/apple-touch-icon.png")
+def apple_touch_icon() -> FileResponse:
+    return _serve_static("root", "apple-touch-icon.png")
 
 
 @app.get("/api/stats")

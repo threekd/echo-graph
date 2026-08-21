@@ -453,6 +453,26 @@ button.ghost { color: var(--muted); }
 #panel li:hover { border-color: rgba(138, 184, 255, 0.4); box-shadow: 0 0 18px rgba(138, 184, 255, 0.16); }
 #panel li .quote { color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.6; }
 #panel .work-item { cursor: pointer; }
+/* 主视图空详情栏里的操作说明(与新手导引同源):覆盖上方通用 li 卡片样式 */
+#panel-empty ul {
+  list-style: disc;
+  margin: 4px 0 12px;
+  padding-left: 18px;
+  line-height: 2;
+}
+#panel-empty li {
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+#panel-empty li:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+#panel-empty b { color: #9cc3ff; }
 #panel .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 #panel .actions button {
   padding: 7px 12px;

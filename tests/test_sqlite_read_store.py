@@ -174,10 +174,10 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(len(self.store.graph()["nodes"]), 6)
 
     def test_read_cache_populated_and_invalidated(self) -> None:
-        """读层缓存按 DB 路径缓存,整库重写后立即失效。"""
+        """读层缓存按 DB 路径 + 空间过滤缓存,整库重写后立即失效。"""
         db._read_cache.clear()
         self.store.graph()
-        self.assertIn((str(db_sqlite.DB_PATH),), db._read_cache)
+        self.assertIn((str(db_sqlite.DB_PATH), "public"), db._read_cache)
         sqlite_store.rewrite_all(*_fixture())
         self.assertEqual(db._read_cache, {})
 

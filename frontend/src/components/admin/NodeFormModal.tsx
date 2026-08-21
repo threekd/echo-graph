@@ -1,0 +1,321 @@
+/* 标准节点表单弹窗:新增/编辑作者、作品、涟漪(数据管理与点亮星空共用)。
+   通过 apiBase 区分空间:/api/me(个人空间)或 /api/admin(公共星云)。 */
+
+import { useState } from "react";
+import {
+  AuthorPicker,
+  CodePicker,
+  COUNTRY_OPTIONS,
+  countryLabel,
+  LANG_OPTIONS,
+  langLabel,
+  WorkPicker,
+} from "./pickers";
+
+export type NodeKind = "authors" | "works" | "edges";
+
+const KIND_LABELS: Record<NodeKind, string> = {
+  authors: "作者",
+  works: "作品",
+  edges: "涟漪",
+};
+
+// 表单字段配置
+const FIELDS: Record<NodeKind, any[]> = {
+  authors: [
+    { key: "originalName", label: "原文名", required: true },
+    { key: "nationality", label: "国家", type: "countryPicker" },
+    { key: "Name_CN", label: "中文名", required: true },
+    { key: "Name_EN", label: "英文名" },
+    { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
+    { key: "deathYear", label: "去世年份", type: "number", min: -9999, max: 9999 },
+    { key: "note", label: "备注", type: "textarea" },
+    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
+  ],
+  works: [
+    { key: "language", label: "原著语言", required: true, type: "languagePicker" },
+    { key: "originalTitle", label: "原著标题", required: true },
+    { key: "Title_CN", label: "中文名", required: true },
+    { key: "Title_EN", label: "英文名" },
+    { key: "Title_Other", label: "其他标题" },
+    { key: "author_id", label: "作者", required: true, type: "authorPicker" },
+    { key: "publicationYear", label: "出版年份", type: "number" },
+    { key: "creationYear", label: "创作年份", type: "number" },
+    { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
+    { key: "note", label: "备注", type: "textarea" },
+    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
+  ],
+  edges: [
+    { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
+    { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
+    { key: "evidence", label: "原文片段", required: true, type: "textarea" },
+    { key: "evidenceSource", label: "出处", required: true },
+    { key: "note", label: "备注" },
+    { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
+  ],
+};
+
+const DUP_FIELDS: Record<NodeKind, string[]> = {
+  authors: ["Name_CN", "originalName"],
+  works: ["Title_CN", "originalTitle"],
+  edges: [],
+};
+
+export default function NodeFormModal({
+  kind,
+  mode,
+  initial,
+  apiBase,
+  authorsList,
+  worksList,
+  edgesList,
+  onClose,
+  onSaved,
+  onReload,
+  onDelete,
+}: {
+  kind: NodeKind;
+  mode: "add" | "edit";
+  initial: any;
+  apiBase: string;
+  authorsList: any[];
+  worksList: any[];
+  edgesList: any[];
+  onClose: () => void;
+  onSaved: (row: any) => void;
+  onReload?: () => void;
+  onDelete?: (row: any) => void;
+}) {
+  const [form, setForm] = useState<any>({ ...initial });
+  const [formError, setFormError] = useState("");
+  const [dupHints, setDupHints] = useState<Record<string, string>>({});
+  const [confirmReload, setConfirmReload] = useState(false);
+
+  const selfId = mode === "edit" ? initial.id : undefined;
+  const fieldHasDup = (field: string, value: string): boolean => {
+    const list = kind === "authors" ? authorsList : worksList;
+    const v = String(value || "").trim().toLowerCase();
+    if (!v) return false;
+    return list.some((r: any) => r.id !== selfId && String(r[field] || "").trim().toLowerCase() === v);
+  };
+  const edgePairHasDup = (s: string, t: string): boolean => {
+    if (!s || !t) return false;
+    return edgesList.some((r: any) => r.source_work_id === s && r.target_work_id === t);
+  };
+
+  const clearDupHint = (key: string) => {
+    setDupHints((h) => {
+      if (!h[key]) return h;
+      const next = { ...h };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const save = () => {
+    for (const f of FIELDS[kind]) {
+      if (f.required && !String(form[f.key] || "").trim()) {
+        setFormError("请填写「" + f.label + "」");
+        return;
+      }
+      if (
+        f.type === "number" &&
+        (f.min != null || f.max != null) &&
+        form[f.key] !== "" &&
+        form[f.key] != null
+      ) {
+        const n = Number(form[f.key]);
+        if (!Number.isInteger(n) || n < f.min || n > f.max) {
+          setFormError("「" + f.label + "」需为 " + f.min + "–" + f.max + " 之间的整数");
+          return;
+        }
+      }
+    }
+    setFormError("");
+    const payload = Object.fromEntries(
+      Object.entries(form).map(([k, v]) => [k, typeof v === "string" ? (v.trim() || null) : v])
+    );
+    const url = mode === "edit"
+      ? apiBase + "/" + kind + "/" + encodeURIComponent(initial.id)
+      : apiBase + "/" + kind;
+    fetch(url, {
+      method: mode === "edit" ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, data: d })))
+      .then((res) => {
+        if (!res.ok) {
+          if (res.status === 409) {
+            setFormError(res.data.detail || "数据已被其他人修改");
+            setConfirmReload(true);
+            return;
+          }
+          setFormError(res.data.detail || "保存失败");
+          return;
+        }
+        onSaved(res.data.row);
+      })
+      .catch((e) => setFormError("请求失败: " + e.message));
+  };
+
+  return (
+    <div id="admin-modal" style={{ display: "flex" }}>
+      <div className="admin-modal-card">
+        <h3>
+          {mode === "edit" ? "编辑" : "新增"} {KIND_LABELS[kind]}
+        </h3>
+        <div id="admin-form">
+          {FIELDS[kind].map((f) => {
+            if (mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
+            if (f.type === "workPicker") {
+              const dup =
+                kind === "edges" && edgePairHasDup(form.source_work_id, form.target_work_id)
+                  ? "该涟漪关系已存在"
+                  : "";
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <WorkPicker
+                    value={form[f.key] || ""}
+                    onChange={(v) => {
+                      setForm({ ...form, [f.key]: v });
+                      clearDupHint(f.key);
+                    }}
+                    worksList={worksList}
+                    placeholder="输入筛选并选择…"
+                  />
+                  {dup && <div className="dup-hint">{dup}</div>}
+                </label>
+              );
+            }
+            if (f.type === "authorPicker") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <AuthorPicker
+                    value={form[f.key] || ""}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    authorsList={authorsList}
+                    placeholder="输入筛选作者,可多选…"
+                  />
+                </label>
+              );
+            }
+            if (f.type === "languagePicker") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <CodePicker
+                    value={form[f.key] || ""}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    options={LANG_OPTIONS}
+                    getLabel={langLabel}
+                    placeholder="输入中文或代码筛选…"
+                    emptyWarn="没有匹配的语言,只能选择列表中的语言"
+                  />
+                </label>
+              );
+            }
+            if (f.type === "countryPicker") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <CodePicker
+                    value={form[f.key] || ""}
+                    onChange={(v) => setForm({ ...form, [f.key]: v })}
+                    options={COUNTRY_OPTIONS}
+                    getLabel={countryLabel}
+                    placeholder="输入中文或代码筛选…"
+                    emptyWarn="没有匹配的国家/地区,只能选择列表中的国家/地区"
+                  />
+                </label>
+              );
+            }
+            if (f.type === "textarea") {
+              return (
+                <label key={f.key} className="full">
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <textarea
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  />
+                </label>
+              );
+            }
+            if (f.type === "select") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <select
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  >
+                    <option value="">请选择…</option>
+                    {f.options.map((o: any) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+              );
+            }
+            return (
+              <label key={f.key}>
+                <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                <input
+                  type={f.type === "number" ? "number" : "text"}
+                  min={f.min}
+                  max={f.max}
+                  step={f.type === "number" ? (f.step != null ? f.step : 1) : undefined}
+                  value={form[f.key] ?? ""}
+                  onChange={(e) => {
+                    setForm({ ...form, [f.key]: e.target.value });
+                    clearDupHint(f.key);
+                  }}
+                  onBlur={() => {
+                    if (!DUP_FIELDS[kind].includes(f.key)) return;
+                    const msg = fieldHasDup(f.key, form[f.key]) ? "该「" + f.label + "」已存在" : "";
+                    setDupHints((h) => {
+                      const next = { ...h };
+                      if (msg) next[f.key] = msg;
+                      else delete next[f.key];
+                      return next;
+                    });
+                  }}
+                />
+                {dupHints[f.key] && <div className="dup-hint">{dupHints[f.key]}</div>}
+              </label>
+            );
+          })}
+        </div>
+        {formError && <div id="admin-form-errors">{formError}</div>}
+        <div className="admin-modal-actions">
+          {mode === "edit" && onDelete && (
+            <button className="del" onClick={() => onDelete(initial)}>删除</button>
+          )}
+          <div className="admin-modal-actions-right">
+            <button onClick={save}>保存</button>
+            <button onClick={onClose}>取消</button>
+          </div>
+        </div>
+      </div>
+      {confirmReload && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>版本冲突</h3>
+            <p>数据已被其他人修改,是否重新加载最新数据?(你的修改将丢失)</p>
+            <div className="admin-modal-actions">
+              <button
+                onClick={() => {
+                  setConfirmReload(false);
+                  if (onReload) onReload();
+                }}
+              >
+                确认
+              </button>
+              <button onClick={() => setConfirmReload(false)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

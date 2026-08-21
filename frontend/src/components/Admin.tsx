@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
-import { clearAdminToken, getAdminToken, setAdminToken } from "../lib/adminAuth";
 import type { AdminData, AdminTab } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
 import ContributionsPanel from "./admin/ContributionsPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
+import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
 import {
-  AuthorPicker,
-  CodePicker,
-  COUNTRY_OPTIONS,
-  countryLabel,
-  LANG_OPTIONS,
-  langLabel,
   authorLabelOf,
   workLabel,
-  WorkPicker,
 } from "./admin/pickers";
 import { authorDisplayNames, edgeDisplayLabel } from "./admin/query";
 
@@ -63,50 +56,17 @@ const COLS: Record<AdminTab, { key: string; label: string }[]> = {
   snapshots: [],
 };
 
-// 表单字段配置
-const FIELDS: Record<AdminTab, any[]> = {
-  authors: [
-    { key: "originalName", label: "原文名", required: true },
-    { key: "nationality", label: "国家", type: "countryPicker" },
-    { key: "Name_CN", label: "中文名", required: true },
-    { key: "Name_EN", label: "英文名" },
-    { key: "birthYear", label: "出生年份", type: "number", min: -9999, max: 9999 },
-    { key: "deathYear", label: "去世年份", type: "number", min: -9999, max: 9999 },
-    { key: "note", label: "备注", type: "textarea" },
-    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
-  ],
-  works: [
-    { key: "language", label: "原著语言", required: true, type: "languagePicker" },
-    { key: "originalTitle", label: "原著标题", required: true },
-    { key: "Title_CN", label: "中文名", required: true },
-    { key: "Title_EN", label: "英文名" },
-    { key: "Title_Other", label: "其他标题" },
-    { key: "author_id", label: "作者", required: true, type: "authorPicker" },
-    { key: "publicationYear", label: "出版年份", type: "number" },
-    { key: "creationYear", label: "创作年份", type: "number" },
-    { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
-    { key: "note", label: "备注", type: "textarea" },
-    { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
-  ],
-  edges: [
-    { key: "source_work_id", label: "源作品", required: true, type: "workPicker" },
-    { key: "target_work_id", label: "目标作品", required: true, type: "workPicker" },
-    { key: "evidence", label: "原文片段", required: true, type: "textarea" },
-    { key: "evidenceSource", label: "出处", required: true },
-    { key: "note", label: "备注" },
-    { key: "reviewStatus", label: "审核", type: "select", options: ["draft", "reviewed", "rejected"] },
-  ],
-  contributions: [],
-  audit: [],
-  snapshots: [],
-};
-
 function contributionStatusLabel(s: string): string {
   return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
 }
 
 export default function Admin() {
   const { state, dispatch } = useApp();
+  // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
+  // admin 管理公共星云(/api/admin,即其名下数据);贡献/日志/快照仅 admin。
+  const isAdmin = state.user?.role === "admin";
+  const apiBase = isAdmin ? "/api/admin" : "/api/me";
+  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["contributions", "audit", "snapshots"].includes(k.key));
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -125,91 +85,24 @@ export default function Admin() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<any>(null);
-  const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
-  const [form, setForm] = useState<any>({});
-  const [formError, setFormError] = useState("");
-  const [authOpen, setAuthOpen] = useState(false);
-  const [logoutOpen, setLogoutOpen] = useState(false);
-  const [authInput, setAuthInput] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [authBusy, setAuthBusy] = useState(false);
-  const [token, setToken] = useState(() => getAdminToken());
 
-  // 未授权时自动弹出令牌授权弹窗(深链 #v=admin / ?admin 进入的场景)
+  // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
-    if (state.adminOpen && !token) setAuthOpen(true);
-  }, [state.adminOpen, token]);
-
+    setStatus(isAdmin ? "" : "管理你的星云数据(仅本人可见)");
+  }, [isAdmin]);
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
-    const headers = new Headers(options.headers || {});
-    if (token) headers.set("Authorization", "Bearer " + token);
-    return fetch(url, { ...options, headers });
-  }, [token]);
+    // 会话凭据由 httpOnly Cookie 自动携带,无需手动附加
+    return fetch(url, options);
+  }, []);
 
   const handleAuthError = (r: Response): boolean => {
     if (r.status === 401 || r.status === 403) {
-      // 清除失效令牌,自动重新弹出授权框(token 置空后下方 effect 会打开)
-      clearAdminToken();
-      setToken("");
-      setStatus("管理令牌无效或缺失,请重新授权");
+      setStatus("需要管理员权限(请以管理员账号登录)");
       return true;
     }
     return false;
   };
-
-  // 取消授权:有令牌时仅关弹窗;未授权用户(误入)直接退出管理页并清理 URL
-  const cancelAuth = () => {
-    setAuthOpen(false);
-    if (!token) {
-      stripAdminFromUrl();
-      dispatch({ type: "SET_ADMIN", open: false });
-    }
-  };
-
-  // 校验令牌:有效则保存并授权,「获取授权」变为「已授权」
-  const doAuthorize = () => {
-    const value = authInput.trim();
-    if (!value) {
-      setAuthError("请输入令牌");
-      return;
-    }
-    setAuthBusy(true);
-    fetch("/api/admin/data", { headers: { Authorization: "Bearer " + value } })
-      .then((r) => {
-        if (r.status === 401 || r.status === 403) {
-          setAuthError("令牌无效,请重试");
-          return null;
-        }
-        if (!r.ok) {
-          setAuthError("校验失败(状态码 " + r.status + ")");
-          return null;
-        }
-        return r.json();
-      })
-      .then((d) => {
-        if (!d) return;
-        setAdminToken(value);
-        setToken(value); // token 变化后 load() 会随 useEffect 自动重新拉取数据
-        setAuthOpen(false);
-        setAuthInput("");
-        setStatus("已授权");
-        dispatch({ type: "SET_ADMIN_READY", value: true }); // 授权后显示"数据管理"按钮
-      })
-      .catch((e) => setAuthError("校验失败: " + e.message))
-      .finally(() => setAuthBusy(false));
-  };
-
-  const doLogout = () => {
-    setLogoutOpen(false);
-    clearAdminToken();
-    setToken("");
-    dispatch({ type: "SET_ADMIN_READY", value: false });
-    closeAdmin();
-    setStatus("已退出授权");
-  };
-
-  const openLogoutConfirm = () => setLogoutOpen(true);
 
   // 关闭管理页;同时清理 URL 中的 admin 入口参数/片段
   const closeAdmin = () => {
@@ -219,7 +112,7 @@ export default function Admin() {
 
   const load = useCallback(() => {
     setLoading(true);
-    authFetch("/api/admin/data")
+    authFetch(apiBase + "/data")
       .then((r) => {
         if (!r.ok) {
           handleAuthError(r);
@@ -236,7 +129,7 @@ export default function Admin() {
         }
       })
       .catch((e) => { setStatus("加载失败: " + e.message); setLoading(false); });
-  }, [authFetch]);
+  }, [authFetch, apiBase]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -256,13 +149,13 @@ export default function Admin() {
   }, [authFetch]);
 
   useEffect(() => {
-    if (kind === "contributions") loadContribs();
-  }, [kind, loadContribs]);
+    if (isAdmin && kind === "contributions") loadContribs();
+  }, [isAdmin, kind, loadContribs]);
 
   // 打开管理页即加载待审核数,让"贡献"Tab 角标未切换过去时也显示正确数字
   useEffect(() => {
-    loadContribs();
-  }, [loadContribs]);
+    if (isAdmin) loadContribs();
+  }, [isAdmin, loadContribs]);
 
   if (!state.adminOpen) return null;
 
@@ -323,14 +216,10 @@ export default function Admin() {
   };
 
   const openAdd = () => {
-    setForm({ reviewStatus: "draft" }); // 新增默认草稿(表单中不展示该字段)
-    setFormError("");
     setModal({ mode: "add", row: {} });
   };
 
   const openEdit = (row: any) => {
-    setForm({ ...row });
-    setFormError("");
     setModal({ mode: "edit", row });
   };
 
@@ -346,7 +235,7 @@ export default function Admin() {
       message: `确认删除「${rowLabel(row)}」?(软删除,可恢复,关联的作品/涟漪将一并软删除)`,
       danger: true,
       onConfirm: () => {
-        authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
+        authFetch(apiBase + "/" + kind + "/" + encodeURIComponent(id), { method: "DELETE" })
           .then((r) => r.json())
           .then((d) => {
             const cascade = d.cascade || {};
@@ -377,7 +266,7 @@ export default function Admin() {
   const doRestore = (id: string) => {
     const row = allRows.find((r) => r.id === id);
     if (!row) return;
-    authFetch("/api/admin/" + kind + "/" + encodeURIComponent(id) + "/restore", { method: "POST" })
+    authFetch(apiBase + "/" + kind + "/" + encodeURIComponent(id) + "/restore", { method: "POST" })
       .then((r) => r.json())
       .then((d) => {
         const cascade = d.cascade || {};
@@ -400,65 +289,6 @@ export default function Admin() {
         }
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
-  };
-
-  const saveForm = () => {
-    // 前端必填校验
-    const fields = FIELDS[kind];
-    for (const f of fields) {
-      if (f.required && !String(form[f.key] || "").trim()) {
-        setFormError("请填写「" + f.label + "」");
-        return;
-      }
-      if (f.type === "number" && (f.min != null || f.max != null) && form[f.key] !== "" && form[f.key] != null) {
-        const n = Number(form[f.key]);
-        if (!Number.isInteger(n) || n < f.min || n > f.max) {
-          setFormError("「" + f.label + "」需为 " + f.min + "–" + f.max + " 之间的整数");
-          return;
-        }
-      }
-    }
-    setFormError("");
-    // 基础清洗:字符串去首尾空白,空串统一归一为 null
-    // (同时避免数字/日期字段清空后发送 "" 触发后端 int 解析失败)
-    const payload = Object.fromEntries(
-      Object.entries(form).map(([k, v]) => [k, typeof v === "string" ? (v.trim() || null) : v])
-    );
-    const url = modal.mode === "edit"
-      ? "/api/admin/" + kind + "/" + encodeURIComponent(modal.row.id)
-      : "/api/admin/" + kind;
-    authFetch(url, {
-      method: modal.mode === "edit" ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-      .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, data: d })))
-      .then((res) => {
-        if (!res.ok) {
-          if (res.status === 409) {
-            setFormError(res.data.detail || "数据已被其他人修改");
-            setConfirmState({
-              title: "版本冲突",
-              message: "数据已被其他人修改,是否重新加载最新数据?(你的修改将丢失)",
-              onConfirm: () => { setModal(null); load(); },
-            });
-            return;
-          }
-          setFormError(res.data.detail || "保存失败");
-          return;
-        }
-        setModal(null);
-        setStatus(modal.mode === "edit" ? "已更新" : "已新增");
-        const key = kind as "authors" | "works" | "edges";
-        applyLocal((prev) => {
-          const list = (prev[key] || []) as any[];
-          if (modal.mode === "edit") {
-            return { ...prev, [key]: list.map((r: any) => (r.id === res.data.row.id ? res.data.row : r)) };
-          }
-          return { ...prev, [key]: [...list, res.data.row] };
-        });
-      })
-      .catch((e) => setFormError("请求失败: " + e.message));
   };
 
   const worksList = data ? data.works || [] : [];
@@ -488,54 +318,14 @@ export default function Admin() {
     return v == null ? "" : String(v);
   };
 
-  // ---- 去重即时提示(L2):表单字段失焦 / 涟漪对选定后本地比对 ----
-  const dupFields: Record<AdminTab, string[]> = {
-    authors: ["Name_CN", "originalName"],
-    works: ["Title_CN", "originalTitle"],
-    edges: [],
-    contributions: [],
-    audit: [],
-    snapshots: [],
-  };
-  const selfId = modal?.mode === "edit" ? modal.row.id : undefined;
-  const fieldHasDup = (field: string, value: string): boolean => {
-    const list = kind === "authors" ? authorsList : worksList;
-    const v = String(value || "").trim().toLowerCase();
-    if (!v) return false;
-    return list.some((r: any) => r.id !== selfId && String(r[field] || "").trim().toLowerCase() === v);
-  };
-  const edgePairHasDup = (s: string, t: string): boolean => {
-    if (!s || !t || !data) return false;
-    return data.edges.some((r: any) => r.id !== selfId && r.source_work_id === s && r.target_work_id === t);
-  };
-  const edgeDupMsg =
-    kind === "edges" && modal && edgePairHasDup(form.source_work_id, form.target_work_id)
-      ? "该涟漪关系已存在"
-      : "";
-
-  const clearDupHint = (key: string) => {
-    setDupHints((h) => {
-      if (!h[key]) return h;
-      const next = { ...h };
-      delete next[key];
-      return next;
-    });
-  };
-
   return (
     <div id="admin-overlay">
       <div className="admin-shell">
         <div className="admin-head">
           <div className="admin-head-left">
-            <h2
-              className={"admin-title" + (token ? " clickable" : "")}
-              title={token ? "点击退出授权" : undefined}
-              onClick={token ? openLogoutConfirm : undefined}
-            >
-              数据管理
-            </h2>
+            <h2 className="admin-title">数据管理</h2>
             <div className="admin-tabs">
-              {KINDS.map((k) => (
+              {tabs.map((k) => (
                 <button
                   key={k.key}
                   className={"admin-tab" + (kind === k.key ? " active" : "")}
@@ -559,44 +349,6 @@ export default function Admin() {
             {warnings.duplicateAuthorNames?.length ? " 作者名:" + warnings.duplicateAuthorNames.join("、") : ""}
             {warnings.duplicateWorkTitles?.length ? " 作品标题:" + warnings.duplicateWorkTitles.join("、") : ""}
             {warnings.duplicateEdgePairs?.length ? " 涟漪对:" + warnings.duplicateEdgePairs.join("、") : ""}
-          </div>
-        )}
-        {authOpen && (
-          <div id="auth-modal">
-            <div className="auth-modal-card">
-              <h3>请输入令牌</h3>
-              <input
-                type="password"
-                placeholder="管理令牌"
-                value={authInput}
-                autoFocus
-                onChange={(e) => {
-                  setAuthInput(e.target.value);
-                  setAuthError("");
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") doAuthorize();
-                  if (e.key === "Escape") cancelAuth();
-                }}
-              />
-              {authError && <div className="auth-error">{authError}</div>}
-              <div className="admin-modal-actions">
-                <button onClick={doAuthorize} disabled={authBusy}>{authBusy ? "校验中…" : "确认"}</button>
-                <button onClick={cancelAuth}>取消</button>
-              </div>
-            </div>
-          </div>
-        )}
-        {logoutOpen && (
-          <div id="auth-modal">
-            <div className="auth-modal-card">
-              <h3>退出授权</h3>
-              <p>确定退出授权吗?</p>
-              <div className="admin-modal-actions">
-                <button className="del" onClick={doLogout}>确认</button>
-                <button onClick={() => setLogoutOpen(false)}>取消</button>
-              </div>
-            </div>
           </div>
         )}
         {confirmState && (
@@ -722,138 +474,33 @@ export default function Admin() {
       </div>
 
       {modal && (
-        <div id="admin-modal" style={{ display: "flex" }}>
-          <div className="admin-modal-card">
-            <h3>{modal.mode === "edit" ? "编辑" : "新增"} {KINDS.find((k) => k.key === kind)!.label}</h3>
-            <div id="admin-form">
-              {FIELDS[kind].map((f) => {
-                if (modal.mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
-                if (f.type === "workPicker") {
-                  return (
-                    <label key={f.key}>
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <WorkPicker
-                        value={form[f.key] || ""}
-                        onChange={(v) => {
-                          setForm({ ...form, [f.key]: v });
-                          clearDupHint(f.key);
-                        }}
-                        worksList={worksList}
-                        placeholder="输入筛选并选择…"
-                      />
-                      {edgeDupMsg && <div className="dup-hint">{edgeDupMsg}</div>}
-                    </label>
-                  );
-                }
-                if (f.type === "authorPicker") {
-                  return (
-                    <label key={f.key}>
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <AuthorPicker
-                        value={form[f.key] || ""}
-                        onChange={(v) => setForm({ ...form, [f.key]: v })}
-                        authorsList={authorsList}
-                        placeholder="输入筛选作者,可多选…"
-                      />
-                    </label>
-                  );
-                }
-                if (f.type === "languagePicker") {
-                  return (
-                    <label key={f.key}>
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <CodePicker
-                        value={form[f.key] || ""}
-                        onChange={(v) => setForm({ ...form, [f.key]: v })}
-                        options={LANG_OPTIONS}
-                        getLabel={langLabel}
-                        placeholder="输入中文或代码筛选…"
-                        emptyWarn="没有匹配的语言,只能选择列表中的语言"
-                      />
-                    </label>
-                  );
-                }
-                if (f.type === "countryPicker") {
-                  return (
-                    <label key={f.key}>
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <CodePicker
-                        value={form[f.key] || ""}
-                        onChange={(v) => setForm({ ...form, [f.key]: v })}
-                        options={COUNTRY_OPTIONS}
-                        getLabel={countryLabel}
-                        placeholder="输入中文或代码筛选…"
-                        emptyWarn="没有匹配的国家/地区,只能选择列表中的国家/地区"
-                      />
-                    </label>
-                  );
-                }
-                if (f.type === "textarea") {
-                  return (
-                    <label key={f.key} className="full">
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <textarea
-                        value={form[f.key] || ""}
-                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                      />
-                    </label>
-                  );
-                }
-                if (f.type === "select") {
-                  return (
-                    <label key={f.key}>
-                      <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                      <select
-                        value={form[f.key] || ""}
-                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                      >
-                        <option value="">请选择…</option>
-                        {f.options.map((o: any) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </label>
-                  );
-                }
-                return (
-                  <label key={f.key}>
-                    <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                    <input
-                      type={f.type === "number" ? "number" : "text"}
-                      min={f.min}
-                      max={f.max}
-                      step={f.type === "number" ? (f.step != null ? f.step : 1) : undefined}
-                      value={form[f.key] ?? ""}
-                      onChange={(e) => {
-                        setForm({ ...form, [f.key]: e.target.value });
-                        clearDupHint(f.key);
-                      }}
-                      onBlur={() => {
-                        if (!dupFields[kind].includes(f.key)) return;
-                        const msg = fieldHasDup(f.key, form[f.key]) ? "该「" + f.label + "」已存在" : "";
-                        setDupHints((h) => {
-                          const next = { ...h };
-                          if (msg) next[f.key] = msg;
-                          else delete next[f.key];
-                          return next;
-                        });
-                      }}
-                    />
-                    {dupHints[f.key] && <div className="dup-hint">{dupHints[f.key]}</div>}
-                  </label>
-                );
-              })}
-            </div>
-            {formError && <div id="admin-form-errors">{formError}</div>}
-            <div className="admin-modal-actions">
-              {modal.mode === "edit" && (
-                <button className="del" onClick={() => doDelete(modal.row)}>删除</button>
-              )}
-              <div className="admin-modal-actions-right">
-                <button onClick={saveForm}>保存</button>
-                <button onClick={() => setModal(null)}>取消</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <NodeFormModal
+          kind={kind as NodeKind}
+          mode={modal.mode}
+          initial={modal.row}
+          apiBase={apiBase}
+          authorsList={authorsList}
+          worksList={worksList}
+          edgesList={data?.edges || []}
+          onClose={() => setModal(null)}
+          onReload={() => {
+            setModal(null);
+            load();
+          }}
+          onSaved={(row) => {
+            setModal(null);
+            setStatus(modal.mode === "edit" ? "已更新" : "已新增");
+            const key = kind as "authors" | "works" | "edges";
+            applyLocal((prev) => {
+              const list = (prev[key] || []) as any[];
+              if (modal.mode === "edit") {
+                return { ...prev, [key]: list.map((r: any) => (r.id === row.id ? row : r)) };
+              }
+              return { ...prev, [key]: [...list, row] };
+            });
+          }}
+          onDelete={modal.mode === "edit" ? () => doDelete(modal.row) : undefined}
+        />
       )}
     </div>
   );

@@ -82,6 +82,20 @@ class ContributionStoreTest(unittest.TestCase):
         self.assertIsNotNone(items[0]["reviewed_at"])
         self.assertFalse(c.set_status("not-exists", "approved"))
 
+    def test_submission_attaches_user_id(self) -> None:
+        import app.auth as auth
+
+        user = auth.register("contributor@test.local", "password123")
+        row = c.submit_contribution({
+            "source_work": "A", "target_work": "B",
+            "source_author": "甲", "target_author": "乙",
+            "evidence": "x", "evidence_source": "c1",
+        }, user_id=user["id"])
+        self.assertEqual(row["user_id"], user["id"])
+        items = c.list_contributions()["items"]
+        self.assertEqual(items[0]["user_id"], user["id"])
+        self.assertEqual(items[0]["user_email"], "contributor@test.local")
+
     def test_rate_limit(self) -> None:
         ratelimit.clear_rate_limits()
         ip = "1.2.3.4"

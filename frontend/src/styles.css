@@ -846,14 +846,30 @@ th.sortable.active .sort-icon {
   color: #ffb0b0;
   font-size: 12px;
 }
-.auth-user {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  background: rgba(30, 44, 90, 0.35);
-  border: 1px solid rgba(148, 163, 255, 0.18);
-  border-radius: 10px;
+.brand .badge.login-badge,
+.brand .badge.account-badge {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(30, 44, 90, 0.55);
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  color: #9cc3ff;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 0 14px rgba(80, 120, 255, 0.18);
+}
+.brand .badge.login-badge:hover,
+.brand .badge.account-badge:hover {
+  border-color: rgba(138, 184, 255, 0.8);
+  box-shadow: 0 0 18px rgba(138, 184, 255, 0.35);
+}
+.suggest-results .add-option {
+  color: #7dd3fc;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(148, 163, 255, 0.25);
 }
 .auth-email {
   font-size: 12px;
@@ -861,6 +877,26 @@ th.sortable.active .sort-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.space-switch {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px 2px;
+}
+.space-btn {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 9px;
+  border: 1px solid rgba(148, 163, 255, 0.2);
+  background: rgba(30, 44, 90, 0.4);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.space-btn.active {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.7);
+  box-shadow: 0 0 12px rgba(138, 184, 255, 0.25);
 }
 #admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
 #admin-form .full { grid-column: 1 / -1; }

@@ -56,7 +56,7 @@ sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv run python script
 echo "==> 8/10 配置 .env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   sudo -u "$APP_USER" cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-  echo "!! 已生成 $APP_DIR/.env,请先填入 ADMIN_TOKEN 后再启动服务"
+  echo "!! 已生成 $APP_DIR/.env,请先填入 ADMIN_BOOTSTRAP_EMAIL 后再启动服务"
 fi
 
 echo "==> 9/10 构建前端"
@@ -127,7 +127,7 @@ chmod 440 /etc/sudoers.d/echo-graph
 
 echo "==> 初始化完成"
 echo "接下来:"
-echo "  1) 编辑 $APP_DIR/.env,填入 ADMIN_TOKEN(openssl rand -hex 32 生成)"
+echo "  1) 编辑 $APP_DIR/.env,填入 ADMIN_BOOTSTRAP_EMAIL(第一个管理员邮箱)"
 echo "  2) sudo systemctl start echo-graph"
 echo "  3) 验证: curl https://$DOMAIN/api/health"
 echo "  4) 如需防火墙: sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw --force enable"

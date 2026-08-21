@@ -70,6 +70,7 @@ def audit(
     detail: str = "",
     before: dict | None = None,
     after: dict | None = None,
+    actor: str = "admin",
 ) -> None:
     """写一条审计记录(与业务写入同一事务)。
 
@@ -78,9 +79,10 @@ def audit(
     """
     conn.execute(
         "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail, before, after)"
-        " VALUES (?, 'admin', ?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+            actor,
             action,
             kind,
             row_id,
@@ -322,6 +324,37 @@ def _migration_v8(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)")
 
 
+def _migration_v9(conn: sqlite3.Connection) -> None:
+    """用户空间数据隔离:业务表增加 owner_id,贡献表增加归属 user_id。
+
+    - owner_id 为空 = 历史/未认领数据(认领到引导管理员后不再有空值)。
+    - 公共星云 = 引导管理员(ADMIN_BOOTSTRAP_EMAIL)认领的空间;普通用户空间私有。
+    - 数据隔离在查询层强制:所有行级读写按 owner 上下文过滤。
+    """
+    for table in ("authors", "works", "edges"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "owner_id" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN owner_id TEXT REFERENCES users(id)")
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner ON {table}(owner_id)")
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(contributions)")}
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE contributions ADD COLUMN user_id TEXT REFERENCES users(id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_contributions_user ON contributions(user_id)")
+
+
+def _migration_v10(conn: sqlite3.Connection) -> None:
+    """星云可见性:users.space_visibility(默认 public,星际跃迁可访问)。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "space_visibility" not in cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN space_visibility TEXT NOT NULL DEFAULT 'public'"
+            " CHECK (space_visibility IN ('private','public'))"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_space_visibility ON users(space_visibility)"
+    )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -331,6 +364,8 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (6, _migration_v6),
     (7, _migration_v7),
     (8, _migration_v8),
+    (9, _migration_v9),
+    (10, _migration_v10),
 ]
 
 

@@ -33,6 +33,8 @@ logger = logging.getLogger("echo_graph")
 
 SESSION_COOKIE = "echo_graph_session"
 SESSION_DAYS = 30
+# 引导管理员邮箱:该邮箱注册自动提权为 admin,并认领全部未归属数据(公共星云)
+BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 # 每 IP 每小时注册 / 登录尝试上限(与贡献限流同一套进程内滑动窗口)
 REGISTER_LIMIT = 10
 LOGIN_LIMIT = 30
@@ -58,6 +60,53 @@ def _expires_at() -> str:
     return (
         dt.datetime.now(dt.UTC) + dt.timedelta(days=SESSION_DAYS)
     ).isoformat(timespec="seconds")
+
+
+def bootstrap_email() -> str:
+    return BOOTSTRAP_EMAIL
+
+
+def is_bootstrap_email(email: str) -> bool:
+    return bool(BOOTSTRAP_EMAIL) and normalize_email(email) == BOOTSTRAP_EMAIL
+
+
+def admin_user_id() -> str | None:
+    """引导管理员(ADMIN_BOOTSTRAP_EMAIL)的用户 id;尚未注册时为 None。"""
+    if not BOOTSTRAP_EMAIL:
+        return None
+    with db_sqlite._db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (BOOTSTRAP_EMAIL,)).fetchone()
+    return row["id"] if row else None
+
+
+def claim_public_rows(conn, admin_id: str) -> int:
+    """把尚未认领(owner_id 为空)的业务行划归引导管理员(公共星云)。"""
+    total = 0
+    for table in ("authors", "works", "edges"):
+        cur = conn.execute(
+            f"UPDATE {table} SET owner_id = ? WHERE owner_id IS NULL", (admin_id,)
+        )
+        total += cur.rowcount
+    return total
+
+
+def bootstrap_admin() -> dict | None:
+    """启动时执行引导:补 admin 角色并认领未归属数据。返回管理员用户(若有)。"""
+    if not BOOTSTRAP_EMAIL:
+        return None
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE email = ?", (BOOTSTRAP_EMAIL,)
+        ).fetchone()
+        if row is None:
+            return None
+        if row["role"] != "admin":
+            conn.execute(
+                "UPDATE users SET role = 'admin', updatedAt = ? WHERE id = ?",
+                (_now(), row["id"]),
+            )
+        claim_public_rows(conn, row["id"])
+    return {"id": row["id"], "email": row["email"], "role": "admin"}
 
 
 # ---- 密码与邮箱 ----
@@ -154,7 +203,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
     if not token:
         return None
     row = conn.execute(
-        "SELECT u.id, u.email, u.role, u.status, s.expires_at"
+        "SELECT u.id, u.email, u.role, u.space_visibility, u.status, s.expires_at"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ?",
         (_token_hash(token),),
@@ -166,12 +215,33 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         return None
     if row["status"] != "active":
         return None
-    return {"id": row["id"], "email": row["email"], "role": row["role"]}
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "role": row["role"],
+        "space_visibility": row["space_visibility"],
+    }
 
 
 def current_user(token: str | None) -> dict | None:
     with db_sqlite._db() as conn:
         return _user_from_session(conn, token)
+
+
+def require_user(request: Request) -> dict:
+    """FastAPI 依赖:登录用户(未登录 401)。"""
+    user = current_user(request.cookies.get(SESSION_COOKIE))
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    return user
+
+
+def require_admin(request: Request) -> dict:
+    """FastAPI 依赖:管理员(未登录 401,非 admin 403)。"""
+    user = require_user(request)
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
 
 
 # ---- 注册 / 登录 ----
@@ -192,12 +262,15 @@ def register(email: str, password: str) -> dict:
         if exists:
             raise ValueError("该邮箱已注册,请直接登录")
         user_id = _new_id()
+        role = "admin" if is_bootstrap_email(email) else "user"
         conn.execute(
             "INSERT INTO users (id, email, password_hash, role, status, createdAt, updatedAt)"
-            " VALUES (?, ?, ?, 'user', 'active', ?, ?)",
-            (user_id, email, password_hash, now, now),
+            " VALUES (?, ?, ?, ?, 'active', ?, ?)",
+            (user_id, email, password_hash, role, now, now),
         )
-    return {"id": user_id, "email": email, "role": "user"}
+        if role == "admin":
+            claim_public_rows(conn, user_id)
+    return {"id": user_id, "email": email, "role": role, "space_visibility": "public"}
 
 
 def login(email: str, password: str) -> dict | None:
@@ -213,7 +286,12 @@ def login(email: str, password: str) -> dict | None:
         return None
     if not verify_password(password, row["password_hash"]):
         return None
-    return {"id": row["id"], "email": row["email"], "role": row["role"]}
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "role": row["role"],
+        "space_visibility": row["space_visibility"],
+    }
 
 
 # ---- HTTP 路由 ----

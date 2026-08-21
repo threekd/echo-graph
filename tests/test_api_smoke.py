@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 import app.main as main  # noqa: E402
-from app import db_sqlite, sqlite_store  # noqa: E402
+from app import auth, db_sqlite, sqlite_store  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -20,8 +20,23 @@ class ApiSmokeTest(unittest.TestCase):
         # 管理写入走 SQLite:全部隔离到临时库,且不落盘 CSV/版本目录
         self.tmp = tempfile.TemporaryDirectory()
         patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "echo-graph.db").start()
-        patch("app.admin.export_csv_files", lambda: None).start()
+        # 固定引导管理员,保证 admin 路径与角色不依赖机器 .env
+        self.admin_email = "admin@test.local"
+        patch.object(auth, "BOOTSTRAP_EMAIL", self.admin_email).start()
+        auth.register(self.admin_email, "admin-password-123")
+        self.admin_id = auth.admin_user_id()
+        self.assertIsNotNone(self.admin_id)
+        patch("app.space_crud.export_csv_files", lambda: None).start()
         self.addCleanup(self.tmp.cleanup)
+
+    def seed(self, authors=(), works=(), edges=(), owner_id: str | None = None) -> None:
+        """按 admin 空间造数:所有行显式归属,避免依赖未认领过渡态。"""
+        owner = owner_id if owner_id is not None else self.admin_id
+        sqlite_store.rewrite_all(
+            [{**r, "owner_id": owner} for r in authors],
+            [{**r, "owner_id": owner} for r in works],
+            [{**r, "owner_id": owner} for r in edges],
+        )
 
     def test_expected_routes_registered(self) -> None:
         paths = {
@@ -55,6 +70,16 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/auth/logout", paths)
         self.assertIn("/api/auth/me", paths)
         self.assertIn("/api/auth/config", paths)
+        self.assertIn("/api/me/graph", paths)
+        self.assertIn("/api/me/stats", paths)
+        self.assertIn("/api/me/search", paths)
+        self.assertIn("/api/me/data", paths)
+        self.assertIn("/api/me/work/{work_id}", paths)
+        self.assertIn("/api/me/expansion/{work_id}", paths)
+        self.assertIn("/api/me/path", paths)
+        self.assertIn("/api/me/{kind}", paths)
+        self.assertIn("/api/space/random/graph", paths)
+        self.assertIn("/api/space/{user_id}/graph", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -127,7 +152,7 @@ class ApiSmokeTest(unittest.TestCase):
             "Name_CN": "旧中文名",
             "createdAt": "2026-01-01T00:00:00+00:00",
         }
-        sqlite_store.rewrite_all([author], [], [])
+        self.seed([author])
         res = admin.update(
             "authors",
             author["id"],
@@ -152,7 +177,7 @@ class ApiSmokeTest(unittest.TestCase):
             "originalName": "A", "Name_CN": "甲",
             "updatedAt": "2026-08-20T08:00:00+00:00",
         }
-        sqlite_store.rewrite_all([author], [], [])
+        self.seed([author])
         with self.assertRaises(HTTPException) as ctx:
             admin.update(
                 "authors",
@@ -168,7 +193,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": "01a013e6-e885-766b-b9db-315d518adeeb", "originalName": "X", "Name_CN": "甲"},
             {"id": "01a013e6-e885-766b-b9db-315d518adeec", "originalName": "Y", "Name_CN": "甲"},
         ]
-        sqlite_store.rewrite_all(authors, [], [])
+        self.seed(authors)
         d = admin.get_data()
         self.assertIn("warnings", d)
         self.assertEqual(len(d["warnings"]["duplicateAuthorNames"]), 1)
@@ -189,7 +214,7 @@ class ApiSmokeTest(unittest.TestCase):
             "target_work_id": w2,
             "evidence": "x",
         }]
-        sqlite_store.rewrite_all([], works, edges)
+        self.seed([], works, edges)
         with self.assertRaises(HTTPException) as ctx:
             admin.create("edges", {
                 "source_work_id": w1, "target_work_id": w2,
@@ -208,7 +233,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": w1, "language": "fr", "originalTitle": "A", "Title_CN": "甲书"},
             {"id": w2, "language": "fr", "originalTitle": "B", "Title_CN": "乙书"},
         ]
-        sqlite_store.rewrite_all([], works, [])
+        self.seed([], works, [])
         with self.assertRaises(HTTPException) as ctx:
             admin.create("edges", {"source_work_id": w1, "target_work_id": w2, "evidence": "x"})
         self.assertEqual(ctx.exception.status_code, 400)
@@ -227,7 +252,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"},
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y"},
         ]
-        sqlite_store.rewrite_all([], works, edges)
+        self.seed([], works, edges)
         res = admin.delete("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["edges"]), sorted([e1, e2]))
@@ -253,7 +278,7 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"},
         ]
-        sqlite_store.rewrite_all(authors, works, edges)
+        self.seed(authors, works, edges)
         res = admin.delete("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
@@ -278,7 +303,7 @@ class ApiSmokeTest(unittest.TestCase):
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
             {"id": e2, "source_work_id": w2, "target_work_id": w1, "evidence": "y", "deletedAt": "2026-08-20T09:00:00+00:00"},
         ]
-        sqlite_store.rewrite_all([], works, edges)
+        self.seed([], works, edges)
         res = admin.restore("works", w1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["edges"], [e1])
@@ -305,7 +330,7 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
-        sqlite_store.rewrite_all(authors, works, edges)
+        self.seed(authors, works, edges)
         res = admin.restore("authors", a1)
         self.assertTrue(res["ok"])
         self.assertEqual(res["cascade"]["works"], [w1])
@@ -328,7 +353,7 @@ class ApiSmokeTest(unittest.TestCase):
         edges = [
             {"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x", "deletedAt": ts},
         ]
-        sqlite_store.rewrite_all([], works, edges)
+        self.seed([], works, edges)
         res = admin.restore("edges", e1)
         self.assertTrue(res["ok"])
         self.assertEqual(sorted(res["cascade"]["works"]), sorted([w1, w2]))
@@ -369,24 +394,6 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(audit["items"][0]["kind"], "contributions")
         self.assertIn("甲书 → 乙书", audit["items"][0]["detail"])
         self.assertEqual(audit["items"][0]["after"], '{"status": "approved"}')
-
-    def test_admin_token_rejects_placeholder(self) -> None:
-        import app.admin as admin
-
-        with patch("app.admin.os.getenv", return_value="change-me-to-a-long-random-token"):
-            with self.assertRaises(HTTPException) as ctx:
-                admin.require_admin_token(None)
-        self.assertEqual(ctx.exception.status_code, 503)
-
-    def test_admin_token_rejects_wrong_credentials(self) -> None:
-        import app.admin as admin
-
-        with patch("app.admin.os.getenv", return_value="a-very-long-and-strong-token-value"):
-            creds = admin.HTTPAuthorizationCredentials(scheme="Bearer", credentials="wrong")
-            with self.assertRaises(HTTPException) as ctx:
-                admin.require_admin_token(creds)
-        self.assertEqual(ctx.exception.status_code, 401)
-
 
 if __name__ == "__main__":
     unittest.main()

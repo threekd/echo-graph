@@ -7,11 +7,26 @@
 ## 通用约定
 
 - **主键与 URL 标识**:`id` 使用 UUID(建议 UUID v7,时间有序),同时也是 URL 使用的标识;新增作者/作品/涟漪时由后端自动生成。
+- **空间归属(多用户)**:`authors` / `works` / `edges` 各含 `owner_id`(引用 `users.id`,
+  空值 = 尚未认领的历史数据,启动时认领给引导管理员);公共星云 = 引导管理员空间,
+  个人空间(`/api/me/*`)仅本人可见;`contributions` 含 `user_id`(登录用户提交归属)。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),作为对外展示字段。
 - **语言编码**:优先 ISO 639-1;无法表达时(如中古英语、古典日语)使用 ISO 639-3(`enm`、`ojp`)或自定义枚举,并在文档中登记。
 - **国籍编码**:使用 ISO 3166-1 alpha-2 大写代码(如 `CN` 中国、`US` 美国);无国籍/未知时留空。
 
 ## 节点类型与属性
+
+### User 用户
+
+| 属性 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | UUID | 是 | 唯一标识,主键 |
+| `email` | String | 是 | 登录邮箱(唯一,统一小写) |
+| `password_hash` | String | 是 | Argon2 密码哈希,不存明文 |
+| `role` | String | 是 | `user` / `admin`(引导管理员邮箱注册自动为 admin) |
+| `status` | String | 是 | `active` / `disabled` |
+| `space_visibility` | String | 是 | 星云可见性:`public`(默认,星际跃迁可访问)/ `private`(仅本人与 admin) |
+| `createdAt` / `updatedAt` | DateTime | 是 | 时间戳 |
 
 ### Work 作品节点
 
@@ -78,6 +93,8 @@
 ## 约束与索引
 
 - 唯一约束:`Work.id`、`Author.id`
+- 空间归属:`authors` / `works` / `edges` 的 `owner_id` 指向 `users.id`(空 = 未认领,
+  认领后归引导管理员);公共星云 = admin 空间;用户星云默认公开可被星际跃迁访问。
 - 全文检索:数据量增长后可对 `Work(Title_CN, Title_EN, originalTitle)` 建 SQLite FTS5 索引;`evidence` 属长文本,当前用包含匹配,后续可拆分为独立 Evidence 表或接入 FTS5
 - 建议查询:`edges` 按 `source_work_id` / `target_work_id` 建索引(已有 `idx_edges_target`、`idx_edges_source`),路径与扩散查询在读取层以内存 BFS 实现,数据量增长后可加 FTS5 与进程内邻接缓存
 

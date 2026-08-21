@@ -18,7 +18,8 @@ data/export/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)�
 2. **公开数据范围**:公开接口默认返回全部审核状态(便于管理/开发);
    **已在代码内置方案**——在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1`,公开视图即只返回
    `reviewed` 内容(草稿/驳回不可见)。上线前请逐条人工审核并置 `reviewed`,再决定是否开启。
-3. **ADMIN_TOKEN**:生成强随机值,例如 `openssl rand -hex 32`,写入 `/opt/echo-graph/.env`。
+3. **引导管理员**:在 `.env` 配置 `ADMIN_BOOTSTRAP_EMAIL`,该邮箱注册时自动获得
+   admin 角色并认领公共星云数据;数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
 4. **账号体系(可选但建议)**:注册接口含 Cloudflare Turnstile 人机验证——在
    Cloudflare Dashboard 创建 Site,把 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
    写入 `.env`(未配置时注册跳过验证,仅限本地开发);HTTPS 部署请设 `COOKIE_SECURE=1`。
@@ -43,7 +44,7 @@ sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 之后:
 
 ```bash
-sudo nano /opt/echo-graph/.env          # 填入 ADMIN_TOKEN(及可选的 TURNSTILE_* / COOKIE_SECURE)
+sudo nano /opt/echo-graph/.env          # 填入 ADMIN_BOOTSTRAP_EMAIL(及可选的 TURNSTILE_* / COOKIE_SECURE)
 # 可选:若只展示已审核内容,追加 PUBLIC_REVIEWED_ONLY=1
 sudo systemctl start echo-graph
 curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"sqlite"}

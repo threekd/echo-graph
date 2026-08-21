@@ -21,6 +21,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 
 from app import db_sqlite
+from app.auth import SESSION_COOKIE, current_user
 from app.data_store import remove_invisible_chars
 from app.ratelimit import client_ip, sliding_limited
 
@@ -83,26 +84,28 @@ def _validate(payload: dict) -> dict:
     return data
 
 
-def submit_contribution(payload: dict) -> dict:
+def submit_contribution(payload: dict, user_id: str | None = None) -> dict:
     """写入一条 pending 贡献,返回落库后的行。"""
     data = _validate(payload)
     row = {
         "id": str(uuid.uuid7()) if hasattr(uuid, "uuid7") else str(uuid.uuid4()),
         **data,
         "status": "pending",
+        "user_id": user_id,
         "created_at": _now(),
         "reviewed_at": None,
     }
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         conn.execute(
             "INSERT INTO contributions (id, source_work, target_work, source_author,"
-            " target_author, evidence, evidence_source, note, contact, status, created_at, reviewed_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " target_author, evidence, evidence_source, note, contact, status, user_id,"
+            " created_at, reviewed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 row["id"], row["source_work"], row["target_work"],
                 row["source_author"], row["target_author"],
                 row["evidence"], row["evidence_source"], row["note"], row["contact"],
-                row["status"], row["created_at"], row["reviewed_at"],
+                row["status"], row["user_id"], row["created_at"], row["reviewed_at"],
             ),
         )
     return row
@@ -116,8 +119,9 @@ def list_contributions(
     with db_sqlite._db() as conn:
         if status:
             rows = conn.execute(
-                "SELECT * FROM contributions WHERE status = ?"
-                " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT c.*, u.email AS user_email FROM contributions c"
+                " LEFT JOIN users u ON u.id = c.user_id WHERE c.status = ?"
+                " ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
                 (status, limit, offset),
             ).fetchall()
             total = conn.execute(
@@ -126,7 +130,9 @@ def list_contributions(
             ).fetchone()["c"]
         else:
             rows = conn.execute(
-                "SELECT * FROM contributions ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT c.*, u.email AS user_email FROM contributions c"
+                " LEFT JOIN users u ON u.id = c.user_id"
+                " ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
             total = conn.execute("SELECT count(*) AS c FROM contributions").fetchone()["c"]
@@ -161,8 +167,11 @@ def submit_echo(payload: dict, request: Request) -> dict:
     ip = client_ip(request)
     if sliding_limited(f"contribute:{ip}", SUBMIT_LIMIT, WINDOW_SECONDS):
         raise HTTPException(status_code=429, detail="提交过于频繁,请稍后再试")
+    # 登录用户自动归属;未登录仍可匿名提交
+    user = current_user(request.cookies.get(SESSION_COOKIE))
+    user_id = user["id"] if user else None
     try:
-        row = submit_contribution(payload)
+        row = submit_contribution(payload, user_id=user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"校验失败:\n{exc}") from exc
     return {"ok": True, "id": row["id"], "msg": "提交成功,审核通过后展示"}

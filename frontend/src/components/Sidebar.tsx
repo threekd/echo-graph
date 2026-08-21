@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
-import { search } from "../lib/api";
+import { loadGraphData, search, type Space } from "../lib/api";
 import { logout } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
@@ -17,6 +17,26 @@ export default function Sidebar() {
   const [toOpen, setToOpen] = useState(false);
   const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const switchSpace = (space: Space) => {
+    if (space === "mine" && !state.user) {
+      dispatch({ type: "SET_AUTH", open: true }); // 我的星云需登录
+      return;
+    }
+    dispatch({ type: "SET_SPACE", space });
+    loadGraphData(space)
+      .then((data) => {
+        dispatch({ type: "SET_DATA", data });
+        renderMain({}, data);
+      })
+      .catch((e) =>
+        dispatch({
+          type: "SET_TOAST",
+          msg: "加载「" + (space === "mine" ? "我的星云" : "公共星云") + "」失败: " + e.message,
+          kind: "error",
+        })
+      );
+  };
   const lookups = useRef<WorkLookups>({ workLookup: {}, workById: {}, options: [] });
   const sidebarRef = useRef<HTMLElement | null>(null);
   const composingRef = useRef(false);
@@ -39,12 +59,12 @@ export default function Sidebar() {
   useEffect(() => {
     if (!q.trim()) { setQResults([]); return; }
     const t = setTimeout(() => {
-      search(q.trim())
+      search(q.trim(), state.space)
         .then((r) => { setQResults(r.hits || []); setQActive(-1); })
         .catch(() => { setQResults([]); dispatch({ type: "SET_TOAST", msg: "搜索失败" }); });
     }, 200);
     return () => clearTimeout(t);
-  }, [q, dispatch]);
+  }, [q, state.space, dispatch]);
 
   // 输入聚焦或中文输入法组合期间不隐藏侧栏(候选框弹出时鼠标已不在侧栏内)
   useEffect(() => {
@@ -178,10 +198,41 @@ export default function Sidebar() {
       >
         <div className="brand">
           <h1>Litnebula</h1>
-          <span className="badge">回声图谱</span>
+          {state.user ? (
+            <button
+              id="btn-account"
+              className="badge account-badge"
+              title={state.user.email}
+              onClick={() => setLogoutConfirm(true)}
+            >
+              {state.user.email}
+            </button>
+          ) : (
+            <button
+              id="btn-login"
+              className="badge login-badge"
+              onClick={() => dispatch({ type: "SET_AUTH", open: true })}
+            >
+              登录
+            </button>
+          )}
           <div className="store-badge">
             数据源:{state.storeName ? "个人整理及书友分享" : "加载中…"} 
           </div>
+        </div>
+        <div className="space-switch">
+          <button
+            className={"space-btn" + (state.space === "public" ? " active" : "")}
+            onClick={() => switchSpace("public")}
+          >
+            公共星云
+          </button>
+          <button
+            className={"space-btn" + (state.space === "mine" ? " active" : "")}
+            onClick={() => switchSpace("mine")}
+          >
+            我的星云
+          </button>
         </div>
         <nav>
           <div id="view-status">视图:{viewLabel(state.currentView)}</div>
@@ -309,35 +360,46 @@ export default function Sidebar() {
             />
             <span>隐藏孤岛节点</span>
           </label>
-          {state.user ? (
-            <div className="auth-user">
-              <span className="auth-email" title={state.user.email}>{state.user.email}</span>
-              <button
-                id="btn-logout"
-                className="side-btn"
-                onClick={() => {
-                  logout().finally(() => dispatch({ type: "SET_USER", user: null }));
-                  dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
-                }}
-              >
-                退出登录
-              </button>
-            </div>
-          ) : (
-            <button
-              id="btn-login"
-              className="side-btn"
-              onClick={() => dispatch({ type: "SET_AUTH", open: true })}
-            >
-              登录 / 注册
-            </button>
-          )}
-          <button id="btn-contribute" className="side-btn" onClick={() => dispatch({ type: "SET_CONTRIBUTE", open: true })}>点亮星空</button>
-          {state.adminReady && (
+          <button
+            id="btn-contribute"
+            className="side-btn"
+            onClick={() => {
+              if (!state.user) {
+                dispatch({ type: "SET_AUTH", open: true });
+                dispatch({ type: "SET_TOAST", msg: "请先登录,再往你的星云添加数据", kind: "info" });
+                return;
+              }
+              dispatch({ type: "SET_CONTRIBUTE", open: true });
+            }}
+          >
+            点亮星空
+          </button>
+          {state.user && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
           )}
         </div>
       </aside>
+      {logoutConfirm && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>退出登录</h3>
+            <p>确定退出当前账号吗?</p>
+            <div className="admin-modal-actions">
+              <button
+                className="del"
+                onClick={() => {
+                  setLogoutConfirm(false);
+                  logout().finally(() => dispatch({ type: "SET_USER", user: null }));
+                  dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
+                }}
+              >
+                确认退出
+              </button>
+              <button onClick={() => setLogoutConfirm(false)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -15,7 +15,6 @@ import Guide from "./components/Guide";
 import AuthModal from "./components/AuthModal";
 import { loadGraphData, loadStats, workDetail } from "./lib/api";
 import { fetchMe } from "./lib/auth";
-import { clearAdminToken, getAdminToken, validateAdminToken } from "./lib/adminAuth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
@@ -78,7 +77,13 @@ function AppContent() {
     // #v=admin 或 hash 中含 admin(如用户把 ?admin 误加到 # 之后形成 "#v=main?admin")都视为管理入口;
     // "admin" 不可能出现在 UUID/视图参数中,判定安全
     if (location.hash.indexOf("admin") !== -1) {
-      dispatch({ type: "SET_ADMIN", open: true });
+      const st = stateRef.current!.state;
+      if (st.user) {
+        dispatch({ type: "SET_ADMIN", open: true });
+      } else {
+        dispatch({ type: "SET_AUTH", open: true });
+        dispatch({ type: "SET_TOAST", msg: "请先登录,再管理你的星云数据", kind: "info" });
+      }
       return;
     }
     const h = location.hash.replace(/^#/, "");
@@ -110,7 +115,7 @@ function AppContent() {
       const node = fullData.nodes.find((n) => n.id === id);
       if (node) {
           if (node.type === "work") {
-            workDetail(id).then((d) => {
+            workDetail(id, st.space).then((d) => {
               renderRipple(d, hops, flags);
               // 手机端深链也保存节点信息,但面板不自动呼出
               dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
@@ -134,20 +139,22 @@ function AppContent() {
     }
   }, [dispatch]);
 
-  // 管理令牌有效性驱动"数据管理"按钮显隐:有 token 时启动校验,有效才显示
-  useEffect(() => {
-    const token = getAdminToken();
-    if (!token) return;
-    validateAdminToken(token).then((ok) => {
-      if (ok) dispatch({ type: "SET_ADMIN_READY", value: true });
-      else clearAdminToken();
-    });
-  }, [dispatch]);
-
   // 启动时恢复会话(带 httpOnly Cookie,浏览器自动携带):有登录态则展示用户信息
   useEffect(() => {
     fetchMe().then((user) => {
       if (user) dispatch({ type: "SET_USER", user });
+      // 深链 ?admin / #v=admin:仅 admin 角色进入数据管理
+      const wantAdmin =
+        new URLSearchParams(location.search).has("admin") ||
+        (location.hash || "").indexOf("admin") !== -1;
+      if (wantAdmin) {
+        if (user) {
+          dispatch({ type: "SET_ADMIN", open: true });
+        } else {
+          dispatch({ type: "SET_AUTH", open: true });
+          dispatch({ type: "SET_TOAST", msg: "请先登录,再管理你的星云数据", kind: "info" });
+        }
+      }
     });
   }, [dispatch]);
 
@@ -160,11 +167,6 @@ function AppContent() {
       .then(([data, stats]) => {
         dispatch({ type: "SET_DATA", data });
         dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
-        const urlParams = new URLSearchParams(location.search);
-        const wantAdmin = urlParams.has("admin") || (location.hash || "").indexOf("admin") !== -1;
-        if (wantAdmin) {
-          dispatch({ type: "SET_ADMIN", open: true }); // 深链直达数据管理页
-        }
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);
         } else {

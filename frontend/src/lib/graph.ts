@@ -1,5 +1,5 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { workDetail, expansion, findPath } from "./api";
+import { workDetail, expansion, findPath, type Space } from "./api";
 import {
   isAnonymousAuthor,
   filterSingleWorkAuthors,
@@ -42,6 +42,10 @@ export function setStateRef(ref: StateRef) {
 
 function getState(): AppState {
   return stateRef && stateRef.current ? stateRef.current.state : initialState;
+}
+
+function currentSpace(): Space {
+  return getState().space || "public";
 }
 
 function dispatch(a: AppAction) {
@@ -246,7 +250,7 @@ export function reRenderRipple() {
   const st = getState();
   if (st.currentView !== "ripple" || !st.rippleCenter) return;
   const hops = st.expandHops || 1;
-  workDetail(st.rippleCenter).then((d: any) => {
+  workDetail(st.rippleCenter, currentSpace()).then((d: any) => {
     renderRipple(d, hops, { preserveCamera: true });
     if (hops > 1) expandRippleDebounced(hops);
   }).catch(failToast);
@@ -255,7 +259,7 @@ export function reRenderRipple() {
 export function expandRippleDebounced(hops: number, centerId?: string, fullData?: GraphData) {
   const center = centerId || getState().rippleCenter;
   if (!center) return;
-  expansion(center, hops)
+  expansion(center, hops, currentSpace())
     .then((data: any) => {
       const st = getState();
       const viewData = addAuthorsTo(data, {
@@ -372,7 +376,7 @@ export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promi
       to: toNode ? toNode.label + " - " + (toNode.author || "") : "",
     },
   });
-  return findPath(fromId, toId).then((result: any) => {
+  return findPath(fromId, toId, currentSpace()).then((result: any) => {
     if (!result || !result.nodes || !result.nodes.length) return null;
     const nodes = result.nodes.map((id: string) => findNode(id, fullData)).filter(Boolean) as GraphNode[];
     const edges = result.edges.map((e: any) => ({
@@ -400,7 +404,7 @@ export function selectNode(id: string) {
     return;
   }
   if (node.type === "work") {
-    workDetail(id).then((d) => {
+    workDetail(id, currentSpace()).then((d) => {
       renderRipple(d);
       // 手机端也保存节点信息供右侧上划查看,但不自动呼出(Panel 按 isMobileLayout 控制)
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
@@ -420,7 +424,7 @@ export function showNodeDetail(id: string) {
   const node = findNode(id);
   if (!node) return;
   if (node.type === "work") {
-    workDetail(id).then((d) => {
+    workDetail(id, currentSpace()).then((d) => {
       dispatch({ type: "SET_PANEL", panel: { type: "work", d } });
     }).catch(failToast);
   } else {

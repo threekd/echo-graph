@@ -11,9 +11,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.admin import router as admin_router
+from app.auth import bootstrap_admin
 from app.auth import router as auth_router
 from app.contributions import router as contributions_router
 from app.db import get_store
+from app.me import router as me_router
+from app.space import router as space_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("echo_graph")
@@ -37,6 +40,8 @@ def _app_version() -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色并认领未归属数据(公共星云)
+    bootstrap_admin()
     yield
     close = getattr(store, "close", None)
     if callable(close):
@@ -150,6 +155,8 @@ def path(
 app.include_router(admin_router)
 app.include_router(contributions_router)
 app.include_router(auth_router)
+app.include_router(me_router)
+app.include_router(space_router)
 
 
 if __name__ == "__main__":

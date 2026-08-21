@@ -36,18 +36,29 @@ def _norm_row(row: dict) -> dict:
 # ---- 行级 CRUD(admin 写路径;由调用方在 db_sqlite._db 事务内使用) ----
 
 
-def get_row(conn, kind: str, row_id: str) -> dict | None:
-    row = conn.execute(f"SELECT * FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)).fetchone()
+def get_row(conn, kind: str, row_id: str, owner_id: str | None = None) -> dict | None:
+    if owner_id is None:
+        row = conn.execute(f"SELECT * FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)).fetchone()
+    else:
+        row = conn.execute(
+            f"SELECT * FROM {KIND_TABLE[kind]} WHERE id = ? AND owner_id = ?",
+            (row_id, owner_id),
+        ).fetchone()
     return dict(row) if row else None
 
 
-def row_exists(conn, kind: str, row_id: str) -> bool:
+def row_exists(conn, kind: str, row_id: str, owner_id: str | None = None) -> bool:
+    if owner_id is None:
+        return conn.execute(
+            f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)
+        ).fetchone() is not None
     return conn.execute(
-        f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ?", (row_id,)
+        f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ? AND owner_id = ?",
+        (row_id, owner_id),
     ).fetchone() is not None
 
 
-def insert_row(conn, kind: str, row: dict) -> None:
+def insert_row(conn, kind: str, row: dict, owner_id: str | None = None) -> None:
     row = _norm_row(row)
     cols = KIND_COLS[kind]
     placeholders = ",".join("?" for _ in cols)
@@ -55,24 +66,39 @@ def insert_row(conn, kind: str, row: dict) -> None:
         f"INSERT INTO {KIND_TABLE[kind]} ({','.join(cols)}) VALUES ({placeholders})",
         [row.get(c) for c in cols],
     )
+    if owner_id:
+        conn.execute(
+            f"UPDATE {KIND_TABLE[kind]} SET owner_id = ? WHERE id = ?",
+            (owner_id, row["id"]),
+        )
 
 
-def update_row(conn, kind: str, row_id: str, row: dict, expected_updated_at: str | None = None) -> int:
+def update_row(
+    conn,
+    kind: str,
+    row_id: str,
+    row: dict,
+    expected_updated_at: str | None = None,
+    owner_id: str | None = None,
+) -> int:
     """更新一行。返回 1=成功, 0=行不存在, -1=乐观锁冲突(updatedAt 已变化)。"""
     row = _norm_row(row)
-    cols = [c for c in KIND_COLS[kind] if c != "id"]
+    cols = [c for c in KIND_COLS[kind] if c not in ("id", "owner_id")]
+    scope = " AND owner_id = ?" if owner_id else ""
+    extra = [owner_id] if owner_id else []
     if expected_updated_at is not None:
         cur = conn.execute(
             f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols)
-            + " WHERE id = ? AND updatedAt = ?",
-            [row.get(c) for c in cols] + [row_id, expected_updated_at],
+            + f" WHERE id = ? AND updatedAt = ?{scope}",
+            [row.get(c) for c in cols] + [row_id, expected_updated_at] + extra,
         )
         if cur.rowcount == 0:
-            return -1 if row_exists(conn, kind, row_id) else 0
+            return -1 if row_exists(conn, kind, row_id, owner_id) else 0
         return 1
     cur = conn.execute(
-        f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?",
-        [row.get(c) for c in cols] + [row_id],
+        f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols)
+        + f" WHERE id = ?{scope}",
+        [row.get(c) for c in cols] + [row_id] + extra,
     )
     return 1 if cur.rowcount > 0 else 0
 
@@ -85,26 +111,33 @@ def set_work_authors(conn, work_id: str, author_ids: list[str]) -> None:
     )
 
 
-def mark_deleted(conn, kind: str, ids: list[str], deleted_at: str) -> int:
+def mark_deleted(conn, kind: str, ids: list[str], deleted_at: str, owner_id: str | None = None) -> int:
     if not ids:
         return 0
     placeholders = ",".join("?" for _ in ids)
+    scope = " AND owner_id = ?" if owner_id else ""
+    extra = [owner_id] if owner_id else []
     cur = conn.execute(
-        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ? WHERE id IN ({placeholders})",
-        [deleted_at, deleted_at] + list(ids),
+        f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ?"
+        f" WHERE id IN ({placeholders}){scope}",
+        [deleted_at, deleted_at] + list(ids) + extra,
     )
     return cur.rowcount
 
 
-def restore_by_ts(conn, kind: str, ids: list[str], ts: str, updated_at: str) -> int:
+def restore_by_ts(
+    conn, kind: str, ids: list[str], ts: str, updated_at: str, owner_id: str | None = None
+) -> int:
     """按相同 deletedAt 时间戳恢复一批行(级联恢复)。"""
     if not ids:
         return 0
     placeholders = ",".join("?" for _ in ids)
+    scope = " AND owner_id = ?" if owner_id else ""
+    extra = [owner_id] if owner_id else []
     cur = conn.execute(
         f"UPDATE {KIND_TABLE[kind]} SET deletedAt = NULL, updatedAt = ?"
-        f" WHERE deletedAt = ? AND id IN ({placeholders})",
-        [updated_at, ts] + list(ids),
+        f" WHERE deletedAt = ? AND id IN ({placeholders}){scope}",
+        [updated_at, ts] + list(ids) + extra,
     )
     return cur.rowcount
 
@@ -112,84 +145,103 @@ def restore_by_ts(conn, kind: str, ids: list[str], ts: str, updated_at: str) -> 
 # ---- 级联删除/恢复(纯 SQL,不读取全量数据) ----
 
 
-def cascade_work_edge_ids(conn, work_id: str) -> list[str]:
+def cascade_work_edge_ids(conn, work_id: str, owner_id: str | None = None) -> list[str]:
     """作品相关的活跃涟漪边 id(删除/恢复时用)。"""
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (work_id, work_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM edges WHERE deletedAt IS NULL"
-            " AND (source_work_id = ? OR target_work_id = ?)",
-            (work_id, work_id),
+            f" AND (source_work_id = ? OR target_work_id = ?){scope}",
+            params,
         )
     ]
 
 
-def cascade_author_work_ids(conn, author_id: str) -> list[str]:
+def cascade_author_work_ids(conn, author_id: str, owner_id: str | None = None) -> list[str]:
     """作者名下活跃作品 id。"""
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (author_id,) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM works WHERE deletedAt IS NULL"
-            " AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?)",
-            (author_id,),
+            f" AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?){scope}",
+            params,
         )
     ]
 
 
-def cascade_author_edge_ids(conn, author_id: str) -> list[str]:
+def cascade_author_edge_ids(conn, author_id: str, owner_id: str | None = None) -> list[str]:
     """作者名下作品相关的活跃涟漪边 id。"""
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (author_id, author_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM edges WHERE deletedAt IS NULL AND ("
             " source_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?)"
-            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))",
-            (author_id, author_id),
+            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))"
+            + scope,
+            params,
         )
     ]
 
 
-def restore_work_edge_ids(conn, work_id: str, ts: str) -> list[str]:
+def restore_work_edge_ids(conn, work_id: str, ts: str, owner_id: str | None = None) -> list[str]:
     """同批删除(相同 deletedAt)且涉及该作品的涟漪边 id。"""
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (ts, work_id, work_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM edges WHERE deletedAt = ?"
-            " AND (source_work_id = ? OR target_work_id = ?)",
-            (ts, work_id, work_id),
+            f" AND (source_work_id = ? OR target_work_id = ?){scope}",
+            params,
         )
     ]
 
 
-def restore_author_work_ids(conn, author_id: str, ts: str) -> list[str]:
+def restore_author_work_ids(conn, author_id: str, ts: str, owner_id: str | None = None) -> list[str]:
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (ts, author_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM works WHERE deletedAt = ?"
-            " AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?)",
-            (ts, author_id),
+            f" AND id IN (SELECT work_id FROM work_authors WHERE author_id = ?){scope}",
+            params,
         )
     ]
 
 
-def restore_author_edge_ids(conn, author_id: str, ts: str) -> list[str]:
+def restore_author_edge_ids(conn, author_id: str, ts: str, owner_id: str | None = None) -> list[str]:
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (ts, author_id, author_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
             "SELECT id FROM edges WHERE deletedAt = ? AND ("
             " source_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?)"
-            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))",
-            (ts, author_id, author_id),
+            " OR target_work_id IN (SELECT work_id FROM work_authors WHERE author_id = ?))"
+            + scope,
+            params,
         )
     ]
 
 
-def restore_edge_work_ids(conn, source_id: str, target_id: str, ts: str) -> list[str]:
+def restore_edge_work_ids(
+    conn, source_id: str, target_id: str, ts: str, owner_id: str | None = None
+) -> list[str]:
+    scope = " AND owner_id = ?" if owner_id else ""
+    params = (ts, source_id, target_id) + ((owner_id,) if owner_id else ())
     return [
         r["id"]
         for r in conn.execute(
-            "SELECT id FROM works WHERE deletedAt = ? AND id IN (?, ?)",
-            (ts, source_id, target_id),
+            "SELECT id FROM works WHERE deletedAt = ?"
+            f" AND id IN (?, ?){scope}",
+            params,
         )
     ]
 
@@ -201,7 +253,7 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
     """单事务整库重建(迁移用)。入参为 parse_rows 产出的模型与作者关联。"""
     def insert(table: str, cols: list[str], models: list[Any]) -> None:
         placeholders = ",".join("?" for _ in cols)
-        rows = [{k: m.model_dump().get(k) for k in cols} for m in models]
+        rows = [{**m.model_dump(), "owner_id": None} for m in models]
         conn.executemany(
             f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
             [tuple(r[c] for c in cols) for r in rows],
@@ -212,9 +264,9 @@ def replace_all(author_models, work_models, echo_models, work_authors: dict[str,
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM works")
         conn.execute("DELETE FROM authors")
-        insert("authors", AUTHOR_COLS, author_models)
-        insert("works", WORK_COLS, work_models)
-        insert("edges", EDGE_COLS, echo_models)
+        insert("authors", AUTHOR_COLS + ["owner_id"], author_models)
+        insert("works", WORK_COLS + ["owner_id"], work_models)
+        insert("edges", EDGE_COLS + ["owner_id"], echo_models)
         conn.executemany(
             "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
             [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
@@ -241,20 +293,20 @@ def rewrite_all(author_rows, work_rows, edge_rows) -> None:
         conn.execute("DELETE FROM works")
         conn.execute("DELETE FROM authors")
 
-        placeholders = ",".join("?" for _ in AUTHOR_COLS)
+        placeholders = ",".join("?" for _ in AUTHOR_COLS + ["owner_id"])
         conn.executemany(
-            f"INSERT INTO authors ({','.join(AUTHOR_COLS)}) VALUES ({placeholders})",
-            [tuple(r.get(c) for c in AUTHOR_COLS) for r in author_rows],
+            f"INSERT INTO authors ({','.join(AUTHOR_COLS + ['owner_id'])}) VALUES ({placeholders})",
+            [tuple(r.get(c) for c in AUTHOR_COLS + ["owner_id"]) for r in author_rows],
         )
-        placeholders = ",".join("?" for _ in WORK_COLS)
+        placeholders = ",".join("?" for _ in WORK_COLS + ["owner_id"])
         conn.executemany(
-            f"INSERT INTO works ({','.join(WORK_COLS)}) VALUES ({placeholders})",
-            [tuple(r.get(c) for c in WORK_COLS) for r in work_rows],
+            f"INSERT INTO works ({','.join(WORK_COLS + ['owner_id'])}) VALUES ({placeholders})",
+            [tuple(r.get(c) for c in WORK_COLS + ["owner_id"]) for r in work_rows],
         )
-        placeholders = ",".join("?" for _ in EDGE_COLS)
+        placeholders = ",".join("?" for _ in EDGE_COLS + ["owner_id"])
         conn.executemany(
-            f"INSERT INTO edges ({','.join(EDGE_COLS)}) VALUES ({placeholders})",
-            [tuple(r.get(c) for c in EDGE_COLS) for r in edge_rows],
+            f"INSERT INTO edges ({','.join(EDGE_COLS + ['owner_id'])}) VALUES ({placeholders})",
+            [tuple(r.get(c) for c in EDGE_COLS + ["owner_id"]) for r in edge_rows],
         )
         work_authors = [
             (r["id"], aid)
@@ -269,15 +321,41 @@ def rewrite_all(author_rows, work_rows, edge_rows) -> None:
     invalidate_cache()
 
 
-def list_all() -> dict:
+def list_all(owner_id: str | None = None) -> dict:
     """返回与 CSV load_rows 同形状的行(works 行重组 author_id 逗号串)。"""
     with db_sqlite._db() as conn:
-        authors = [dict(r) for r in conn.execute("SELECT * FROM authors ORDER BY id")]
-        works = [dict(r) for r in conn.execute("SELECT * FROM works ORDER BY id")]
-        edges = [dict(r) for r in conn.execute("SELECT * FROM edges ORDER BY id")]
-        wa_rows = conn.execute(
-            "SELECT work_id, author_id FROM work_authors ORDER BY work_id, author_id"
-        ).fetchall()
+        if owner_id is None:
+            authors = [dict(r) for r in conn.execute("SELECT * FROM authors ORDER BY id")]
+            works = [dict(r) for r in conn.execute("SELECT * FROM works ORDER BY id")]
+            edges = [dict(r) for r in conn.execute("SELECT * FROM edges ORDER BY id")]
+            wa_rows = conn.execute(
+                "SELECT work_id, author_id FROM work_authors ORDER BY work_id, author_id"
+            ).fetchall()
+        else:
+            authors = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM authors WHERE owner_id = ? ORDER BY id", (owner_id,)
+                )
+            ]
+            works = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM works WHERE owner_id = ? ORDER BY id", (owner_id,)
+                )
+            ]
+            edges = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM edges WHERE owner_id = ? ORDER BY id", (owner_id,)
+                )
+            ]
+            wa_rows = conn.execute(
+                "SELECT wa.work_id, wa.author_id FROM work_authors wa"
+                " JOIN works w ON w.id = wa.work_id WHERE w.owner_id = ?"
+                " ORDER BY wa.work_id, wa.author_id",
+                (owner_id,),
+            ).fetchall()
     work_authors: dict[str, list[str]] = {}
     for r in wa_rows:
         work_authors.setdefault(r["work_id"], []).append(r["author_id"])
@@ -288,9 +366,9 @@ def list_all() -> dict:
     return {"authors": authors, "works": works, "edges": edges, "work_authors": work_authors}
 
 
-def load_rows() -> tuple[list[dict], list[dict], list[dict]]:
+def load_rows(owner_id: str | None = None) -> tuple[list[dict], list[dict], list[dict]]:
     """读取策展数据(权威来源:SQLite),与 CSV load_rows 同形状。"""
-    data = list_all()
+    data = list_all(owner_id)
     return data["authors"], data["works"], data["edges"]
 
 

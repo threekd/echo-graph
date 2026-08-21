@@ -97,7 +97,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
    sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
    ```
 
-3. 编辑 `/opt/echo-graph/.env`,填入 `ADMIN_TOKEN`(可用 `openssl rand -hex 32` 生成)。
+3. 编辑 `/opt/echo-graph/.env`,填入 `ADMIN_BOOTSTRAP_EMAIL`(第一个管理员邮箱)等配置。
 4. 启动并验证:
 
    ```bash
@@ -115,7 +115,11 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 1核2G 即可运行(systemd 单 worker);`data/echo-graph.db` 是数据事实源(备份=用 `sqlite3 .backup`
 或 deploy.sh 自动备份),`data/export/*.csv` 为导出产物配合 git 完成版本审计与跨机器传输。
 
-> 数据管理接口(`/api/admin/*`)需要 Bearer 令牌:在 `.env` 配置 `ADMIN_TOKEN`(已内置一个随机值),请求头带 `Authorization: Bearer <token>`。前端「数据管理」按钮默认隐藏:在 URL 后加 `?admin` 或 `#v=admin` 会弹出令牌授权框(注意 `?admin` 要放在 `#` 之前,如 `http://host/?admin`;若误加在 `#` 之后如 `#v=main?admin` 也会被识别),输入有效令牌后按钮显示;未授权用户在授权框点「取消」会退出管理页并自动清除 URL 中的 admin 参数;管理页内可「退出授权」清除令牌并隐藏按钮。编辑保存后立即写入 SQLite 并自动导出 CSV。
+> 数据管理视图对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
+> (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
+> admin 角色,其「自己的星云」就是公共星云,并可额外使用「贡献审核 / 日志 / 快照」
+> 三个平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
+> 公共星云写入自动导出 CSV;用户私有数据不进 git 审计产物。
 
 ### 账号体系(注册 / 登录)
 
@@ -124,7 +128,13 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);带 Origin 头的跨站状态变更请求会被拒绝
-- 当前用户账号用于登录态展示;「数据管理」仍走 `ADMIN_TOKEN`,后续将按用户角色迁移管理权限
+- 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
+  「公共星云 / 我的星云」切换。公共星云 = 引导管理员认领的数据,未登录游客可浏览。
+- 数据管理:侧边栏「数据管理」对所有登录用户显示,管理自己的作者/作品/涟漪;
+  admin 额外拥有贡献审核、审计日志与快照恢复能力。
+- 点亮星空(添加到我的星云):登录后打开,直接向自己的星云写入作者/作品/涟漪
+  (搜不到时下拉框第一行可打开标准新增弹窗),不再进入贡献收件箱。
+- 贡献归属:登录用户提交「点亮星空」自动归属到该账号(未登录仍可匿名提交)。
 
 **发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)与 `data/versions/`(历史 CSV 目录,校验后重建)下的快照——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
 

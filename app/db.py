@@ -12,6 +12,7 @@ import time
 from collections import deque
 
 from app import db_sqlite
+from app.auth import admin_user_id
 
 # 进程内读缓存:同一 DB 路径缓存活跃行(默认 3 秒,兜底外部进程写入);
 # admin 写入 / 整库重建 / 快照恢复会显式调用 invalidate_cache() 立即失效。
@@ -134,16 +135,30 @@ class SqliteStore:
 
     name = "sqlite"
 
-    def __init__(self, reviewed_only: bool | None = None) -> None:
+    def __init__(self, reviewed_only: bool | None = None, owner_id: str | None = None) -> None:
         if reviewed_only is None:
             reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
                 "1", "true", "yes", "on",
             )
-        self.reviewed_only = reviewed_only
+        # 审核过滤只约束公共视图:个人空间里用户必须能看到自己的草稿/驳回数据
+        self.reviewed_only = reviewed_only and owner_id is None
+        # 空间过滤:None = 公共视图(admin 认领的数据 + 尚未认领的历史行);
+        # 具体用户 id = 该用户私有空间(仅本人可见)。
+        self.owner_id = owner_id
 
     def _effective_status(self, status: str | None) -> str | None:
         """公开视图强制 reviewed;内部/管理场景沿用显式 status。"""
         return "reviewed" if self.reviewed_only else status
+
+    def _owner_clause(self, prefix: str = "") -> tuple[str, tuple]:
+        """返回 owner 过滤 SQL 片段与参数;公共视图包含未认领行(认领前的过渡态)。"""
+        col = f"{prefix}owner_id"
+        if self.owner_id is not None:
+            return f"{col} = ?", (self.owner_id,)
+        admin = admin_user_id()
+        if admin is None:
+            return f"{col} IS NULL", ()
+        return f"({col} IS NULL OR {col} = ?)", (admin,)
 
     def close(self) -> None:
         """无连接池,无需清理。"""
@@ -155,27 +170,37 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        hit = _read_cache.get(_cache_key())
+        key = _cache_key() + (self.owner_id or "public",)
+        hit = _read_cache.get(key)
         if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
             return hit[1]
+        owner_sql, owner_params = self._owner_clause()
+        wa_sql, wa_params = self._owner_clause("w.")
         with db_sqlite._db() as conn:
             authors = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM authors WHERE deletedAt IS NULL ORDER BY id"
+                    f"SELECT * FROM authors WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    owner_params,
                 )
             ]
             works = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM works WHERE deletedAt IS NULL ORDER BY id"
+                    f"SELECT * FROM works WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    owner_params,
                 )
             ]
             edges = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM edges WHERE deletedAt IS NULL ORDER BY id"
+                    f"SELECT * FROM edges WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    owner_params,
                 )
             ]
             wa_rows = conn.execute(
-                "SELECT work_id, author_id FROM work_authors ORDER BY work_id, author_id"
+                "SELECT wa.work_id, wa.author_id FROM work_authors wa"
+                " JOIN works w ON w.id = wa.work_id"
+                f" WHERE w.deletedAt IS NULL AND {wa_sql}"
+                " ORDER BY wa.work_id, wa.author_id",
+                wa_params,
             ).fetchall()
         work_authors: dict[str, list[str]] = {}
         for r in wa_rows:
@@ -184,7 +209,7 @@ class SqliteStore:
             e["source"] = e["source_work_id"]
             e["target"] = e["target_work_id"]
         payload = (authors, works, edges, work_authors)
-        _read_cache[_cache_key()] = (now, payload)
+        _read_cache[key] = (now, payload)
         return payload
 
     @staticmethod

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, Response
 
-from app import auth, db_sqlite, ratelimit
+from app import auth, db_sqlite, ratelimit, sqlite_store
 
 
 class _FakeClient:
@@ -73,7 +73,8 @@ class AuthStoreTest(unittest.TestCase):
         self.assertEqual(row["token_hash"], hashlib.sha256(token.encode()).hexdigest())
         self.assertNotEqual(row["token_hash"], token)
         self.assertEqual(auth.current_user(token), {
-            "id": user["id"], "email": "session@example.com", "role": "user",
+            "id": user["id"], "email": "session@example.com",
+            "role": "user", "space_visibility": "public",
         })
         auth.delete_session(token)
         self.assertIsNone(auth.current_user(token))
@@ -153,6 +154,55 @@ class AuthStoreTest(unittest.TestCase):
         token = auth.create_session(user["id"])
         result = auth.me(_FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token}))
         self.assertEqual(result["user"]["email"], "me@example.com")
+
+    def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
+            sqlite_store.rewrite_all(
+                [{"id": "01a00000-0000-7000-8000-000000000001", "originalName": "X", "Name_CN": "甲"}],
+                [],
+                [],
+            )
+            user = auth.register("Boss@Test.local", "password123")
+            self.assertEqual(user["role"], "admin")
+            with db_sqlite._db() as conn:
+                row = conn.execute(
+                    "SELECT owner_id FROM authors WHERE id = ?",
+                    ("01a00000-0000-7000-8000-000000000001",),
+                ).fetchone()
+            self.assertEqual(row["owner_id"], user["id"])
+
+    def test_bootstrap_admin_promotes_existing_user_and_claims(self) -> None:
+        with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
+            user = auth.register("boss@test.local", "password123")
+            self.assertEqual(user["role"], "user")
+        sqlite_store.rewrite_all(
+            [{"id": "01a00000-0000-7000-8000-000000000002", "originalName": "X", "Name_CN": "甲"}],
+            [],
+            [],
+        )
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
+            result = auth.bootstrap_admin()
+            self.assertEqual(result["role"], "admin")
+            with db_sqlite._db() as conn:
+                row = conn.execute("SELECT owner_id FROM authors").fetchone()
+            self.assertEqual(row["owner_id"], user["id"])
+
+    def test_require_admin_enforces_role(self) -> None:
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
+            boss = auth.register("boss@test.local", "password123")
+            joe = auth.register("joe@test.local", "password123")
+            boss_token = auth.create_session(boss["id"])
+            joe_token = auth.create_session(joe["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            auth.require_admin(_FakeRequest(headers={}, cookies={}))
+        self.assertEqual(ctx.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as ctx:
+            auth.require_admin(_FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: joe_token}))
+        self.assertEqual(ctx.exception.status_code, 403)
+        result = auth.require_admin(
+            _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: boss_token})
+        )
+        self.assertEqual(result["role"], "admin")
 
 
 class RateLimitTest(unittest.TestCase):

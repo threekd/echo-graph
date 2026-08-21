@@ -54,6 +54,19 @@
       (限流抽为 app/ratelimit.py,与贡献接口共用);带 Origin 头的跨站状态请求拒绝
 - ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、用户空间数据隔离、
       管理权限从 ADMIN_TOKEN 迁移为 user/admin 角色
+- [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
+      私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);公共星云 = admin 空间
+      (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 启动认领未归属数据);隔离测试
+      (越权 404/403、跨空间引用拒绝)
+- [x] 角色迁移(阶段 2):移除 ADMIN_TOKEN / 管理令牌弹窗;管理接口只认 admin 角色
+      登录态;前端「数据管理」按用户角色显隐,左侧栏新增「公共星云 / 我的星云」切换
+- ⬜ 阶段 2 后续:个人空间数据管理 UI(复用 Admin 组件按空间切换)、
+      发布/聚合到公共星云(阶段 4)
+- [x] 数据管理视图开放给所有登录用户:非 admin 用 `/api/me/*` 管理自己的
+      作者/作品/涟漪(贡献/日志/快照仅 admin 可见),新增 `/api/me/data`
+- [x] 点亮星空改为「添加到我的星云」:登录后直接写入本人空间(/api/me),
+      不再进贡献收件箱;下拉框搜不到时第一行提供「添加新作品 / 新作者」,
+      弹出与数据管理共用的标准新增弹窗(NodeFormModal 抽取复用)
 - [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
 - [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `docs/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 日志表;同步计数预检

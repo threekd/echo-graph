@@ -9,6 +9,7 @@ import { useEffect } from "react";
 const MOBILE_QUERY = "(max-width: 768px)";
 const SWIPE_THRESHOLD = 50;
 const BOTTOM_ZONE = 140; // 底部手势区高度(上划打开功能栏/详情栏)
+export const LONG_PRESS_MS = 500; // 与 GraphCanvas 长按判定一致
 
 export function isMobileLayout(): boolean {
   // 非浏览器环境(单测/SSR)没有 matchMedia,按桌面处理
@@ -20,6 +21,7 @@ export function isMobileLayout(): boolean {
 interface SwipeState {
   startX: number;
   startY: number;
+  startTime: number;
   opened: boolean; // 本次手势已触发上划
 }
 
@@ -53,6 +55,7 @@ export function useMobileGestures(): void {
           ? {
               startX: e.touches[0].clientX,
               startY: e.touches[0].clientY,
+              startTime: Date.now(),
               opened: false,
             }
           : null;
@@ -92,7 +95,9 @@ export function useMobileGestures(): void {
       const dist = Math.hypot(t.clientX - st.startX, t.clientY - st.startY);
       const s = sidebar();
       const p = panel();
-      if (dist < 12 && (isOpen(s) || isOpen(p))) {
+      // 只对"快速点击"做栏外收起;长按(>=500ms)用于查看信息,松手不应收起刚弹出的信息栏
+      const held = Date.now() - st.startTime;
+      if (dist < 12 && held < LONG_PRESS_MS && (isOpen(s) || isOpen(p))) {
         const target = e.target;
         if (!inside(s, target) && !inside(p, target)) closeAll();
       }

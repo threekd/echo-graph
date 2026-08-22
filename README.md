@@ -87,6 +87,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 架构:`nginx(80/443) → uvicorn(127.0.0.1:8000) → SQLite(本地文件)`,前端构建产物由 nginx 直接托管。
 上线前清单、运维手册与常见问题见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
+日常运维(备份/恢复/用户数据迁移)另见 [`docs/ops-manual.md`](docs/ops-manual.md)。
 
 `deploy/` 目录提供开箱模板:
 
@@ -173,7 +174,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   涟漪与作品关联作者的选取同样基于当前空间已有数据。
 - 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
 
-**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)与 `data/versions/`(历史 CSV 目录,校验后重建)下的快照——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
+**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照(`data/versions/` 历史 CSV 目录仅在旧机器残留时可用)——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
 
 > **遗留说明**:早期「贡献数据」收件箱(`POST /api/contribute/echo` 与 admin「贡献」Tab)已不再被前端使用——
 > 「点亮星空」已改为向自己的星云添加数据。收件箱接口保留兼容;用户数据进入公共星云将走后续的

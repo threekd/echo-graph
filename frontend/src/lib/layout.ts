@@ -11,9 +11,19 @@ export interface ForceLayout {
   result(): Record<string, number[]>;
 }
 
-export function createForceLayout(ids: string[], edges: ForceEdge[]): ForceLayout {
+export function createForceLayout(
+  ids: string[],
+  edges: ForceEdge[],
+  initial?: Record<string, number[]>,
+): ForceLayout {
   const positions: Record<string, number[]> = {};
   ids.forEach(function (id) {
+    // 同视图刷新时用上一次布局位置作初始种子,避免每次扩散节点整体跳位
+    const prev = initial && initial[id];
+    if (prev && prev.length === 3 && prev.every(Number.isFinite)) {
+      positions[id] = [prev[0], prev[1], prev[2]];
+      return;
+    }
     const u = Math.random() * 2 - 1;
     const th = Math.random() * Math.PI * 2;
     const s = Math.sqrt(Math.max(0, 1 - u * u));

@@ -369,6 +369,7 @@ function layoutFor(kind: string, data: GraphData): Record<string, THREE.Vector3>
 function forceLayoutChunked(
   ids: string[],
   edges: ForceEdge[],
+  initial: Record<string, number[]>,
   callback: (pos: Record<string, THREE.Vector3>) => void
 ): void {
   // 优先用 Worker 异步计算;不可用或超时(8s)时回退到主线程分帧计算(共用 layout.ts 算法)
@@ -381,7 +382,7 @@ function forceLayoutChunked(
         if (done) return;
         done = true;
         if (worker) worker.terminate();
-        forceLayoutMainThread(ids, edges, callback); // worker 悬挂超时,回退主线程
+        forceLayoutMainThread(ids, edges, initial, callback); // worker 悬挂超时,回退主线程
       }, 8000);
       worker.onmessage = function (ev) {
         window.clearTimeout(timeout);
@@ -400,21 +401,22 @@ function forceLayoutChunked(
         if (done) return;
         done = true;
         if (worker) worker.terminate();
-        forceLayoutMainThread(ids, edges, callback);
+        forceLayoutMainThread(ids, edges, initial, callback);
       };
-      worker.postMessage({ ids: ids, edges: edges });
+      worker.postMessage({ ids: ids, edges: edges, positions: initial });
       return;
     } catch { /* Worker 不可用,走主线程回退 */ }
   }
-  forceLayoutMainThread(ids, edges, callback);
+  forceLayoutMainThread(ids, edges, initial, callback);
 }
 
 function forceLayoutMainThread(
   ids: string[],
   edges: ForceEdge[],
+  initial: Record<string, number[]>,
   callback: (pos: Record<string, THREE.Vector3>) => void
 ): void {
-  const layout = createForceLayout(ids, edges);
+  const layout = createForceLayout(ids, edges, initial);
 
   function tick() {
     if (!layout.tick(14)) { // 每帧只算一小段,避免卡顿
@@ -588,6 +590,16 @@ function buildScene(data: GraphData): void {
   edgePositionsDirty = true;
 }
 
+// 同视图刷新时用旧布局位置作为力导向初始种子,避免每次扩散节点整体跳位
+function seedPositions(nodes: GraphNode[]): Record<string, number[]> {
+  const seed: Record<string, number[]> = {};
+  nodes.forEach(function (n) {
+    const p = positions[n.id];
+    if (p) seed[n.id] = [p.x, p.y, p.z];
+  });
+  return seed;
+}
+
 // 受控入口:React 持有 viewData/currentView/相机,渲染器只负责按传入数据绘制。
 // data.camera 存在时应用该相机(视图切换/深链恢复);不存在则保持当前相机(同视图刷新)。
 export function update(kind: string, data: GraphData): void {
@@ -615,7 +627,7 @@ export function update(kind: string, data: GraphData): void {
   if (currentKind === kind) {
     // 同视图刷新:增量同步,保持相机与已有节点(涟漪扩散 / 过滤开关切换)
     if (forceKinds) {
-      forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
+      forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, seedPositions(data.nodes), function (pos) {
         if (token !== viewToken) return;
         positions = anchorRipple(pos);
         syncScene(data);
@@ -635,7 +647,7 @@ export function update(kind: string, data: GraphData): void {
   clearScene();
   if (forceKinds) {
     // 主图谱与作者视图共用力导向布局(Worker 分帧),观感一致
-    forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, function (pos) {
+    forceLayoutChunked(data.nodes.map(function (n) { return n.id; }), data.edges, {}, function (pos) {
       if (token !== viewToken) return; // 期间已切换视图,丢弃本次布局结果
       positions = anchorRipple(pos);
       buildScene(data);

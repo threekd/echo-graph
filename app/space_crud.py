@@ -153,12 +153,22 @@ def _after_write(owner_id: str) -> None:
 
 
 def space_data(owner_id: str, include_deleted: bool = True) -> dict:
-    """管理表格数据:某空间的行级数据 + 重复提醒 + 计数(与 CSV 同形状)。"""
-    a, w, e = sqlite_store.load_rows(owner_id=owner_id)
+    """管理表格数据:某空间的行级数据 + 重复提醒 + 计数(与 CSV 同形状)。
+
+    计数(含 deleted)基于全量行统计,不随 include_deleted 过滤变化:
+    include_deleted=False 时只裁剪返回列表,deleted 计数仍反映真实软删除行数。
+    """
+    all_a, all_w, all_e = sqlite_store.load_rows(owner_id=owner_id)
+    deleted = {
+        "authors": sum(1 for r in all_a if r.get("deletedAt")),
+        "works": sum(1 for r in all_w if r.get("deletedAt")),
+        "edges": sum(1 for r in all_e if r.get("deletedAt")),
+    }
+    a, w, e = all_a, all_w, all_e
     if not include_deleted:
-        a = [r for r in a if not r.get("deletedAt")]
-        w = [r for r in w if not r.get("deletedAt")]
-        e = [r for r in e if not r.get("deletedAt")]
+        a = [r for r in all_a if not r.get("deletedAt")]
+        w = [r for r in all_w if not r.get("deletedAt")]
+        e = [r for r in all_e if not r.get("deletedAt")]
     return {
         "authors": a,
         "works": w,
@@ -168,11 +178,7 @@ def space_data(owner_id: str, include_deleted: bool = True) -> dict:
             "authors": len(a),
             "works": len(w),
             "edges": len(e),
-            "deleted": {
-                "authors": sum(1 for r in a if r.get("deletedAt")),
-                "works": sum(1 for r in w if r.get("deletedAt")),
-                "edges": sum(1 for r in e if r.get("deletedAt")),
-            },
+            "deleted": deleted,
         },
     }
 

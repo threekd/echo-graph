@@ -147,6 +147,32 @@ class AuthStoreTest(unittest.TestCase):
             with patch.object(auth, "_turnstile_siteverify", return_value=False):
                 self.assertFalse(auth.verify_turnstile("token", "127.0.0.1"))
 
+    def test_turnstile_remoteip_only_for_public_ip(self) -> None:
+        """本地回环/私有地址不传 remoteip,公网 IP 才传(避免与 Cloudflare 侧 IP 不一致)。"""
+        captured: dict[str, bytes] = {}
+
+        def fake_urlopen(url, data=None, timeout=None):
+            captured["data"] = data
+
+            class FakeResp:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def read(self):
+                    return b'{"success": true}'
+
+            return FakeResp()
+
+        with patch.object(auth.urllib.request, "urlopen", fake_urlopen):
+            self.assertTrue(auth._turnstile_siteverify("secret", "token", "127.0.0.1"))
+        self.assertNotIn(b"remoteip", captured["data"])
+        with patch.object(auth.urllib.request, "urlopen", fake_urlopen):
+            self.assertTrue(auth._turnstile_siteverify("secret", "token", "8.8.8.8"))
+        self.assertIn(b"remoteip=8.8.8.8", captured["data"])
+
     def test_me_endpoint(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
             auth.me(_FakeRequest(headers={}, cookies={}))

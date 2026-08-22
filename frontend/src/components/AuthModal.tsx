@@ -20,6 +20,8 @@ export default function AuthModal() {
   const [busy, setBusy] = useState(false);
   const [siteKey, setSiteKey] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaState, setCaptchaState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [captchaRetry, setCaptchaRetry] = useState(0);
   const widgetRef = useRef<string | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
@@ -28,10 +30,11 @@ export default function AuthModal() {
     if (!state.authOpen) return;
     setError("");
     setCaptchaToken("");
+    setCaptchaState("idle");
     fetchAuthConfig().then((cfg) => setSiteKey(cfg.turnstileSiteKey));
   }, [state.authOpen]);
 
-  // 注册页按需加载 Turnstile 脚本并渲染组件;切换模式/关闭时移除旧组件
+  // 注册页按需加载 Turnstile 脚本并渲染组件;加载失败/超时给出明确提示
   useEffect(() => {
     const removeWidget = () => {
       if (widgetRef.current && window.turnstile) {
@@ -45,19 +48,34 @@ export default function AuthModal() {
     };
     if (!state.authOpen || mode !== "register" || !siteKey) {
       removeWidget();
+      setCaptchaState("idle");
+      setCaptchaToken("");
       return;
     }
     let cancelled = false;
+    let timeoutId = 0;
+    setCaptchaState("loading");
+    setCaptchaToken("");
     const renderWidget = () => {
       if (cancelled || !window.turnstile || !boxRef.current) return;
       removeWidget();
       widgetRef.current = window.turnstile.render(boxRef.current, {
         sitekey: siteKey,
         theme: "dark",
-        callback: (token: string) => setCaptchaToken(token),
-        "expired-callback": () => setCaptchaToken(""),
-        "error-callback": () => setCaptchaToken(""),
+        callback: (token: string) => {
+          setCaptchaToken(token);
+          setCaptchaState("ready");
+        },
+        "expired-callback": () => {
+          setCaptchaToken("");
+          setCaptchaState("ready");
+        },
+        "error-callback": () => {
+          setCaptchaToken("");
+          setCaptchaState("ready");
+        },
       });
+      setCaptchaState("ready");
     };
     if (document.querySelector('script[data-turnstile]')) {
       renderWidget();
@@ -68,13 +86,25 @@ export default function AuthModal() {
       s.async = true;
       s.defer = true;
       s.onload = renderWidget;
+      s.onerror = () => { if (!cancelled) setCaptchaState("failed"); };
       document.head.appendChild(s);
+      // 8 秒未加载完成视为失败(网络受限/被墙时给出明确提示)
+      timeoutId = window.setTimeout(() => {
+        if (!window.turnstile && !cancelled) setCaptchaState("failed");
+      }, 8000);
     }
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
       removeWidget();
     };
-  }, [state.authOpen, mode, siteKey]);
+  }, [state.authOpen, mode, siteKey, captchaRetry]);
+
+  const retryCaptcha = () => {
+    const old = document.querySelector('script[data-turnstile]');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    setCaptchaRetry((r) => r + 1);
+  };
 
   if (!state.authOpen) return null;
 
@@ -98,6 +128,14 @@ export default function AuthModal() {
       return;
     }
     if (mode === "register") {
+      if (siteKey && !captchaToken) {
+        setError(
+          captchaState === "failed"
+            ? "人机验证组件加载失败,请检查网络后重试"
+            : "请先完成人机验证"
+        );
+        return;
+      }
       if ((username.trim() || "").length < 5) {
         setError("用户名至少 5 个字符");
         return;
@@ -213,7 +251,22 @@ export default function AuthModal() {
             </label>
             <div className="captcha-box">
               {siteKey ? (
-                <div ref={boxRef} />
+                <>
+                  <div ref={boxRef} />
+                  {captchaState === "loading" && (
+                    <p className="auth-hint">人机验证加载中…</p>
+                  )}
+                  {captchaState === "failed" && (
+                    <div>
+                      <p className="auth-hint">
+                        人机验证组件加载失败,请检查网络后重试。
+                      </p>
+                      <button type="button" onClick={retryCaptcha}>
+                        重新加载验证
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="auth-hint">人机验证未配置,注册仍可继续(仅本地开发)</p>
               )}

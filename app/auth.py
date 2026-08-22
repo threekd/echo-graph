@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -194,16 +195,33 @@ def normalize_bio(value) -> str | None:
 
 
 def _turnstile_siteverify(secret: str, token: str, remote_ip: str) -> bool:
-    """调用 Turnstile siteverify 接口;验证服务不可达时保守拒绝。"""
-    data = urllib.parse.urlencode(
-        {"secret": secret, "response": token, "remoteip": remote_ip}
-    ).encode("utf-8")
+    """调用 Turnstile siteverify 接口;验证服务不可达时保守拒绝。
+
+    remoteip 为可选参数且必须与 Cloudflare 侧的访客 IP 一致——本地开发/内网环境下
+    client_ip 是回环或私有地址,传入反而可能导致校验失败,因此仅对公网 IP 传该字段。
+    """
+    fields = {"secret": secret, "response": token}
+    try:
+        addr = ipaddress.ip_address(remote_ip)
+        if not (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+        ):
+            fields["remoteip"] = remote_ip
+    except ValueError:
+        pass  # 无法解析的 IP 一律不传 remoteip
+    data = urllib.parse.urlencode(fields).encode("utf-8")
     try:
         with urllib.request.urlopen(TURNSTILE_VERIFY_URL, data=data, timeout=5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 - 网络/解析失败按未通过处理
         logger.warning("Turnstile siteverify 请求失败:%s", exc)
         return False
+    if not payload.get("success"):
+        logger.warning("Turnstile 校验失败:error-codes=%s", payload.get("error-codes"))
     return bool(payload.get("success"))
 
 

@@ -18,7 +18,8 @@ export default function Sidebar() {
   const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+  // 侧边栏功能 Tab:space = 星云(主内容);settings = 设置(个人资料等)
+  const [tab, setTab] = useState<"space" | "settings">("space");
   const [profileForm, setProfileForm] = useState<{ username: string; nickname: string }>({
     username: "",
     nickname: "",
@@ -50,10 +51,8 @@ export default function Sidebar() {
   };
 
   // 星云可见性自服务切换(公开 = 可被星际跃迁访问;仅自己 = 游客 404)
-  const toggleSpaceVisibility = () => {
+  const setSpaceVisibility = (next: "public" | "private") => {
     if (!state.user) return;
-    const next: "public" | "private" =
-      (state.user.space_visibility ?? "public") === "private" ? "public" : "private";
     updateProfile({ space_visibility: next })
       .then((r) => {
         if (r.user) {
@@ -70,14 +69,15 @@ export default function Sidebar() {
       .catch((e) => dispatch({ type: "SET_TOAST", msg: "设置失败: " + e.message, kind: "error" }));
   };
 
-  const openProfile = () => {
-    setProfileForm({
-      username: state.user?.username || "",
-      nickname: state.user?.nickname || "",
-    });
-    setProfileError("");
-    setProfileOpen(true);
-  };
+  // 登录用户变化时,设置页表单同步为最新资料(保存成功后也会自动刷新)
+  useEffect(() => {
+    if (state.user) {
+      setProfileForm({
+        username: state.user.username || "",
+        nickname: state.user.nickname || "",
+      });
+    }
+  }, [state.user]);
 
   const saveProfile = () => {
     setProfileError("");
@@ -93,8 +93,12 @@ export default function Sidebar() {
       .then((r) => {
         if (r.user) {
           dispatch({ type: "SET_USER", user: r.user });
+          setProfileForm({
+            username: r.user.username || "",
+            nickname: r.user.nickname || "",
+          });
+          setProfileError("");
           dispatch({ type: "SET_TOAST", msg: "个人资料已保存", kind: "success" });
-          setProfileOpen(false);
         } else {
           setProfileError(r.error || "保存失败");
         }
@@ -280,6 +284,34 @@ export default function Sidebar() {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) e.currentTarget.classList.remove("show");
         }}
       >
+        {/* Tab 列(类 VS Code Activity Bar):星云 / 设置,便于后续功能扩展 */}
+        <div className="sidebar-tabs" role="tablist" aria-label="侧边栏功能">
+          <button
+            id="tab-space"
+            className={"sidebar-tab" + (tab === "space" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "space"}
+            title="星云"
+            onClick={() => setTab("space")}
+          >
+            <span className="sidebar-tab-icon">✦</span>
+            <span className="sidebar-tab-label">星云</span>
+          </button>
+          <button
+            id="tab-settings"
+            className={"sidebar-tab" + (tab === "settings" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "settings"}
+            title="设置"
+            onClick={() => setTab("settings")}
+          >
+            <span className="sidebar-tab-icon">⚙</span>
+            <span className="sidebar-tab-label">设置</span>
+          </button>
+        </div>
+        <div className="sidebar-content">
+          {tab === "space" ? (
+            <>
         <div className="brand">
           <h1>Litnebula</h1>
           {state.user ? (
@@ -287,7 +319,7 @@ export default function Sidebar() {
               id="btn-account"
               className="badge account-badge"
               title={state.user.email}
-              onClick={() => setLogoutConfirm(true)}
+              onClick={() => setTab("settings")}
             >
               {userDisplayName(state.user)}
             </button>
@@ -464,18 +496,90 @@ export default function Sidebar() {
           {state.user && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
           )}
-          {state.user && (
-            <button id="btn-profile" className="side-btn" onClick={openProfile}>个人资料</button>
-          )}
-          {state.user && (
-            <button
-              id="btn-space-visibility"
-              className="side-btn"
-              onClick={toggleSpaceVisibility}
-              title="切换你的星云是否公开(公开后可被星际跃迁访问)"
-            >
-              {state.user.space_visibility === "private" ? "星云:仅自己可见" : "星云:公开"}
-            </button>
+        </div>
+            </>
+          ) : (
+            <div className="settings-pane">
+              {state.user ? (
+                <>
+                  <div className="settings-section">
+                    <h3>账号</h3>
+                    <div className="auth-email">{state.user.email}</div>
+                    <button
+                      id="btn-logout"
+                      className="side-btn"
+                      onClick={() => setLogoutConfirm(true)}
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                  <div className="settings-section">
+                    <h3>个人资料</h3>
+                    <label className="settings-field">
+                      <span>用户名 <span className="req">*</span></span>
+                      <input
+                        type="text"
+                        value={profileForm.username}
+                        maxLength={32}
+                        onChange={(e) => setProfileForm((f) => ({ ...f, username: e.target.value }))}
+                        placeholder="5-32 位英文字母/数字/下划线"
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>昵称</span>
+                      <input
+                        type="text"
+                        value={profileForm.nickname}
+                        maxLength={32}
+                        onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
+                        placeholder="展示用昵称(可选,默认用用户名)"
+                      />
+                    </label>
+                    {profileError && <div className="auth-error">{profileError}</div>}
+                    <button
+                      id="btn-save-profile"
+                      className="side-btn"
+                      onClick={saveProfile}
+                      disabled={profileBusy}
+                    >
+                      {profileBusy ? "保存中…" : "保存个人资料"}
+                    </button>
+                  </div>
+                  <div className="settings-section">
+                    <h3>星云可见性</h3>
+                    <p className="settings-hint">
+                      公开后你的星云可被「星际跃迁」随机访问;仅自己则游客不可见。
+                    </p>
+                    <div className="space-switch visibility-switch">
+                      <button
+                        className={"space-btn" + ((state.user.space_visibility ?? "public") === "public" ? " active" : "")}
+                        onClick={() => setSpaceVisibility("public")}
+                      >
+                        公开
+                      </button>
+                      <button
+                        className={"space-btn" + (state.user.space_visibility === "private" ? " active" : "")}
+                        onClick={() => setSpaceVisibility("private")}
+                      >
+                        仅自己
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="settings-section">
+                  <h3>设置</h3>
+                  <p className="settings-hint">请先登录,即可管理个人资料与星云可见性。</p>
+                  <button
+                    id="btn-settings-login"
+                    className="side-btn"
+                    onClick={() => dispatch({ type: "SET_AUTH", open: true })}
+                  >
+                    登录 / 注册
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </aside>
@@ -490,46 +594,13 @@ export default function Sidebar() {
                 onClick={() => {
                   setLogoutConfirm(false);
                   logout().finally(() => dispatch({ type: "SET_USER", user: null }));
+                  setTab("space"); // 退出后回到星云 Tab
                   dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
                 }}
               >
                 确认退出
               </button>
               <button onClick={() => setLogoutConfirm(false)}>取消</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {profileOpen && (
-        <div id="auth-modal">
-          <div className="auth-modal-card">
-            <h3>个人资料</h3>
-            <label>
-              <span>用户名 <span className="req">*</span></span>
-              <input
-                type="text"
-                value={profileForm.username}
-                maxLength={32}
-                onChange={(e) => setProfileForm((f) => ({ ...f, username: e.target.value }))}
-                placeholder="5-32 位英文字母/数字/下划线"
-              />
-            </label>
-            <label>
-              <span>昵称</span>
-              <input
-                type="text"
-                value={profileForm.nickname}
-                maxLength={32}
-                onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
-                placeholder="展示用昵称(可选,默认用用户名)"
-              />
-            </label>
-            {profileError && <div className="auth-error">{profileError}</div>}
-            <div className="admin-modal-actions">
-              <button onClick={saveProfile} disabled={profileBusy}>
-                {profileBusy ? "保存中…" : "保存"}
-              </button>
-              <button onClick={() => setProfileOpen(false)}>取消</button>
             </div>
           </div>
         </div>

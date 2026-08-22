@@ -205,16 +205,118 @@ main { height: 100%; position: relative; min-height: 0; }
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   z-index: 8;
   transform: translateX(-102%);
   transition: transform 0.28s ease;
   box-shadow: 12px 0 40px rgba(0, 0, 0, 0.45);
-  padding: 14px;
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
 }
 #sidebar-left.show {
   transform: translateX(0);
+}
+/* Tab 列(类 VS Code Activity Bar):窄条 + 图标,内容区在其右侧 */
+.sidebar-tabs {
+  width: 56px;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px 6px;
+  border-right: 1px solid rgba(148, 163, 255, 0.14);
+  background: rgba(6, 9, 24, 0.55);
+}
+.sidebar-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 2px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.sidebar-tab:hover {
+  color: #fff;
+  background: rgba(30, 44, 90, 0.35);
+}
+.sidebar-tab.active {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.55);
+  background: rgba(30, 44, 90, 0.55);
+  box-shadow: 0 0 14px rgba(138, 184, 255, 0.25);
+}
+.sidebar-tab-icon {
+  font-size: 17px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.5));
+}
+.sidebar-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  overflow-y: auto;
+}
+/* 设置 Tab 内容 */
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(30, 44, 90, 0.22);
+}
+.settings-section h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #cddbff;
+}
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(10, 14, 34, 0.72);
+  color: var(--ink);
+  font-size: 13px;
+}
+.settings-field input:focus {
+  outline: none;
+  border-color: rgba(138, 184, 255, 0.8);
+}
+.visibility-switch {
+  padding: 0;
 }
 .brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .brand h1 {
@@ -1174,6 +1276,29 @@ th.sortable.active .sort-icon {
 
   #sidebar-left {
     border-right: none;
+    flex-direction: column;
+    padding: 0;
+  }
+  /* 移动端底部抽屉:Tab 列改为横向排布在顶部 */
+  .sidebar-tabs {
+    flex-direction: row;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 255, 0.14);
+  }
+  .sidebar-tab {
+    flex-direction: row;
+    gap: 6px;
+    width: auto;
+    padding: 7px 14px;
+  }
+  .sidebar-content {
+    padding: 14px 16px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   }
   #panel {
     border-left: none;

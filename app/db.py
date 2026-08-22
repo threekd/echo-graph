@@ -52,9 +52,8 @@ def _work_node(p: dict) -> dict:
         "label": p.get("Title_CN"),
         "label_en": p.get("Title_EN"),
         "originalTitle": p.get("originalTitle"),
-        "year": p.get("publicationYear") or p.get("creationYear"),
+        "year": p.get("publicationYear"),
         "publicationYear": p.get("publicationYear"),
-        "creationYear": p.get("creationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
         "author_id": author_ids[0] if author_ids else None,
@@ -88,9 +87,8 @@ def _work_payload(p: dict) -> dict:
         "title": p.get("Title_CN"),
         "title_en": p.get("Title_EN"),
         "originalTitle": p.get("originalTitle"),
-        "year": p.get("publicationYear") or p.get("creationYear"),
+        "year": p.get("publicationYear"),
         "publicationYear": p.get("publicationYear"),
-        "creationYear": p.get("creationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
     }
@@ -288,7 +286,7 @@ class SqliteStore:
                 str(v or "") for v in (w.get("Title_CN"), w.get("Title_EN"), w.get("originalTitle"))
             ).lower()
             if ql in hay:
-                year = w.get("publicationYear") or w.get("creationYear")
+                year = w.get("publicationYear")
                 sub_parts = [
                     self._join_names(work_authors.get(w["id"], []), authors_by_id),
                     str(year) if year else "",

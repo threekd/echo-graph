@@ -28,7 +28,6 @@ export interface WorkRow {
   author_id?: string | null;
   author_ids?: string[];
   publicationYear?: number | null;
-  creationYear?: number | null;
   genre?: string | null;
   note?: string | null;
   reviewStatus: ReviewStatus;

@@ -121,7 +121,6 @@ MIGRATION_V1 = [
         Title_EN TEXT,
         Title_Other TEXT,
         publicationYear INTEGER,
-        creationYear INTEGER,
         genre TEXT CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL),
         reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
         createdAt TEXT,
@@ -219,7 +218,6 @@ def _migration_v3(conn: sqlite3.Connection) -> None:
             Title_EN TEXT,
             Title_Other TEXT,
             publicationYear INTEGER,
-            creationYear INTEGER,
             genre TEXT CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL),
             reviewStatus TEXT NOT NULL DEFAULT 'draft' CHECK (reviewStatus IN ('draft','reviewed','rejected')),
             createdAt TEXT,
@@ -229,9 +227,9 @@ def _migration_v3(conn: sqlite3.Connection) -> None:
     """)
     conn.execute(
         "INSERT INTO works_v3 (id, language, originalTitle, Title_CN, Title_EN, Title_Other,"
-        " publicationYear, creationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt)"
+        " publicationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt)"
         " SELECT id, language, originalTitle, Title_CN, Title_EN, Title_Other,"
-        " publicationYear, creationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt FROM works"
+        " publicationYear, genre, reviewStatus, createdAt, updatedAt, deletedAt FROM works"
     )
     conn.execute("DROP TABLE works")
     conn.execute("ALTER TABLE works_v3 RENAME TO works")
@@ -395,6 +393,13 @@ def _migration_v12(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE works ADD COLUMN review TEXT")
 
 
+def _migration_v13(conn: sqlite3.Connection) -> None:
+    """移除作品的创作年份字段(creationYear),只保留出版年份。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(works)")}
+    if "creationYear" in cols:
+        conn.execute("ALTER TABLE works DROP COLUMN creationYear")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -408,6 +413,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (10, _migration_v10),
     (11, _migration_v11),
     (12, _migration_v12),
+    (13, _migration_v13),
 ]
 
 

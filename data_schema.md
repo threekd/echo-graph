@@ -40,7 +40,6 @@
 | `Title_Other` | String | 否 | 其他可能的标题 |
 | `author_id` | String | 否 | 作者 id(UUID,关联 `Author.id`),展示名由作者表提供,改名不破坏关联 |
 | `publicationYear` | Integer | 否 | 出版年份 |
-| `creationYear` | Integer | 否 | 创作年份 |
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
 | `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；公共星云默认 `draft`，普通用户空间默认 `reviewed`——用户输入即确认） |

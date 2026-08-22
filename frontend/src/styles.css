@@ -957,6 +957,10 @@ th.sortable.active .sort-icon {
   max-height: 220px;
   overflow: auto;
 }
+.suggest-results.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 .suggest-results li {
   padding: 6px 8px;
   border-radius: 6px;
@@ -976,11 +980,36 @@ th.sortable.active .sort-icon {
   -webkit-appearance: none;
   margin: 0;
 }
-.author-picker .author-picker-selected {
+.author-picker .author-picker-inner {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
-  margin-bottom: 4px;
+  padding: 4px 7px;
+  border: 1px solid rgba(148, 163, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(10, 14, 34, 0.8);
+  cursor: text;
+}
+.author-picker .author-picker-inner:focus-within {
+  border-color: rgba(138, 184, 255, 0.7);
+}
+#admin-form .author-picker .author-picker-inner input {
+  flex: 1;
+  width: auto;
+  min-width: 90px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  padding: 4px 4px;
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--ink);
+}
+#admin-form .author-picker .author-picker-inner input::placeholder {
+  color: var(--muted);
 }
 .author-chip {
   display: inline-flex;
@@ -1060,9 +1089,19 @@ th.sortable.active .sort-icon {
 }
 .work-picker-results li:hover { background: rgba(148, 163, 255, 0.18); }
 .work-picker-warn {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 8;
+  padding: 5px 8px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px;
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   color: #fbbf24;
   font-size: 11px;
-  margin-top: 4px;
 }
 #admin-form-errors {
   margin-top: 12px;

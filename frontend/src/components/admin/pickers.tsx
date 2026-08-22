@@ -261,6 +261,7 @@ export function AuthorPicker({
   const [maxH, setMaxH] = useState(220);
   const [selected, setSelected] = useState(() => parseAuthorIds(value, authorsList));
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const lastValue = useRef(value);
 
   useEffect(() => {
@@ -311,38 +312,41 @@ export function AuthorPicker({
 
   return (
     <div className="work-picker author-picker" ref={wrapRef}>
-      {selected.length > 0 && (
-        <div className="author-picker-selected">
-          {selected.map((s) => (
-            <span key={s.value} className="author-chip">
-              {s.label}
-              <button type="button" title="移除" onClick={() => removeAuthor(s.value)}>×</button>
-            </span>
-          ))}
-        </div>
-      )}
-      <input
-        type="text"
-        value={query}
-        placeholder={placeholder}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={openList}
-        onBlur={() => {
-          setQuery("");
-          setOpen(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
-          if (e.key === "Backspace" && !query && selected.length) removeAuthor(selected[selected.length - 1].value);
-          if (e.key === "Enter" && open && available.length) {
-            e.preventDefault();
-            addAuthor(available[0]);
-          }
-        }}
-      />
+      {/* 已选作者以标签形式内嵌在输入框中,不占用额外行 */}
+      <div
+        className="author-picker-inner"
+        onClick={() => inputRef.current && inputRef.current.focus()}
+      >
+        {selected.map((s) => (
+          <span key={s.value} className="author-chip">
+            {s.label}
+            <button type="button" title="移除" onClick={() => removeAuthor(s.value)}>×</button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          placeholder={selected.length ? "" : placeholder}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={openList}
+          onBlur={() => {
+            setQuery("");
+            setOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+            if (e.key === "Backspace" && !query && selected.length) removeAuthor(selected[selected.length - 1].value);
+            if (e.key === "Enter" && open && available.length) {
+              e.preventDefault();
+              addAuthor(available[0]);
+            }
+          }}
+        />
+      </div>
       {open && available.length > 0 && (
         <ul
           className={"work-picker-results" + (dir === "up" ? " up" : "")}

@@ -2,7 +2,7 @@
    提交时自动补齐缺失的作者/作品并建立涟漪;下拉框无匹配时第一行提供
    「添加新作品 / 新作者」入口,弹出标准新增弹窗(与数据管理共用)。 */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp, type GraphData, type GraphNode } from "../store";
 import { loadGraphData, loadMyRows, type SpaceRows } from "../lib/api";
 import {
@@ -44,11 +44,29 @@ function SuggestionInput({
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  const [dir, setDir] = useState<"up" | "down">("down");
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const q = value.trim().toLowerCase();
   const filtered = q
     ? suggestions.filter((s) => s.toLowerCase().includes(q)).slice(0, 50)
     : suggestions.slice(0, 50);
   const showAdd = Boolean(onAdd && addLabel && q && filtered.length === 0);
+
+  // 按剩余空间决定下拉方向,避免溢出弹窗卡片触发滚动条导致整体布局抖动
+  const openList = () => {
+    const el = wrapRef.current;
+    if (!el) {
+      setOpen(true);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const card = el.closest(".admin-modal-card");
+    const cardRect = card ? card.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const below = cardRect.bottom - rect.bottom;
+    const above = rect.top - cardRect.top;
+    setDir(above > below ? "up" : "down");
+    setOpen(true);
+  };
 
   const pick = (label: string) => {
     onChange(label);
@@ -58,12 +76,12 @@ function SuggestionInput({
   };
 
   return (
-    <div className="suggest-input">
+    <div className="suggest-input" ref={wrapRef}>
       <input
         value={value}
         placeholder={placeholder}
         onChange={(e) => { onChange(e.target.value); setOpen(true); setActive(-1); }}
-        onFocus={() => setOpen(true)}
+        onFocus={openList}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={(e) => {
           if (e.key === "Escape") { setOpen(false); return; }
@@ -87,7 +105,7 @@ function SuggestionInput({
         }}
       />
       {open && (filtered.length > 0 || showAdd) && (
-        <ul className="suggest-results">
+        <ul className={"suggest-results" + (dir === "up" ? " up" : "")}>
           {showAdd && (
             <li
               className="add-option"
@@ -308,7 +326,6 @@ export default function Contribute() {
         Title_CN: pub.label,
         Title_EN: (pub as any).label_en || null,
         publicationYear: (pub as any).publicationYear || null,
-        creationYear: (pub as any).creationYear || null,
         genre: (pub as any).genre || null,
         author_id: authorIds.join(","),
       });

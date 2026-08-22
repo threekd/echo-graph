@@ -109,7 +109,6 @@ class WorkRow(BaseModel):
     Title_Other: str | None = None
     author_id: str | None = None  # 作者 id(UUID),多人用逗号","隔开;按 id 关联,改名不再破坏
     publicationYear: int | None = None
-    creationYear: int | None = None
     genre: Literal["Fiction", "Non-fiction", "Poetry", "Drama"] | None = None
     note: str | None = None
     reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
@@ -141,7 +140,7 @@ class WorkRow(BaseModel):
     def _review_status_default(cls, v):
         return _coerce_review_status(v)
 
-    @field_validator("publicationYear", "creationYear", mode="before")
+    @field_validator("publicationYear", mode="before")
     @classmethod
     def _int_or_none(cls, v):
         return _coerce_int(v)

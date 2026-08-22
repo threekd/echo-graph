@@ -40,7 +40,6 @@ const FIELDS: Record<NodeKind, any[]> = {
     { key: "Title_Other", label: "其他标题" },
     { key: "author_id", label: "作者", required: true, type: "authorPicker" },
     { key: "publicationYear", label: "出版年份", type: "number" },
-    { key: "creationYear", label: "创作年份", type: "number" },
     { key: "genre", label: "体裁", type: "select", options: ["Fiction", "Non-fiction", "Poetry", "Drama"] },
     { key: "note", label: "备注", type: "textarea" },
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },

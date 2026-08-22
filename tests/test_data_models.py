@@ -147,12 +147,10 @@ class ParseRowsTest(unittest.TestCase):
         a[0]["birthYear"] = ""
         a[0]["deathYear"] = ""
         w[0]["publicationYear"] = ""
-        w[0]["creationYear"] = ""
         am, wm, em, _ = parse_rows(a, w, e)
         self.assertIsNone(am[0].birthYear)
         self.assertIsNone(am[0].deathYear)
         self.assertIsNone(wm[0].publicationYear)
-        self.assertIsNone(wm[0].creationYear)
 
     def test_text_fields_trimmed(self) -> None:
         """自由文本字段保存前应去除首尾空白与零宽/不可见字符。"""

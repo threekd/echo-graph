@@ -15,7 +15,7 @@ AUTHOR_COLS = [
 ]
 WORK_COLS = [
     "id", "language", "originalTitle", "Title_CN", "Title_EN",
-    "Title_Other", "publicationYear", "creationYear", "genre", "note", "reviewStatus",
+    "Title_Other", "publicationYear", "genre", "note", "reviewStatus",
     "createdAt", "updatedAt", "deletedAt",
 ]
 EDGE_COLS = [
@@ -531,7 +531,6 @@ def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
             "Title_EN": sync_norm(r.get("Title_EN")),
             "Title_Other": sync_norm(r.get("Title_Other")),
             "publicationYear": sync_norm(r.get("publicationYear")),
-            "creationYear": sync_norm(r.get("creationYear")),
             "genre": sync_norm(r.get("genre")),
             "note": sync_norm(r.get("note")),
             "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),

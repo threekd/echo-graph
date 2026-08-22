@@ -31,7 +31,7 @@ AUDIT_FIELDS: dict[Kind, list[str]] = {
     ],
     "works": [
         "language", "originalTitle", "Title_CN", "Title_EN", "Title_Other",
-        "publicationYear", "creationYear", "genre", "note", "reviewStatus", "visibility",
+        "publicationYear", "genre", "note", "reviewStatus", "visibility",
         "recommendation", "review",
     ],
     "edges": [

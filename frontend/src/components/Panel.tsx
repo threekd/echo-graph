@@ -279,7 +279,7 @@ export default function Panel() {
         <PinButton
           id="btn-pin-right"
           pinned={state.pinRight}
-          title={state.pinRight ? "取消钉住(移出自动隐藏)" : "钉住(不再自动隐藏)"}
+          title={state.pinRight ? "取消钉住" : "钉住"}
           onToggle={togglePinRight}
         />
         <div className="sidebar-tabs" role="tablist" aria-label="详情栏功能">

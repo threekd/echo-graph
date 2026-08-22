@@ -104,8 +104,8 @@ SQLite 为权威库,日常更新**不再从 CSV 重建**(避免清空用户星�
 | 审计日志 `audit_log` | SQLite 内 | 用 `scripts/prune_audit.py --days 90` 裁剪(可加 cron 定期执行) |
 
 > **快照恢复入口**:管理端「数据管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
-> `backups/` 的 SQLite 备份与 `data/versions/` 的历史 CSV 目录;恢复前会自动为当前库
-> 做安全备份,恢复后自动重新导出 CSV。应用侧创建的快照保留最近 30 份(`backups/` 下),
+> `backups/` 的 SQLite 备份(`data/versions/` 的历史 CSV 目录仅在旧机器残留时可用);
+> 恢复前会自动为当前库做安全备份,恢复后自动重新导出 CSV。应用侧创建的快照保留最近 30 份(`backups/` 下),
 > deploy.sh 自身的备份保留 14 份;**恢复期间请勿编辑数据**,后端在恢复与写事务之间
 > 做了进程内互斥,单 worker 下不会出现并发覆盖。
 

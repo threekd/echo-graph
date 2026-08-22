@@ -150,6 +150,8 @@ export default function NodeFormModal({
   const [formError, setFormError] = useState("");
   const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [confirmReload, setConfirmReload] = useState(false);
+  // 新增作品时搜不到作者:内嵌「添加新作者」弹窗(与点亮星空同一模式)
+  const [authorAdd, setAuthorAdd] = useState<string | null>(null);
 
   // 普通用户空间:审核状态与备注隐藏(用户输入即确认);作者/作品提供可见性,
   // 作品额外提供评分(推荐/不推荐)与评价(长文本);admin 保持策展语义。
@@ -331,6 +333,7 @@ export default function NodeFormModal({
                     onChange={(v) => setForm({ ...form, [f.key]: v })}
                     authorsList={authorsList}
                     placeholder="输入筛选作者,可多选…"
+                    onAddNew={(query) => setAuthorAdd(query)}
                   />
                 </label>
               );
@@ -479,6 +482,25 @@ export default function NodeFormModal({
             </div>
           </div>
         </div>
+      )}
+      {authorAdd && (
+        <NodeFormModal
+          kind="authors"
+          mode="add"
+          initial={{ Name_CN: authorAdd, originalName: authorAdd }}
+          apiBase={apiBase}
+          authorsList={authorsList}
+          worksList={worksList}
+          edgesList={edgesList}
+          isAdmin={isAdmin}
+          onClose={() => setAuthorAdd(null)}
+          onSaved={(row) => {
+            const prev = String(form.author_id || "").trim();
+            // 新作者加入当前作品:多作者用逗号拼接(与 AuthorPicker 的 value 格式一致)
+            setForm({ ...form, author_id: prev ? `${prev},${row.id}` : row.id });
+            setAuthorAdd(null);
+          }}
+        />
       )}
     </div>
   );

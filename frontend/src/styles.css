@@ -1242,6 +1242,11 @@ th.sortable.active .sort-icon {
   font-size: 12px;
 }
 .work-picker-results li:hover { background: rgba(148, 163, 255, 0.18); }
+.work-picker-results .add-option {
+  color: #7dd3fc;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(148, 163, 255, 0.25);
+}
 .work-picker-warn {
   position: absolute;
   top: calc(100% + 4px);

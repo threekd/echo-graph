@@ -252,11 +252,13 @@ export function AuthorPicker({
   onChange,
   authorsList,
   placeholder,
+  onAddNew,
 }: {
   value: string;
   onChange: (v: string) => void;
   authorsList: any[];
   placeholder: string;
+  onAddNew?: (query: string) => void;
 }) {
   // 软删除行不可作为引用目标(与后端 validate_row 的 deletedAt 过滤一致)
   const activeAuthors = authorsList.filter((a) => !a.deletedAt);
@@ -273,16 +275,20 @@ export function AuthorPicker({
     if (value !== lastValue.current) {
       lastValue.current = value;
       setSelected(parseAuthorIds(value, authorsList));
+      setQuery(""); // 外部值变化(如新增作者后回填)时清空输入,让位给已选标签
     }
   }, [value, authorsList]);
 
-  const q = query.trim().toLowerCase();
+  const rawQuery = query.trim();
+  const q = rawQuery.toLowerCase();
   const filtered = q
     ? activeAuthors.filter((a) =>
         (authorLabelOf(a) + " " + (a.originalName || "") + " " + (a.Name_EN || "")).toLowerCase().includes(q)
       )
     : activeAuthors;
   const available = filtered.filter((a) => !selected.some((s) => s.value === a.id));
+  // 搜不到任何作者时给出「添加新作者」入口(与点亮星空一致);搜到但都已选中的不提供
+  const showAdd = Boolean(onAddNew && q && filtered.length === 0);
 
   const commit = (next: { value: string; label: string }[]) => {
     setSelected(next);
@@ -345,6 +351,12 @@ export function AuthorPicker({
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
             if (e.key === "Backspace" && !query && selected.length) removeAuthor(selected[selected.length - 1].value);
+            if (showAdd && e.key === "Enter") {
+              e.preventDefault();
+              setOpen(false);
+              onAddNew!(rawQuery);
+              return;
+            }
             if (e.key === "Enter" && open && available.length) {
               e.preventDefault();
               addAuthor(available[0]);
@@ -352,11 +364,23 @@ export function AuthorPicker({
           }}
         />
       </div>
-      {open && available.length > 0 && (
+      {open && (available.length > 0 || showAdd) && (
         <ul
           className={"work-picker-results" + (dir === "up" ? " up" : "")}
           style={{ display: "block", maxHeight: maxH }}
         >
+          {showAdd && (
+            <li
+              className="add-option"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false);
+                onAddNew!(rawQuery);
+              }}
+            >
+              ＋ 添加新作者「{rawQuery}」
+            </li>
+          )}
           {available.map((a) => (
             <li
               key={a.id}
@@ -370,7 +394,7 @@ export function AuthorPicker({
           ))}
         </ul>
       )}
-      {open && q && available.length === 0 && (
+      {open && q && available.length === 0 && !showAdd && (
         <div className="work-picker-warn">没有匹配的作者,只能选择已存在的作者</div>
       )}
     </div>

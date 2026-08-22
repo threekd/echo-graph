@@ -120,3 +120,11 @@
 - 2026-08-22:新增作者/作品表单的原文名/原著标题支持「公共已审核数据」联想——
   图谱节点附带 reviewStatus;选中公共已审核作者/作品后自动填充
   中文名/英文名/语言/年份/体裁等字段(作者关联仅在本用户空间存在时自动匹配)。
+- 2026-08-22:修复星际跃迁空间上下文(P1)——store 的 `space` 状态扩展为
+  `public | mine | space:<userId>` 三元状态;新增 `/api/space/{user_id}/search|work/{id}|expansion/{id}|path`
+  只读接口;前端 `apiRoot` 按空间路由,跃迁后可在目标星云内完整交互(搜索/详情/扩散/路径)。
+- 2026-08-22:星云可见性自服务——新增 `PATCH /api/auth/me`(`space_visibility` 切换),
+  侧边栏「星云:公开/仅自己可见」开关;admin 用户管理(禁用/角色/列表)标注为待办。
+- 2026-08-22:资料与模型卫生——schema v14 删除从未写入的 `sessions.last_seen_at`;
+  `now_iso` / `new_uuid` / `KIND_TABLE` 收敛为单一来源(auth / space_crud / contributions 共用);
+  `adminTypes.ts` 补全 `visibility` / `recommendation` / `review` 字段。

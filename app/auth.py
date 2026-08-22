@@ -20,7 +20,6 @@ import re
 import secrets
 import urllib.parse
 import urllib.request
-import uuid
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
@@ -45,15 +44,8 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _ph = PasswordHasher()
 
 
-def _now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-
-
-def _new_id() -> str:
-    try:
-        return str(uuid.uuid7())
-    except AttributeError:
-        return str(uuid.uuid4())
+_now = db_sqlite.now_iso
+_new_id = db_sqlite.new_uuid
 
 
 def _expires_at() -> str:
@@ -381,3 +373,22 @@ def me(request: Request) -> dict:
     if user is None:
         raise HTTPException(status_code=401, detail="未登录")
     return {"user": user}
+
+
+@router.patch("/me")
+def update_me(body: dict, request: Request) -> dict:
+    """用户资料更新(当前仅支持 space_visibility:星云公开/仅自己可见切换)。"""
+    _check_same_origin(request)
+    user = current_user(request.cookies.get(SESSION_COOKIE))
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    visibility = (body or {}).get("space_visibility")
+    if visibility not in ("public", "private"):
+        raise HTTPException(status_code=400, detail="space_visibility 仅支持 public / private")
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        conn.execute(
+            "UPDATE users SET space_visibility = ?, updatedAt = ? WHERE id = ?",
+            (visibility, _now(), user["id"]),
+        )
+    user["space_visibility"] = visibility
+    return {"ok": True, "user": user}

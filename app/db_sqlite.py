@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import sqlite3
 import threading
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -39,6 +40,19 @@ def normalize_ts(value) -> str | None:
     else:
         parsed = parsed.astimezone(dt.UTC)
     return parsed.isoformat(timespec="seconds")
+
+
+def now_iso() -> str:
+    """统一的时间戳生成:UTC 秒级 ISO-8601。"""
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+
+
+def new_uuid() -> str:
+    """统一的主键生成:优先 UUID v7(时间有序),环境不支持时回退 UUID v4。"""
+    try:
+        return str(uuid.uuid7())
+    except AttributeError:
+        return str(uuid.uuid4())
 
 
 def _connect() -> sqlite3.Connection:
@@ -81,7 +95,7 @@ def audit(
         "INSERT INTO audit_log (ts, actor, action, kind, row_id, detail, before, after)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+            now_iso(),
             actor,
             action,
             kind,
@@ -400,6 +414,13 @@ def _migration_v13(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE works DROP COLUMN creationYear")
 
 
+def _migration_v14(conn: sqlite3.Connection) -> None:
+    """删除从未写入的 sessions.last_seen_at 死列。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if "last_seen_at" in cols:
+        conn.execute("ALTER TABLE sessions DROP COLUMN last_seen_at")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -414,6 +435,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (11, _migration_v11),
     (12, _migration_v12),
     (13, _migration_v13),
+    (14, _migration_v14),
 ]
 
 

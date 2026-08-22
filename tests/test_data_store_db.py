@@ -40,6 +40,7 @@ class DataStoreDbTest(unittest.TestCase):
         self.export.mkdir()
         patch.object(db_sqlite, "DB_PATH", self.db).start()
         patch.object(ds, "EXPORT_DIR", self.export).start()
+        self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)
 
     def test_save_then_load_roundtrip(self) -> None:
@@ -81,19 +82,19 @@ class DataStoreDbTest(unittest.TestCase):
         with patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local"):
             admin = auth.register("admin@test.local", "admin-password-123")
             user = auth.register("user@test.local", "user-password-123")
-        a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
-        a2 = "01a013e6-e885-766b-b9db-315d518adeec"
-        sqlite_store.rewrite_all(
-            [
-                {"id": a1, "originalName": "公共", "Name_CN": "公共", "owner_id": admin["id"]},
-                {"id": a2, "originalName": "私有", "Name_CN": "私有", "owner_id": user["id"]},
-            ],
-            [],
-            [],
-        )
-        ds.export_csv_files()
-        exported_authors, _, _ = ds.load_csv_rows()
-        self.assertEqual([r["id"] for r in exported_authors], [a1])
+            a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
+            a2 = "01a013e6-e885-766b-b9db-315d518adeec"
+            sqlite_store.rewrite_all(
+                [
+                    {"id": a1, "originalName": "公共", "Name_CN": "公共", "owner_id": admin["id"]},
+                    {"id": a2, "originalName": "私有", "Name_CN": "私有", "owner_id": user["id"]},
+                ],
+                [],
+                [],
+            )
+            ds.export_csv_files()
+            exported_authors, _, _ = ds.load_csv_rows()
+            self.assertEqual([r["id"] for r in exported_authors], [a1])
 
 
 if __name__ == "__main__":

@@ -14,9 +14,7 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
-import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -43,8 +41,7 @@ MAX_LEN = {
 }
 
 
-def _now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+_now = db_sqlite.now_iso
 
 
 def _clean(value) -> str:
@@ -88,7 +85,7 @@ def submit_contribution(payload: dict, user_id: str | None = None) -> dict:
     """写入一条 pending 贡献,返回落库后的行。"""
     data = _validate(payload)
     row = {
-        "id": str(uuid.uuid7()) if hasattr(uuid, "uuid7") else str(uuid.uuid4()),
+        "id": db_sqlite.new_uuid(),
         **data,
         "status": "pending",
         "user_id": user_id,

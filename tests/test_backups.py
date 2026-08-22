@@ -27,6 +27,7 @@ class BackupsTest(unittest.TestCase):
         patch.object(backups, "VERSIONS_DIR", self.versions_dir).start()
         patch.object(backups, "ROOT", self.root).start()
         patch.object(db_sqlite, "DB_PATH", self.root / "echo-graph.db").start()
+        self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)
 
     @staticmethod
@@ -112,8 +113,9 @@ class BackupsTest(unittest.TestCase):
             backups.create_snapshot()
 
     def test_restore_csv_snapshot_rebuilds_db(self) -> None:
-        with patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local"):
-            auth.register("admin@test.local", "admin-password-123")
+        # 补丁保持到测试结束(setUp 的 stopall 会复原),保证恢复时 admin 上下文一致
+        patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local").start()
+        auth.register("admin@test.local", "admin-password-123")
         vdir = self.versions_dir / "20260820-120000-admin"
         vdir.mkdir()
         export_dir = self.root / "export"

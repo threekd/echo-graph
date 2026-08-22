@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
 import { jumpToRandomSpace, loadGraphData, search, type Space } from "../lib/api";
-import { logout } from "../lib/auth";
+import { logout, updateProfile } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
@@ -42,10 +42,33 @@ export default function Sidebar() {
       );
   };
 
+  // 星云可见性自服务切换(公开 = 可被星际跃迁访问;仅自己 = 游客 404)
+  const toggleSpaceVisibility = () => {
+    if (!state.user) return;
+    const next: "public" | "private" =
+      (state.user.space_visibility ?? "public") === "private" ? "public" : "private";
+    updateProfile(next)
+      .then((r) => {
+        if (r.user) {
+          dispatch({ type: "SET_USER", user: r.user });
+          dispatch({
+            type: "SET_TOAST",
+            msg: next === "private" ? "你的星云已设为仅自己可见" : "你的星云已设为公开(可被跃迁)",
+            kind: "success",
+          });
+        } else {
+          dispatch({ type: "SET_TOAST", msg: r.error || "设置失败", kind: "error" });
+        }
+      })
+      .catch((e) => dispatch({ type: "SET_TOAST", msg: "设置失败: " + e.message, kind: "error" }));
+  };
+
   const doJump = () => {
     jumpToRandomSpace()
       .then((d) => {
         dispatch({ type: "SET_DATA", data: d });
+        // 跃迁后进入该星云的空间上下文:后续搜索/详情/扩散/路径都路由到 /api/space/{id}
+        dispatch({ type: "SET_SPACE", space: "space:" + d.spaceId });
         dispatch({ type: "SET_SPACE_OWNER", owner: d.displayName || "未知星云" });
         renderMain({}, d);
         dispatch({
@@ -400,6 +423,16 @@ export default function Sidebar() {
           </button>
           {state.user && (
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
+          )}
+          {state.user && (
+            <button
+              id="btn-space-visibility"
+              className="side-btn"
+              onClick={toggleSpaceVisibility}
+              title="切换你的星云是否公开(公开后可被星际跃迁访问)"
+            >
+              {state.user.space_visibility === "private" ? "星云:仅自己可见" : "星云:公开"}
+            </button>
           )}
         </div>
       </aside>

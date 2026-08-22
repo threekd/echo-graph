@@ -9,8 +9,6 @@ CSV 导出只针对公共星云(admin 空间),用户私有数据不进 git 审�
 
 from __future__ import annotations
 
-import datetime as dt
-import uuid
 from typing import Literal
 
 from fastapi import HTTPException
@@ -22,7 +20,7 @@ from app.data_store import clean_row, export_csv_files
 from app.db import invalidate_cache
 
 Kind = Literal["authors", "works", "edges"]
-KIND_TABLE = {"authors": "authors", "works": "works", "edges": "edges"}
+KIND_TABLE = sqlite_store.KIND_TABLE  # 表名映射单一来源:sqlite_store
 
 AUDIT_FIELDS: dict[Kind, list[str]] = {
     "authors": [
@@ -41,15 +39,8 @@ AUDIT_FIELDS: dict[Kind, list[str]] = {
 }
 
 
-def _now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-
-
-def _new_uuid() -> str:
-    try:
-        return str(uuid.uuid7())
-    except AttributeError:
-        return str(uuid.uuid4())
+_now = db_sqlite.now_iso
+_new_uuid = db_sqlite.new_uuid
 
 
 def _author_id_list(value) -> list[str]:

@@ -65,6 +65,12 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 SQLite 库缺失时执行 `scripts/migrate_csv_to_sqlite.py` 从 CSV 初始化(仅限全新环境;已有用户数据时
 不要执行——它会整库重建策展表,清空用户星云)。
 
+**Windows 本地环境提示**:若仓库/虚拟环境报"dubious ownership"或 `uv` 无法启动
+`.venv` 里的 Python(常见于 Windows 账户变更),先执行
+`git config --global --add safe.directory E:/Code/echo-graph` 放行仓库;随后备份并重建虚拟环境:
+`Rename-Item .venv .venv-broken`(或直接删除后)`uv sync --frozen`。`.venv` 为可再生构建产物,
+重建不影响 `data/echo-graph.db` 与 `data/export/*.csv`。
+
 质量检查(已在 CI 中自动执行):
 
 ```bash
@@ -128,6 +134,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 多用户账号体系已落地:邮箱+密码注册登录,Argon2 密码哈希,**httpOnly Cookie 会话**(30 天,登出立即失效),注册含 Cloudflare Turnstile 人机验证。
 
 - 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
+- 资料接口:`PATCH /api/auth/me`(当前支持 `space_visibility` 切换:公开 / 仅自己可见)
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);带 Origin 头的跨站状态变更请求会被拒绝
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
@@ -138,7 +145,9 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   (搜不到时下拉框第一行可打开标准新增弹窗),不再进入贡献收件箱。
 - 星际跃迁:左侧栏「公共星云 / 我的星云」下方「✦ 星际跃迁」按钮,随机访问一个
   公开星云(默认全部公开);数据源标签显示所在星云账号,公共星云显示 public。
-  接口:`GET /api/space/random/graph`(随机)、`GET /api/space/{user_id}/graph`(定向)。
+  接口:`GET /api/space/random/graph`(随机)、`GET /api/space/{user_id}/graph`(定向);
+  跃迁后可继续在目标星云内完整交互(搜索 / 作品详情 / 扩散 / 路径),
+  由 `GET /api/space/{user_id}/search|work/{id}|expansion/{id}|path` 提供,前端按空间上下文自动路由。
 - 用户数据语义:普通用户的作者/作品/涟漪默认即「已审核」(用户输入即确认,
   管理界面不显示审核状态);作者/作品有可见性(公开/隐藏,默认公开),隐藏后
   不会出现在他人的星际跃迁视图中,自己仍可正常查看与编辑。

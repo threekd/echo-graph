@@ -40,6 +40,7 @@ class SpaceIsolationTest(unittest.TestCase):
         # 隔离测试不依赖机器 .env 的审核过滤开关,新建草稿即可见
         patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
         patch("app.space_crud.export_csv_files", lambda: None).start()
+        self.addCleanup(patch.stopall)
         self.admin = auth.register(self.ADMIN, "admin-password-123")
         self.alice = auth.register(self.ALICE, "alice-password-123")
         self.bob = auth.register(self.BOB, "bob-password-123")
@@ -270,4 +271,51 @@ class SpaceIsolationTest(unittest.TestCase):
         # 全部 private 后随机跃迁 404
         with self.assertRaises(HTTPException) as ctx:
             space.random_space_graph(_FakeReq())
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_space_read_endpoints_for_visitors(self) -> None:
+        """星际跃迁后的完整交互:搜索/详情/扩散/路径全部路由到目标星云。"""
+        a1 = my_create("authors", {"originalName": "甲", "Name_CN": "甲"}, user=self.alice)["row"]
+        w1 = my_create(
+            "works", {
+                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        w2 = my_create(
+            "works", {
+                "language": "zh", "originalTitle": "B书", "Title_CN": "乙书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        my_create(
+            "edges", {
+                "source_work_id": w1["id"], "target_work_id": w2["id"],
+                "evidence": "x", "evidenceSource": "c1",
+            },
+            user=self.alice,
+        )
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
+                (self.admin["id"], self.bob["id"]),
+            )
+        req = _FakeReq()
+        hits = space.space_search(self.alice["id"], "甲书", 20, req)
+        self.assertEqual([h["id"] for h in hits["hits"]], [w1["id"]])
+        detail = space.space_work_detail(self.alice["id"], w1["id"], req)
+        self.assertEqual(detail["work"]["id"], w1["id"])
+        self.assertEqual(detail["mentions"][0]["target"], w2["id"])
+        ex = space.space_expansion(self.alice["id"], w1["id"], 2, req)
+        self.assertEqual(ex["centerId"], w1["id"])
+        self.assertIn(w2["id"], [n["id"] for n in ex["nodes"]])
+        p = space.space_path(
+            self.alice["id"], w1["id"], w2["id"], max_hops=15, request=req
+        )
+        self.assertEqual(p["nodes"], [w1["id"], w2["id"]])
+        # 不存在的作品 404
+        with self.assertRaises(HTTPException) as ctx:
+            space.space_work_detail(self.alice["id"], "no-such-id", req)
         self.assertEqual(ctx.exception.status_code, 404)

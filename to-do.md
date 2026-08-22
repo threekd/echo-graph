@@ -52,8 +52,8 @@
       DB 只存 token 的 SHA-256 哈希);`/api/auth/register|login|logout|me|config`;
       注册 Cloudflare Turnstile 人机验证;注册/登录 IP 滑动窗口限流
       (限流抽为 app/ratelimit.py,与贡献接口共用);带 Origin 头的跨站状态请求拒绝
-- ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、用户空间数据隔离、
-      管理权限从 ADMIN_TOKEN 迁移为 user/admin 角色
+- ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、
+      admin 用户管理(用户列表 / 禁用 `users.status` / 角色调整 / 星云可见性管理)
 - [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
       私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);公共星云 = admin 空间
       (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 启动认领未归属数据);隔离测试
@@ -154,3 +154,13 @@
 ## 最近变更(2026-08-21)
 
 - [x] 发布流程落地:公开视图按 `reviewStatus` 过滤草稿(`PUBLIC_REVIEWED_ONLY` 环境开关,默认关闭);管理端「快照」Tab 列举并一键恢复 SQLite 快照(`backups/` + `data/versions/`,恢复前自动安全备份、恢复后自动导出 CSV);顺带修复重构后 `.env` 未加载回归(`app/db_sqlite.py` 统一 `load_dotenv`)
+
+## 最近变更(2026-08-22)
+
+- [x] 星际跃迁空间上下文修复:store 的 `space` 扩展为 `public | mine | space:<userId>` 三元状态,
+      前端按空间路由 `/api/space/{id}/search|work|expansion|path`,跃迁后可在目标星云内完整交互
+- [x] 星云可见性自服务:`PATCH /api/auth/me`(侧边栏「星云:公开/仅自己可见」开关)
+- [x] 资料与数据模型卫生:schema v14 删除 `sessions.last_seen_at`;`now_iso`/`new_uuid`/`KIND_TABLE`
+      统一单一来源;`adminTypes.ts` 补全 `visibility` / `recommendation` / `review` 字段
+- [x] 文档同步:`data_schema.md` 字段错位修正(评分/评价归入作品)、`sqlite-migration.md` 与
+      `migrate_csv_to_sqlite.py` 过期表述更新、README 补充 Windows 账户变更环境处理

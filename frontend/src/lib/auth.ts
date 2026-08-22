@@ -4,6 +4,7 @@ export interface AuthUser {
   id: string;
   email: string;
   role: string;
+  space_visibility?: "public" | "private"; // 星云可见性(星际跃迁是否可访问)
 }
 
 export interface AuthConfig {
@@ -78,4 +79,13 @@ export async function logout(): Promise<void> {
   } catch {
     /* 网络异常也照常清除本地登录态 */
   }
+}
+
+export async function updateProfile(spaceVisibility: "public" | "private"): Promise<AuthResult> {
+  const r = await fetch("/api/auth/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ space_visibility: spaceVisibility }),
+  });
+  return parseAuthResponse(r);
 }

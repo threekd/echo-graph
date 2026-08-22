@@ -64,10 +64,10 @@ export interface AppState {
   panel: PanelState;
   toast: ToastPayload | null;
   adminOpen: boolean;
-  contributeOpen: boolean; // "贡献数据"弹窗
+  contributeOpen: boolean; // "点亮星空(添加到我的星云)"弹窗
   authOpen: boolean; // 登录/注册弹窗
   user: AuthUser | null; // 当前登录用户(未登录为 null)
-  space: Space; // 当前浏览空间:public = 公共星云,mine = 我的星云(私有)
+  space: Space; // 当前浏览空间:public | mine | "space:<userId>"(星际跃迁)
   spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
   guideVisible: boolean;
 }

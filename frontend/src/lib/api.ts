@@ -2,7 +2,9 @@
 
 import type { GraphData } from "../store";
 
-export type Space = "public" | "mine";
+// 浏览空间三元状态:public = 公共星云;mine = 我的星云(私有);
+// "space:<userId>" = 星际跃迁后正在浏览的他人星云。
+export type Space = "public" | "mine" | `space:${string}`;
 
 export interface SearchHit {
   id: string;
@@ -57,7 +59,18 @@ async function getJson<T>(url: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-const apiRoot = (space: Space) => (space === "mine" ? "/api/me" : "/api");
+export function spaceUserId(space: Space): string | null {
+  return space.startsWith("space:") ? space.slice("space:".length) : null;
+}
+
+// 按空间上下文选择 API 前缀:公共 /api、我的 /api/me、他人星云 /api/space/{userId}。
+// 后端空间系列接口(/graph|search|work|expansion|path)共享同一可见性规则。
+export function apiRoot(space: Space): string {
+  if (space === "mine") return "/api/me";
+  const uid = spaceUserId(space);
+  if (uid) return "/api/space/" + encodeURIComponent(uid);
+  return "/api";
+}
 
 export function loadGraphData(space: Space = "public"): Promise<GraphData> {
   return getJson<GraphData>(apiRoot(space) + "/graph");

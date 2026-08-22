@@ -146,8 +146,10 @@ Phase 1 约 2–3 天（含测试）；Phase 2 约 1–2 天；Phase 3 约 1 天
   输出形状与旧 JsonStore 完全一致（前端零改动）；软删除行读取时一律过滤。
 - 删除 `app/importer.py`、`scripts/import_data.py`、`scripts/export_seed.py`、`/api/admin/sync`、`/api/admin/import`；
   管理页移除「上传↑」按钮与「数据未上传」提示。
-- 部署收敛：`echo-graph.service` 单 worker；`deploy.sh` 用 `sqlite3 .backup` 备份权威库、部署时从仓库 CSV 重建 SQLite
-  （contributions / audit_log 表不受影响）；`setup-vps.sh` 初始化时从 CSV 引导建库；`.env` 仅需 `ADMIN_TOKEN`。
+- 部署收敛：`echo-graph.service` 单 worker；`deploy.sh` 用 `sqlite3 .backup` 备份权威库；
+  **多用户改造后日常部署不再从 CSV 重建**（避免清空用户星云，schema 迁移由服务启动自动执行，
+  contributions / audit_log 不受影响）；`setup-vps.sh` 首次初始化仍从 CSV 引导建库；
+  `.env` 改为 `ADMIN_BOOTSTRAP_EMAIL`（ADMIN_TOKEN 已随多用户改造移除）。
 - 依赖：移除 `neo4j` / `openpyxl`，显式声明 `pydantic`；版本升至 0.5.0。
 - 清理：删除死代码 `data_store.snapshot`、`migrate_contributions.py`、`merge_legacy_db`、空目录与过期文档引用。
 

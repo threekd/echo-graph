@@ -27,6 +27,8 @@ class ApiSmokeTest(unittest.TestCase):
         self.admin_id = auth.admin_user_id()
         self.assertIsNotNone(self.admin_id)
         patch("app.space_crud.export_csv_files", lambda: None).start()
+        # 所有 setUp 补丁必须在测试结束时复原,避免泄漏影响后续模块(顺序无关)
+        self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)
 
     def seed(self, authors=(), works=(), edges=(), owner_id: str | None = None) -> None:
@@ -80,6 +82,10 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/me/{kind}", paths)
         self.assertIn("/api/space/random/graph", paths)
         self.assertIn("/api/space/{user_id}/graph", paths)
+        self.assertIn("/api/space/{user_id}/search", paths)
+        self.assertIn("/api/space/{user_id}/work/{work_id}", paths)
+        self.assertIn("/api/space/{user_id}/expansion/{work_id}", paths)
+        self.assertIn("/api/space/{user_id}/path", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"

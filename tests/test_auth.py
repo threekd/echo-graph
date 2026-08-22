@@ -155,6 +155,29 @@ class AuthStoreTest(unittest.TestCase):
         result = auth.me(_FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token}))
         self.assertEqual(result["user"]["email"], "me@example.com")
 
+    def test_update_me_space_visibility(self) -> None:
+        """PATCH /api/auth/me:星云可见性自服务切换。"""
+        user = auth.register("vis@test.local", "password123")
+        token = auth.create_session(user["id"])
+        req = _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token})
+        result = auth.update_me({"space_visibility": "private"}, req)
+        self.assertEqual(result["user"]["space_visibility"], "private")
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT space_visibility FROM users WHERE id = ?", (user["id"],)
+            ).fetchone()
+        self.assertEqual(row["space_visibility"], "private")
+        # 非法取值 400
+        with self.assertRaises(HTTPException) as ctx:
+            auth.update_me({"space_visibility": "secret"}, req)
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 未登录 401
+        with self.assertRaises(HTTPException) as ctx:
+            auth.update_me(
+                {"space_visibility": "private"}, _FakeRequest(headers={}, cookies={})
+            )
+        self.assertEqual(ctx.exception.status_code, 401)
+
     def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
             sqlite_store.rewrite_all(

@@ -40,6 +40,7 @@ def _author_node(p: dict) -> dict:
         "nationality": p.get("nationality"),
         "birthYear": p.get("birthYear"),
         "deathYear": p.get("deathYear"),
+        "reviewStatus": p.get("reviewStatus"),
     }
 
 
@@ -56,6 +57,7 @@ def _work_node(p: dict) -> dict:
         "publicationYear": p.get("publicationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
+        "reviewStatus": p.get("reviewStatus"),
         "author_id": author_ids[0] if author_ids else None,
         "author_ids": author_ids,
         "author": p.get("author_name", ""),

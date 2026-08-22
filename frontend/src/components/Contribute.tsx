@@ -482,6 +482,12 @@ export default function Contribute() {
           worksList={myRows?.works || []}
           edgesList={myRows?.edges || []}
           isAdmin={false}
+          publicAuthors={(publicData?.nodes || []).filter(
+            (n: GraphNode) => n.type === "author" && n.reviewStatus === "reviewed"
+          )}
+          publicWorks={(publicData?.nodes || []).filter(
+            (n: GraphNode) => n.type === "work" && n.reviewStatus === "reviewed"
+          )}
           onClose={() => setAddModal(null)}
           onSaved={(row) => {
             const label = nodeLabelOf(addModal.kind, row);

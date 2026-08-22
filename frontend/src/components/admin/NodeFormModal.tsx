@@ -14,6 +14,59 @@ import {
 
 export type NodeKind = "authors" | "works" | "edges";
 
+// 公共已审核数据的联想下拉:选中后由 onPick 自动填充相关字段
+function PublicSuggestField({
+  value,
+  onChange,
+  onPick,
+  options,
+  getLabel,
+  placeholder,
+  maxLength,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onPick: (item: any) => void;
+  options: any[];
+  getLabel: (item: any) => string;
+  placeholder?: string;
+  maxLength?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const q = value.trim().toLowerCase();
+  const filtered = q ? options.filter((o) => getLabel(o).toLowerCase().includes(q)) : [];
+  return (
+    <div className="suggest-input">
+      <input
+        value={value}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && filtered.length > 0 && (
+        <ul className="suggest-results">
+          {filtered.slice(0, 50).map((o) => (
+            <li
+              key={o.id || o.originalName || o.originalTitle}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(getLabel(o)); onPick(o); setOpen(false); }}
+            >
+              {getLabel(o)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const authorPublicLabel = (a: any) =>
+  [a.originalName || a.Name_CN || a.label, a.Name_CN || a.label].filter(Boolean).join(" · ");
+const workPublicLabel = (w: any) =>
+  [w.originalTitle || w.label, w.Title_CN || w.label].filter(Boolean).join(" · ");
+
 const KIND_LABELS: Record<NodeKind, string> = {
   authors: "作者",
   works: "作品",
@@ -33,8 +86,8 @@ const FIELDS: Record<NodeKind, any[]> = {
     { key: "reviewStatus", label: "审核状态", type: "select", options: ["draft", "reviewed", "rejected"] },
   ],
   works: [
+    { key: "originalTitle", label: "原著标题", required: true, maxLength: 200 },
     { key: "language", label: "原著语言", required: true, type: "languagePicker" },
-    { key: "originalTitle", label: "原著标题", required: true },
     { key: "Title_CN", label: "中文名", required: true },
     { key: "Title_EN", label: "英文名" },
     { key: "Title_Other", label: "其他标题" },
@@ -69,6 +122,8 @@ export default function NodeFormModal({
   worksList,
   edgesList,
   isAdmin,
+  publicAuthors,
+  publicWorks,
   onClose,
   onSaved,
   onReload,
@@ -82,6 +137,8 @@ export default function NodeFormModal({
   worksList: any[];
   edgesList: any[];
   isAdmin: boolean;
+  publicAuthors?: any[];
+  publicWorks?: any[];
   onClose: () => void;
   onSaved: (row: any) => void;
   onReload?: () => void;
@@ -123,6 +180,49 @@ export default function NodeFormModal({
       const next = { ...h };
       delete next[key];
       return next;
+    });
+  };
+
+  // 选中公共已审核作者后自动填充中文名/英文名/国籍/生卒年
+  const fillAuthorFromPublic = (a: any) => {
+    setForm((prev: any) => ({
+      ...prev,
+      originalName: a.originalName || a.Name_CN || a.label || "",
+      Name_CN: a.Name_CN || a.label || "",
+      Name_EN: a.Name_EN ?? a.label_en ?? null,
+      nationality: a.nationality || null,
+      birthYear: a.birthYear ?? null,
+      deathYear: a.deathYear ?? null,
+    }));
+  };
+
+  // 选中公共已审核作品后自动填充语言/标题/年份/体裁;作者仅在本人空间存在时关联
+  const fillWorkFromPublic = (w: any) => {
+    const ids = Array.isArray(w.author_ids) ? w.author_ids : (w.author_id ? [w.author_id] : []);
+    setForm((prev: any) => {
+      let authorId = prev.author_id || "";
+      if (isAdmin) {
+        if (ids.length) authorId = ids.join(",");
+      } else if (!authorId) {
+        const pubAuthor = ids
+          .map((id: string) => (publicAuthors || []).find((a: any) => a.id === id))
+          .find(Boolean);
+        if (pubAuthor) {
+          const name = pubAuthor.Name_CN || pubAuthor.label || "";
+          const mine = (authorsList || []).find((a: any) => a.Name_CN === name);
+          if (mine) authorId = mine.id;
+        }
+      }
+      return {
+        ...prev,
+        originalTitle: w.originalTitle || w.label || "",
+        Title_CN: w.Title_CN || w.label || "",
+        Title_EN: w.Title_EN ?? w.label_en ?? null,
+        language: w.language || "",
+        publicationYear: w.publicationYear ?? null,
+        genre: w.genre || "",
+        author_id: authorId,
+      };
     });
   };
 
@@ -182,6 +282,37 @@ export default function NodeFormModal({
         <div id="admin-form">
           {fields.map((f) => {
             if (mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
+            if (kind === "authors" && f.key === "originalName" && mode === "add") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <PublicSuggestField
+                    value={form[f.key] || ""}
+                    options={publicAuthors || []}
+                    getLabel={authorPublicLabel}
+                    placeholder="输入或选择已审核公共作者…"
+                    onChange={(v) => { setForm({ ...form, [f.key]: v }); clearDupHint(f.key); }}
+                    onPick={fillAuthorFromPublic}
+                  />
+                </label>
+              );
+            }
+            if (kind === "works" && f.key === "originalTitle" && mode === "add") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}{f.required && <span className="req"> *</span>}</span>
+                  <PublicSuggestField
+                    value={form[f.key] || ""}
+                    options={publicWorks || []}
+                    getLabel={workPublicLabel}
+                    placeholder="输入或选择已审核公共作品…"
+                    maxLength={200}
+                    onChange={(v) => { setForm({ ...form, [f.key]: v }); clearDupHint(f.key); }}
+                    onPick={fillWorkFromPublic}
+                  />
+                </label>
+              );
+            }
             if (f.type === "workPicker") {
               const dup =
                 kind === "edges" && edgePairHasDup(form.source_work_id, form.target_work_id)
@@ -306,6 +437,7 @@ export default function NodeFormModal({
                 <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                 <input
                   type={f.type === "number" ? "number" : "text"}
+                  maxLength={f.maxLength}
                   min={f.min}
                   max={f.max}
                   step={f.type === "number" ? (f.step != null ? f.step : 1) : undefined}

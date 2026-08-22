@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
+import { loadGraphData } from "../lib/api";
 import type { AdminData, AdminTab } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
@@ -112,11 +113,17 @@ export default function Admin() {
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<any>(null);
   const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
+  const [publicData, setPublicData] = useState<any>(null);
 
   // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
     setStatus(isAdmin ? "" : "管理你的星云数据(仅本人可见)");
   }, [isAdmin]);
+
+  // 公共已审核数据:新增表单的原文名/原著标题联想来源
+  useEffect(() => {
+    loadGraphData("public").then(setPublicData).catch(() => setPublicData(null));
+  }, []);
   const authFetch = useCallback((url: string, options: RequestInit = {}) => {
     // 会话凭据由 httpOnly Cookie 自动携带,无需手动附加
     return fetch(url, options);
@@ -536,6 +543,12 @@ export default function Admin() {
           worksList={worksList}
           edgesList={data?.edges || []}
           isAdmin={isAdmin}
+          publicAuthors={(publicData?.nodes || []).filter(
+            (n: any) => n.type === "author" && n.reviewStatus === "reviewed"
+          )}
+          publicWorks={(publicData?.nodes || []).filter(
+            (n: any) => n.type === "work" && n.reviewStatus === "reviewed"
+          )}
           onClose={() => setModal(null)}
           onReload={() => {
             setModal(null);

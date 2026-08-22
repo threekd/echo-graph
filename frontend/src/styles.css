@@ -940,6 +940,9 @@ th.sortable.active .sort-icon {
   position: relative;
   width: 100%;
 }
+.suggest-input input {
+  width: 100%;
+}
 .suggest-results {
   position: absolute;
   top: calc(100% + 4px);

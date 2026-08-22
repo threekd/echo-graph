@@ -103,7 +103,7 @@ class WorkRow(BaseModel):
 
     id: str = Field(min_length=1)
     language: str = Field(min_length=2, max_length=3)
-    originalTitle: str = Field(min_length=1)
+    originalTitle: str = Field(min_length=1, max_length=200)
     Title_CN: str = Field(min_length=1)
     Title_EN: str | None = None
     Title_Other: str | None = None

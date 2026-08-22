@@ -575,22 +575,16 @@ export default function Sidebar() {
                   <div className="settings-section">
                     <h3>星云可见性</h3>
                     <p className="settings-hint">
-                      公开后你的星云可被「星际跃迁」随机访问;仅自己则游客不可见。
                     </p>
-                    <div className="space-switch visibility-switch">
-                      <button
-                        className={"space-btn" + ((state.user.space_visibility ?? "public") === "public" ? " active" : "")}
-                        onClick={() => setSpaceVisibility("public")}
+                    <label className="settings-field">
+                      <select
+                        value={(state.user.space_visibility ?? "public") === "private" ? "private" : "public"}
+                        onChange={(e) => setSpaceVisibility(e.target.value as "public" | "private")}
                       >
-                        公开
-                      </button>
-                      <button
-                        className={"space-btn" + (state.user.space_visibility === "private" ? " active" : "")}
-                        onClick={() => setSpaceVisibility("private")}
-                      >
-                        仅自己
-                      </button>
-                    </div>
+                        <option value="public">公开(可被访问)</option>
+                        <option value="private">仅自己可见</option>
+                      </select>
+                    </label>
                   </div>
                 </>
               ) : (

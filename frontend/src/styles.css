@@ -342,7 +342,8 @@ main { height: 100%; position: relative; min-height: 0; }
   color: var(--muted);
 }
 .settings-field input,
-.settings-field textarea {
+.settings-field textarea,
+.settings-field select {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
@@ -355,12 +356,10 @@ main { height: 100%; position: relative; min-height: 0; }
   resize: vertical;
 }
 .settings-field input:focus,
-.settings-field textarea:focus {
+.settings-field textarea:focus,
+.settings-field select:focus {
   outline: none;
   border-color: rgba(138, 184, 255, 0.8);
-}
-.visibility-switch {
-  padding: 0;
 }
 .brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .brand h1 {

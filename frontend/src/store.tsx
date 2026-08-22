@@ -69,6 +69,8 @@ export interface AppState {
   user: AuthUser | null; // 当前登录用户(未登录为 null)
   space: Space; // 当前浏览空间:public | mine | "space:<userId>"(星际跃迁)
   spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
+  pinLeft: boolean; // 左侧功能栏钉住(不再自动隐藏)
+  pinRight: boolean; // 右侧详情栏钉住(不再自动隐藏)
   guideVisible: boolean;
 }
 
@@ -98,6 +100,8 @@ export const initialState: AppState = {
   user: null,
   space: "public",
   spaceOwner: "public",
+  pinLeft: false,
+  pinRight: false,
   guideVisible: false,
 };
 
@@ -149,6 +153,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, space: action.space };
     case "SET_SPACE_OWNER":
       return { ...state, spaceOwner: action.owner };
+    case "SET_PIN_LEFT":
+      return { ...state, pinLeft: action.value };
+    case "SET_PIN_RIGHT":
+      return { ...state, pinRight: action.value };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

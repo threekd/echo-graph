@@ -53,7 +53,7 @@ function AppContent() {
   const { state, dispatch } = useApp();
   const stateRef = useRef<{ state: AppState; dispatch: (a: AppAction) => void } | null>(null);
   stateRef.current = { state, dispatch };
-  useMobileGestures();
+  useMobileGestures(state.pinLeft, state.pinRight);
   const backSentinelPushed = useRef(false);
   // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
   const lastAppliedHash = useRef<string | null>(null);
@@ -177,6 +177,27 @@ function AppContent() {
         dispatch({ type: "SET_TOAST", msg: "加载图谱失败: " + err.message });
       });
   }, [applyHash, dispatch]);
+
+  // 恢复钉住状态(桌面):钉住的栏在加载后保持展开;状态记忆在 localStorage
+  useEffect(() => {
+    if (isMobileLayout()) return;
+    let pinL = false;
+    let pinR = false;
+    try {
+      pinL = localStorage.getItem("echo_graph_pin_left") === "1";
+      pinR = localStorage.getItem("echo_graph_pin_right") === "1";
+    } catch {
+      /* localStorage 不可用时忽略 */
+    }
+    if (!pinL && !pinR) return;
+    if (pinL) dispatch({ type: "SET_PIN_LEFT", value: true });
+    if (pinR) dispatch({ type: "SET_PIN_RIGHT", value: true });
+    const raf = requestAnimationFrame(() => {
+      if (pinL) document.getElementById("sidebar-left")?.classList.add("show");
+      if (pinR) document.getElementById("panel")?.classList.add("show");
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [dispatch]);
 
   // 手机端返回:有栏先收栏;非主视图回主视图;主视图且无栏则放行系统返回。
   // 加载时压入一个"哨兵"历史条目,视图变化用 replaceState 改写 URL(不产生视图历史),

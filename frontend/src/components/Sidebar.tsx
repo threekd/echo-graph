@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { jumpToRandomSpace, loadGraphData, search, type Space } from "../lib/api";
 import { logout, updateProfile, userDisplayName } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
+import PinButton from "./PinButton";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
 } from "../lib/graph";
@@ -279,6 +280,19 @@ export default function Sidebar() {
     dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
   };
 
+  // 钉住左侧功能栏:钉住后不再随鼠标移出自动隐藏
+  const togglePinLeft = () => {
+    const next = !state.pinLeft;
+    dispatch({ type: "SET_PIN_LEFT", value: next });
+    try {
+      localStorage.setItem("echo_graph_pin_left", next ? "1" : "");
+    } catch {
+      /* ignore */
+    }
+    if (next) document.getElementById("sidebar-left")?.classList.add("show");
+    // 取消钉住不立即收起,保持当前展开状态,下一次移出再按原逻辑隐藏
+  };
+
   return (
     <>
       <div id="sidebar-zone-left"><span className="zone-icon">◀</span></div>
@@ -286,10 +300,20 @@ export default function Sidebar() {
         id="sidebar-left"
         ref={sidebarRef}
         onMouseLeave={(e) => {
+          if (state.pinLeft) return; // 钉住:不自动隐藏
           if (keepSidebarOpen()) return; // 输入聚焦/输入法组合期间不隐藏
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) e.currentTarget.classList.remove("show");
         }}
       >
+        {/* 钉住仅作用于星云 Tab;设置页不显示,避免与账号卡片重叠 */}
+        {tab === "space" && (
+          <PinButton
+            id="btn-pin-left"
+            pinned={state.pinLeft}
+            title={state.pinLeft ? "取消钉住(移出自动隐藏)" : "钉住(不再自动隐藏)"}
+            onToggle={togglePinLeft}
+          />
+        )}
         {/* Tab 列(类 VS Code Activity Bar):星云 / 设置,便于后续功能扩展 */}
         <div className="sidebar-tabs" role="tablist" aria-label="侧边栏功能">
           <button

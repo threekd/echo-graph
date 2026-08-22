@@ -3,6 +3,7 @@ import { useApp, type GraphData } from "../store";
 import { selectNode } from "../lib/graph";
 import { workAuthorIds } from "../lib/graphData";
 import { isMobileLayout } from "../lib/mobileGestures";
+import PinButton from "./PinButton";
 import iso3166 from "../lib/iso3166-1.json";
 import GuideItems from "./GuideItems";
 
@@ -104,7 +105,7 @@ function PathPanel({ panel, fullData }: { panel: any; fullData: GraphData }) {
 }
 
 export default function Panel() {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const panel = state.panel;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasInsideRef = useRef(false); // 鼠标是否曾经进入过面板(进过再移出 -> 立即隐藏)
@@ -118,7 +119,7 @@ export default function Panel() {
 
   const scheduleHide = useCallback(() => {
     // 触屏没有 hover:移动端保持打开,由栏外点击收起,不做自动隐藏
-    if (isMobileLayout()) return;
+    if (isMobileLayout() || state.pinRight) return; // 钉住:不自动隐藏
     cancelHide();
     hideTimer.current = setTimeout(() => {
       const el = document.getElementById("panel");
@@ -128,14 +129,15 @@ export default function Panel() {
         wasInsideRef.current = false;
       }
     }, 3000);
-  }, [cancelHide]);
+  }, [cancelHide, state.pinRight]);
 
   const hidePanel = useCallback(() => {
+    if (state.pinRight) return; // 钉住:不随移出/计时隐藏
     cancelHide();
     const el = document.getElementById("panel");
     if (el) el.classList.remove("show");
     wasInsideRef.current = false;
-  }, [cancelHide]);
+  }, [cancelHide, state.pinRight]);
 
   // 面板可见时:鼠标在面板范围内则保持;不在范围内 3 秒后自动隐藏
   useEffect(() => {
@@ -167,7 +169,7 @@ export default function Panel() {
       document.documentElement.removeEventListener("mouseleave", onLeave);
       cancelHide();
     };
-  }, [cancelHide, hidePanel, scheduleHide]);
+  }, [cancelHide, hidePanel, scheduleHide, state.pinRight]);
 
   useEffect(() => {
     const el = document.getElementById("panel");
@@ -179,11 +181,29 @@ export default function Panel() {
         }
         // 手机端:内容保留但不自动呼出,由底部右侧上划打开
       } else {
-        el.classList.remove("show"); // 内容置空时收起(手机端点击节点不弹详情栏)
+        if (!state.pinRight) {
+          el.classList.remove("show"); // 内容置空时收起(手机端点击节点不弹详情栏)
+        }
         wasInsideRef.current = false;
       }
     }
-  }, [panel, scheduleHide]);
+  }, [panel, scheduleHide, state.pinRight]);
+
+  // 钉住右侧详情栏:钉住后不再随移出/计时自动隐藏
+  const togglePinRight = () => {
+    const next = !state.pinRight;
+    dispatch({ type: "SET_PIN_RIGHT", value: next });
+    try {
+      localStorage.setItem("echo_graph_pin_right", next ? "1" : "");
+    } catch {
+      /* ignore */
+    }
+    const el = document.getElementById("panel");
+    if (el) {
+      if (next) el.classList.add("show");
+      // 取消钉住不立即收起,下一次移出/计时按原逻辑隐藏
+    }
+  };
   let content = null;
   if (panel.type === "empty") {
     content = (
@@ -203,6 +223,12 @@ export default function Panel() {
     <>
       <div id="sidebar-zone-right"><span className="zone-icon">▶</span></div>
       <aside id="panel">
+        <PinButton
+          id="btn-pin-right"
+          pinned={state.pinRight}
+          title={state.pinRight ? "取消钉住(移出自动隐藏)" : "钉住(不再自动隐藏)"}
+          onToggle={togglePinRight}
+        />
         <div id="panel-content">{content}</div>
       </aside>
     </>

@@ -267,6 +267,46 @@ main { height: 100%; position: relative; min-height: 0; }
   padding: 14px;
   overflow-y: auto;
 }
+/* 钉住按钮:两栏右上角;钉住后不再自动隐藏 */
+.pin-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 255, 0.25);
+  background: rgba(10, 14, 34, 0.65);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.pin-btn:hover {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.7);
+}
+.pin-btn.pinned {
+  color: #67e8f9;
+  border-color: rgba(103, 232, 249, 0.7);
+  background: rgba(34, 211, 238, 0.14);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+/* 图钉图标:未钉住斜置 +45°(针尖朝向左下方),钉住后转正(竖直) */
+.pin-btn-icon {
+  display: block;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+.pin-btn.pinned .pin-btn-icon {
+  transform: rotate(0deg);
+}
 /* 设置 Tab 内容 */
 .settings-pane {
   display: flex;

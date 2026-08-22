@@ -33,7 +33,7 @@ export function isBottomGestureTouch(): boolean {
   return bottomGestureTouch;
 }
 
-export function useMobileGestures(): void {
+export function useMobileGestures(pinLeft = false, pinRight = false): void {
   useEffect(() => {
     if (!isMobileLayout()) return;
 
@@ -43,8 +43,9 @@ export function useMobileGestures(): void {
     const inside = (el: HTMLElement | null, target: EventTarget | null) =>
       !!el && target instanceof Node && el.contains(target);
     const closeAll = () => {
-      sidebar()?.classList.remove("show");
-      panel()?.classList.remove("show");
+      // 钉住的面板不随栏外点击收起
+      if (!pinLeft) sidebar()?.classList.remove("show");
+      if (!pinRight) panel()?.classList.remove("show");
     };
 
     let st: SwipeState | null = null;
@@ -119,5 +120,5 @@ export function useMobileGestures(): void {
       window.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("touchcancel", onTouchCancel);
     };
-  }, []);
+  }, [pinLeft, pinRight]);
 }

@@ -177,7 +177,7 @@ class SqliteStoreTest(unittest.TestCase):
         """读层缓存按 DB 路径 + 空间过滤缓存,整库重写后立即失效。"""
         db._read_cache.clear()
         self.store.graph()
-        self.assertIn((str(db_sqlite.DB_PATH), "public"), db._read_cache)
+        self.assertIn((str(db_sqlite.DB_PATH), "public", "owner"), db._read_cache)
         sqlite_store.rewrite_all(*_fixture())
         self.assertEqual(db._read_cache, {})
 

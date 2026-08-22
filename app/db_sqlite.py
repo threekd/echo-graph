@@ -355,6 +355,30 @@ def _migration_v10(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_v11(conn: sqlite3.Connection) -> None:
+    """用户空间的作者/作品可见性 + 审核语义调整。
+
+    - authors / works 增加 visibility(public/private,默认 public):
+      决定该节点是否显示在他人的视图(星际跃迁)中。
+    - 普通用户空间的数据视为「用户输入即确认」:作者/作品/涟漪 reviewStatus
+      统一为 reviewed(管理端不再展示该字段);公共星云(admin)保持策展语义不变。
+    """
+    for table in ("authors", "works"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "visibility" not in cols:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'"
+                " CHECK (visibility IN ('public','private'))"
+            )
+    # 既有用户空间数据按新语义置为已审核(公共星云/管理员行不动)
+    for table in ("authors", "works", "edges"):
+        conn.execute(
+            f"UPDATE {table} SET reviewStatus = 'reviewed'"
+            " WHERE owner_id IS NOT NULL"
+            " AND owner_id NOT IN (SELECT id FROM users WHERE role = 'admin')"
+        )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -366,6 +390,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (8, _migration_v8),
     (9, _migration_v9),
     (10, _migration_v10),
+    (11, _migration_v11),
 ]
 
 

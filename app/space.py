@@ -54,7 +54,7 @@ def random_space_graph(request: Request) -> dict:
     return {
         "spaceId": row["id"],
         "displayName": row["email"],
-        **SqliteStore(owner_id=row["id"]).graph(),
+        **SqliteStore(owner_id=row["id"], include_private=False).graph(),
     }
 
 
@@ -65,5 +65,5 @@ def space_graph(user_id: str, request: Request) -> dict:
     return {
         "spaceId": row["id"],
         "displayName": row["email"],
-        **SqliteStore(owner_id=row["id"]).graph(),
+        **SqliteStore(owner_id=row["id"], include_private=False).graph(),
     }

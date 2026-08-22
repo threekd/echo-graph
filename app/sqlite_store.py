@@ -58,7 +58,9 @@ def row_exists(conn, kind: str, row_id: str, owner_id: str | None = None) -> boo
     ).fetchone() is not None
 
 
-def insert_row(conn, kind: str, row: dict, owner_id: str | None = None) -> None:
+def insert_row(
+    conn, kind: str, row: dict, owner_id: str | None = None, visibility: str | None = None
+) -> None:
     row = _norm_row(row)
     cols = KIND_COLS[kind]
     placeholders = ",".join("?" for _ in cols)
@@ -66,10 +68,17 @@ def insert_row(conn, kind: str, row: dict, owner_id: str | None = None) -> None:
         f"INSERT INTO {KIND_TABLE[kind]} ({','.join(cols)}) VALUES ({placeholders})",
         [row.get(c) for c in cols],
     )
+    sets, params = [], []
     if owner_id:
+        sets.append("owner_id = ?")
+        params.append(owner_id)
+    if visibility is not None:
+        sets.append("visibility = ?")
+        params.append(visibility)
+    if sets:
         conn.execute(
-            f"UPDATE {KIND_TABLE[kind]} SET owner_id = ? WHERE id = ?",
-            (owner_id, row["id"]),
+            f"UPDATE {KIND_TABLE[kind]} SET {', '.join(sets)} WHERE id = ?",
+            params + [row["id"]],
         )
 
 
@@ -80,25 +89,31 @@ def update_row(
     row: dict,
     expected_updated_at: str | None = None,
     owner_id: str | None = None,
+    visibility: str | None = None,
 ) -> int:
     """更新一行。返回 1=成功, 0=行不存在, -1=乐观锁冲突(updatedAt 已变化)。"""
     row = _norm_row(row)
     cols = [c for c in KIND_COLS[kind] if c not in ("id", "owner_id")]
     scope = " AND owner_id = ?" if owner_id else ""
     extra = [owner_id] if owner_id else []
+    visibility_sql = ", visibility = ?" if visibility is not None else ""
+    visibility_param = [visibility] if visibility is not None else []
     if expected_updated_at is not None:
         cur = conn.execute(
             f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols)
+            + visibility_sql
             + f" WHERE id = ? AND updatedAt = ?{scope}",
-            [row.get(c) for c in cols] + [row_id, expected_updated_at] + extra,
+            [row.get(c) for c in cols] + visibility_param
+            + [row_id, expected_updated_at] + extra,
         )
         if cur.rowcount == 0:
             return -1 if row_exists(conn, kind, row_id, owner_id) else 0
         return 1
     cur = conn.execute(
         f"UPDATE {KIND_TABLE[kind]} SET " + ", ".join(f"{c} = ?" for c in cols)
+        + visibility_sql
         + f" WHERE id = ?{scope}",
-        [row.get(c) for c in cols] + [row_id] + extra,
+        [row.get(c) for c in cols] + visibility_param + [row_id] + extra,
     )
     return 1 if cur.rowcount > 0 else 0
 

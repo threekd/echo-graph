@@ -69,6 +69,7 @@ export default function NodeFormModal({
   authorsList,
   worksList,
   edgesList,
+  isAdmin,
   onClose,
   onSaved,
   onReload,
@@ -81,6 +82,7 @@ export default function NodeFormModal({
   authorsList: any[];
   worksList: any[];
   edgesList: any[];
+  isAdmin: boolean;
   onClose: () => void;
   onSaved: (row: any) => void;
   onReload?: () => void;
@@ -90,6 +92,13 @@ export default function NodeFormModal({
   const [formError, setFormError] = useState("");
   const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [confirmReload, setConfirmReload] = useState(false);
+
+  // 普通用户空间:审核状态隐藏(用户输入即确认,固定已审核);
+  // 作者/作品额外提供可见性(公开/隐藏,默认公开);admin 保持策展语义。
+  const fields = FIELDS[kind].filter((f) => !(!isAdmin && f.key === "reviewStatus"));
+  if (!isAdmin && kind !== "edges") {
+    fields.push({ key: "visibility", label: "可见性", type: "visibility" });
+  }
 
   const selfId = mode === "edit" ? initial.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {
@@ -113,7 +122,7 @@ export default function NodeFormModal({
   };
 
   const save = () => {
-    for (const f of FIELDS[kind]) {
+    for (const f of fields) {
       if (f.required && !String(form[f.key] || "").trim()) {
         setFormError("请填写「" + f.label + "」");
         return;
@@ -166,7 +175,7 @@ export default function NodeFormModal({
           {mode === "edit" ? "编辑" : "新增"} {KIND_LABELS[kind]}
         </h3>
         <div id="admin-form">
-          {FIELDS[kind].map((f) => {
+          {fields.map((f) => {
             if (mode === "add" && f.key === "reviewStatus") return null; // 新增弹窗不显示审核状态
             if (f.type === "workPicker") {
               const dup =
@@ -253,6 +262,20 @@ export default function NodeFormModal({
                   >
                     <option value="">请选择…</option>
                     {f.options.map((o: any) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+              );
+            }
+            if (f.type === "visibility") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}</span>
+                  <select
+                    value={form[f.key] || "public"}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  >
+                    <option value="public">公开(他人可见)</option>
+                    <option value="private">隐藏(仅自己可见)</option>
                   </select>
                 </label>
               );

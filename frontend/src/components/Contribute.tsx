@@ -464,6 +464,7 @@ export default function Contribute() {
           authorsList={myRows?.authors || []}
           worksList={myRows?.works || []}
           edgesList={myRows?.edges || []}
+          isAdmin={false}
           onClose={() => setAddModal(null)}
           onSaved={(row) => {
             const label = nodeLabelOf(addModal.kind, row);

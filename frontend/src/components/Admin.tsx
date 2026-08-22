@@ -31,30 +31,55 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "snapshots", label: "快照" },
 ];
 
-const COLS: Record<AdminTab, { key: string; label: string }[]> = {
-  authors: [
-    { key: "Name_CN", label: "中文名" },
-    { key: "originalName", label: "原文名" },
-    { key: "nationality", label: "国家" },
-    { key: "reviewStatus", label: "审核状态" },
-  ],
-  works: [
-    { key: "Title_CN", label: "中文名" },
-    { key: "originalTitle", label: "原著标题" },
-    { key: "author_id", label: "作者" },
-    { key: "publicationYear", label: "年份" },
-    { key: "reviewStatus", label: "审核状态" },
-  ],
-  edges: [
-    { key: "source_work_id", label: "源作品" },
-    { key: "target_work_id", label: "目标作品" },
-    { key: "reviewStatus", label: "审核" },
-    { key: "evidenceSource", label: "出处" },
-  ],
-  contributions: [],
-  audit: [],
-  snapshots: [],
-};
+function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: string }[]> {
+  const reviewCol = (label: string) => ({ key: "reviewStatus", label });
+  const visibilityCol = { key: "visibility", label: "可见性" };
+  return {
+    authors: isAdmin
+      ? [
+          { key: "Name_CN", label: "中文名" },
+          { key: "originalName", label: "原文名" },
+          { key: "nationality", label: "国家" },
+          reviewCol("审核状态"),
+        ]
+      : [
+          { key: "Name_CN", label: "中文名" },
+          { key: "originalName", label: "原文名" },
+          { key: "nationality", label: "国家" },
+          visibilityCol,
+        ],
+    works: isAdmin
+      ? [
+          { key: "Title_CN", label: "中文名" },
+          { key: "originalTitle", label: "原著标题" },
+          { key: "author_id", label: "作者" },
+          { key: "publicationYear", label: "年份" },
+          reviewCol("审核状态"),
+        ]
+      : [
+          { key: "Title_CN", label: "中文名" },
+          { key: "originalTitle", label: "原著标题" },
+          { key: "author_id", label: "作者" },
+          { key: "publicationYear", label: "年份" },
+          visibilityCol,
+        ],
+    edges: isAdmin
+      ? [
+          { key: "source_work_id", label: "源作品" },
+          { key: "target_work_id", label: "目标作品" },
+          reviewCol("审核"),
+          { key: "evidenceSource", label: "出处" },
+        ]
+      : [
+          { key: "source_work_id", label: "源作品" },
+          { key: "target_work_id", label: "目标作品" },
+          { key: "evidenceSource", label: "出处" },
+        ],
+    contributions: [],
+    audit: [],
+    snapshots: [],
+  };
+}
 
 function contributionStatusLabel(s: string): string {
   return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
@@ -160,7 +185,7 @@ export default function Admin() {
   if (!state.adminOpen) return null;
 
   const allRows: any[] = data ? data[kind] || [] : [];
-  const cols = COLS[kind];
+  const cols = colsFor(isAdmin)[kind];
   const counts = data ? data.counts || {} : {};
 
   // Tab 角标计数:贡献/日志为特殊 Tab,避免对不存在的 data[k] 取值
@@ -171,32 +196,52 @@ export default function Admin() {
   };
 
   // 每类数据的可筛选列:select 为精确下拉,text 为按列搜索框
-  const filterCols: Record<AdminTab, { key: string; type: "select" | "text" }[]> = {
-    authors: [
-      { key: "reviewStatus", type: "select" },
-      { key: "nationality", type: "select" },
-      { key: "Name_CN", type: "text" },
-      { key: "originalName", type: "text" },
-    ],
-    works: [
-      { key: "reviewStatus", type: "select" },
-      { key: "genre", type: "select" },
-      { key: "language", type: "select" },
-      { key: "Title_CN", type: "text" },
-      { key: "originalTitle", type: "text" },
-      { key: "author_id", type: "text" },
-      { key: "publicationYear", type: "text" },
-    ],
-    edges: [
-      { key: "reviewStatus", type: "select" },
-      { key: "source_work_id", type: "text" },
-      { key: "target_work_id", type: "text" },
-      { key: "evidenceSource", type: "text" },
-    ],
-    contributions: [],
-    audit: [],
-    snapshots: [],
-  };
+  const filterCols = (isAdmin
+    ? {
+        authors: [
+          { key: "reviewStatus", type: "select" as const },
+          { key: "nationality", type: "select" as const },
+          { key: "Name_CN", type: "text" as const },
+          { key: "originalName", type: "text" as const },
+        ],
+        works: [
+          { key: "reviewStatus", type: "select" as const },
+          { key: "genre", type: "select" as const },
+          { key: "language", type: "select" as const },
+          { key: "Title_CN", type: "text" as const },
+          { key: "originalTitle", type: "text" as const },
+          { key: "author_id", type: "text" as const },
+          { key: "publicationYear", type: "text" as const },
+        ],
+        edges: [
+          { key: "reviewStatus", type: "select" as const },
+          { key: "source_work_id", type: "text" as const },
+          { key: "target_work_id", type: "text" as const },
+          { key: "evidenceSource", type: "text" as const },
+        ],
+      }
+    : {
+        authors: [
+          { key: "visibility", type: "select" as const },
+          { key: "nationality", type: "select" as const },
+          { key: "Name_CN", type: "text" as const },
+          { key: "originalName", type: "text" as const },
+        ],
+        works: [
+          { key: "visibility", type: "select" as const },
+          { key: "genre", type: "select" as const },
+          { key: "language", type: "select" as const },
+          { key: "Title_CN", type: "text" as const },
+          { key: "originalTitle", type: "text" as const },
+          { key: "author_id", type: "text" as const },
+          { key: "publicationYear", type: "text" as const },
+        ],
+        edges: [
+          { key: "source_work_id", type: "text" as const },
+          { key: "target_work_id", type: "text" as const },
+          { key: "evidenceSource", type: "text" as const },
+        ],
+      }) as Record<AdminTab, { key: string; type: "select" | "text" }[]>;
   const uniqueValues = (key: string): string[] =>
     Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
@@ -313,6 +358,9 @@ export default function Admin() {
     }
     if (kind === "works" && key === "author_id") {
       return authorDisplayNames(r, authorsById, authorLabelOf);
+    }
+    if (key === "visibility") {
+      return r[key] === "private" ? "隐藏" : "公开";
     }
     const v = r[key];
     return v == null ? "" : String(v);
@@ -482,6 +530,7 @@ export default function Admin() {
           authorsList={authorsList}
           worksList={worksList}
           edgesList={data?.edges || []}
+          isAdmin={isAdmin}
           onClose={() => setModal(null)}
           onReload={() => {
             setModal(null);

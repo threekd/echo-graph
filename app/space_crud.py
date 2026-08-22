@@ -27,11 +27,11 @@ KIND_TABLE = {"authors": "authors", "works": "works", "edges": "edges"}
 AUDIT_FIELDS: dict[Kind, list[str]] = {
     "authors": [
         "originalName", "Name_CN", "Name_EN", "nationality",
-        "birthYear", "deathYear", "note", "reviewStatus",
+        "birthYear", "deathYear", "note", "reviewStatus", "visibility",
     ],
     "works": [
         "language", "originalTitle", "Title_CN", "Title_EN", "Title_Other",
-        "publicationYear", "creationYear", "genre", "note", "reviewStatus",
+        "publicationYear", "creationYear", "genre", "note", "reviewStatus", "visibility",
     ],
     "edges": [
         "source_work_id", "target_work_id", "evidence",
@@ -189,8 +189,16 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
+    is_admin_space = owner_id == admin_user_id()
+    # 用户输入即确认:普通用户空间默认 reviewed;公共星云(admin)保持策展 draft
     if not row.get("reviewStatus"):
-        row["reviewStatus"] = "draft"
+        row["reviewStatus"] = "draft" if is_admin_space else "reviewed"
+    visibility: str | None = None
+    if kind in ("authors", "works"):
+        visibility = "public" if is_admin_space else (row.get("visibility") or "public")
+        if visibility not in ("public", "private"):
+            raise HTTPException(status_code=400, detail="可见性取值仅支持 public / private")
+        row["visibility"] = visibility
     now = _now()
     row.setdefault("createdAt", now)
     row["updatedAt"] = now
@@ -198,7 +206,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
         errors = validate_row(conn, kind, row, owner_id=owner_id)
         if errors:
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
-        sqlite_store.insert_row(conn, kind, row, owner_id=owner_id)
+        sqlite_store.insert_row(conn, kind, row, owner_id=owner_id, visibility=visibility)
         if kind == "works":
             sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
         label = _audit_label(conn, kind, row, owner_id)
@@ -214,10 +222,22 @@ def update_row(
 ) -> dict:
     row = clean_row(row)
     now = _now()
+    is_admin_space = owner_id == admin_user_id()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         existing = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        if not is_admin_space:
+            row["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
+        visibility: str | None = None
+        if kind in ("authors", "works"):
+            if is_admin_space:
+                visibility = "public"  # 公共星云恒为公开
+            else:
+                visibility = row.get("visibility") or existing.get("visibility") or "public"
+                if visibility not in ("public", "private"):
+                    raise HTTPException(status_code=400, detail="可见性取值仅支持 public / private")
+            row["visibility"] = visibility
         expected_ts = row.get("updatedAt") or existing.get("updatedAt")
         row["id"] = item_id
         row["createdAt"] = row.get("createdAt") or existing.get("createdAt") or now
@@ -226,7 +246,8 @@ def update_row(
         if errors:
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
         status = sqlite_store.update_row(
-            conn, kind, item_id, row, expected_updated_at=expected_ts, owner_id=owner_id
+            conn, kind, item_id, row, expected_updated_at=expected_ts,
+            owner_id=owner_id, visibility=visibility,
         )
         if status == -1:
             raise HTTPException(status_code=409, detail="数据已被其他人修改,请刷新后重试")

@@ -135,7 +135,12 @@ class SqliteStore:
 
     name = "sqlite"
 
-    def __init__(self, reviewed_only: bool | None = None, owner_id: str | None = None) -> None:
+    def __init__(
+        self,
+        reviewed_only: bool | None = None,
+        owner_id: str | None = None,
+        include_private: bool = True,
+    ) -> None:
         if reviewed_only is None:
             reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
                 "1", "true", "yes", "on",
@@ -145,6 +150,8 @@ class SqliteStore:
         # 空间过滤:None = 公共视图(admin 认领的数据 + 尚未认领的历史行);
         # 具体用户 id = 该用户私有空间(仅本人可见)。
         self.owner_id = owner_id
+        # 访客视图(星际跃迁)只显示 visibility=public 的节点及其边;owner 自己看全部
+        self.include_private = include_private
 
     def _effective_status(self, status: str | None) -> str | None:
         """公开视图强制 reviewed;内部/管理场景沿用显式 status。"""
@@ -170,22 +177,30 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        key = _cache_key() + (self.owner_id or "public",)
+        # 缓存键含空间与视图模式:owner 视图与访客视图(隐藏节点)互不串缓存
+        key = _cache_key() + (
+            self.owner_id or "public",
+            "owner" if self.include_private else "visitor",
+        )
         hit = _read_cache.get(key)
         if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
             return hit[1]
         owner_sql, owner_params = self._owner_clause()
         wa_sql, wa_params = self._owner_clause("w.")
+        visibility_sql = " AND visibility = 'public'" if not self.include_private else ""
+        wa_visibility_sql = " AND w.visibility = 'public'" if not self.include_private else ""
         with db_sqlite._db() as conn:
             authors = [
                 dict(r) for r in conn.execute(
-                    f"SELECT * FROM authors WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    f"SELECT * FROM authors WHERE deletedAt IS NULL AND {owner_sql}"
+                    f"{visibility_sql} ORDER BY id",
                     owner_params,
                 )
             ]
             works = [
                 dict(r) for r in conn.execute(
-                    f"SELECT * FROM works WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    f"SELECT * FROM works WHERE deletedAt IS NULL AND {owner_sql}"
+                    f"{visibility_sql} ORDER BY id",
                     owner_params,
                 )
             ]
@@ -195,10 +210,17 @@ class SqliteStore:
                     owner_params,
                 )
             ]
+            if not self.include_private:
+                visible_work_ids = {w["id"] for w in works}
+                edges = [
+                    e for e in edges
+                    if e["source_work_id"] in visible_work_ids
+                    and e["target_work_id"] in visible_work_ids
+                ]
             wa_rows = conn.execute(
                 "SELECT wa.work_id, wa.author_id FROM work_authors wa"
                 " JOIN works w ON w.id = wa.work_id"
-                f" WHERE w.deletedAt IS NULL AND {wa_sql}"
+                f" WHERE w.deletedAt IS NULL AND {wa_sql}{wa_visibility_sql}"
                 " ORDER BY wa.work_id, wa.author_id",
                 wa_params,
             ).fetchall()
@@ -237,6 +259,7 @@ class SqliteStore:
             _authored_edge(w["id"], aid)
             for w in works
             for aid in work_authors.get(w["id"], [])
+            if aid in authors_by_id
         ]
         return {"nodes": nodes, "edges": echo_edges + authored_edges}
 

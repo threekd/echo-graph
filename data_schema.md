@@ -43,7 +43,8 @@
 | `creationYear` | Integer | 否 | 创作年份 |
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
-| `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
+| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；公共星云默认 `draft`，普通用户空间默认 `reviewed`——用户输入即确认） |
+| `visibility` | String | 否 | 可见性（`public` 公开 / `private` 隐藏，默认 `public`）；仅对访客视图生效，owner 自己始终可见；公共星云恒为公开 |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
@@ -60,7 +61,8 @@
 | `birthYear` | Integer | 否 | 出生年份(取值 -9999 ~ 9999) |
 | `deathYear` | Integer | 否 | 去世年份(取值 -9999 ~ 9999) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
-| `reviewStatus` | String | 否 | 审核状态，（`draft` / `reviewed` / `rejected`，默认 `draft`） |
+| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；公共星云默认 `draft`，普通用户空间默认 `reviewed`） |
+| `visibility` | String | 否 | 可见性（`public` / `private`，默认 `public`，仅作者/作品节点） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |

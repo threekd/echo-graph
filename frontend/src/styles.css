@@ -331,15 +331,6 @@ main { height: 100%; position: relative; min-height: 0; }
   filter: drop-shadow(0 0 14px rgba(138, 184, 255, 0.45));
 }
 .brand .sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
-.badge {
-  background: rgba(124, 58, 237, 0.18);
-  color: #d9c6ff;
-  border: 1px solid rgba(167, 139, 250, 0.45);
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: 11px;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.25);
-}
 .store-badge {
   width: 100%;
   font-size: 11px;
@@ -947,26 +938,6 @@ th.sortable.active .sort-icon {
 .auth-error {
   color: #ffb0b0;
   font-size: 12px;
-}
-.brand .badge.login-badge,
-.brand .badge.account-badge {
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: rgba(30, 44, 90, 0.55);
-  border: 1px solid rgba(148, 163, 255, 0.3);
-  color: #9cc3ff;
-  font-size: 12px;
-  cursor: pointer;
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  box-shadow: 0 0 14px rgba(80, 120, 255, 0.18);
-}
-.brand .badge.login-badge:hover,
-.brand .badge.account-badge:hover {
-  border-color: rgba(138, 184, 255, 0.8);
-  box-shadow: 0 0 18px rgba(138, 184, 255, 0.35);
 }
 .suggest-results .add-option {
   color: #7dd3fc;

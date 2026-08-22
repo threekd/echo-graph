@@ -108,6 +108,12 @@ export default function Sidebar() {
   };
 
   const doJump = () => {
+    // 星际跃迁浏览他人星云需登录(与「我的星云」「点亮星空」一致)
+    if (!state.user) {
+      dispatch({ type: "SET_AUTH", open: true });
+      dispatch({ type: "SET_TOAST", msg: "请先登录,再使用星际跃迁", kind: "info" });
+      return;
+    }
     jumpToRandomSpace()
       .then((d) => {
         dispatch({ type: "SET_DATA", data: d });
@@ -314,24 +320,7 @@ export default function Sidebar() {
             <>
         <div className="brand">
           <h1>Litnebula</h1>
-          {state.user ? (
-            <button
-              id="btn-account"
-              className="badge account-badge"
-              title={state.user.email}
-              onClick={() => setTab("settings")}
-            >
-              {userDisplayName(state.user)}
-            </button>
-          ) : (
-            <button
-              id="btn-login"
-              className="badge login-badge"
-              onClick={() => dispatch({ type: "SET_AUTH", open: true })}
-            >
-              登录
-            </button>
-          )}
+          {/* 账号入口已移入「设置」Tab,品牌行不再显示账号角标 */}
           <div className="store-badge">
             数据源:{state.spaceOwner || "public"}
           </div>

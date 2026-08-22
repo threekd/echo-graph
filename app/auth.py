@@ -45,6 +45,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # 用户名:仅 ASCII 英文字母/数字/下划线,5-32 位;唯一性对 ASCII 大小写不敏感(DB 索引 COLLATE NOCASE)
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 NICKNAME_MAX = 32
+BIO_MAX = 500
 
 _ph = PasswordHasher()
 
@@ -161,6 +162,16 @@ def normalize_nickname(value) -> str | None:
     return value
 
 
+def normalize_bio(value) -> str | None:
+    """规范化简介(长文本):去首尾空白;空串归一为 None。"""
+    value = str(value or "").strip()
+    if not value:
+        return None
+    if len(value) > BIO_MAX:
+        raise ValueError(f"简介过长(最多 {BIO_MAX} 字)")
+    return value
+
+
 # ---- Cloudflare Turnstile ----
 
 
@@ -223,7 +234,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         return None
     row = conn.execute(
         "SELECT u.id, u.email, u.username, u.nickname, u.role, u.space_visibility,"
-        " u.status, s.expires_at"
+        " u.bio, u.status, s.expires_at"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ?",
         (_token_hash(token),),
@@ -240,6 +251,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         "email": row["email"],
         "username": row["username"],
         "nickname": row["nickname"],
+        "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
     }
@@ -274,6 +286,7 @@ def register(
     password: str,
     username: str | None = None,
     nickname: str | None = None,
+    bio: str | None = None,
 ) -> dict:
     """创建用户;校验失败抛 ValueError。密码哈希在写锁外计算。"""
     email = normalize_email(email)
@@ -284,6 +297,7 @@ def register(
         raise ValueError(password_error)
     username = normalize_username(username, fallback_email=email)
     nickname = normalize_nickname(nickname)
+    bio = normalize_bio(bio)
     password_hash = hash_password(password)
     now = _now()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
@@ -298,9 +312,9 @@ def register(
         user_id = _new_id()
         role = "admin" if is_bootstrap_email(email) else "user"
         conn.execute(
-            "INSERT INTO users (id, email, password_hash, username, nickname, role,"
-            " status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)",
-            (user_id, email, password_hash, username, nickname, role, now, now),
+            "INSERT INTO users (id, email, password_hash, username, nickname, bio, role,"
+            " status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+            (user_id, email, password_hash, username, nickname, bio, role, now, now),
         )
         if role == "admin":
             claim_public_rows(conn, user_id)
@@ -309,6 +323,7 @@ def register(
         "email": email,
         "username": username,
         "nickname": nickname,
+        "bio": bio,
         "role": role,
         "space_visibility": "public",
     }
@@ -333,6 +348,7 @@ def login(identifier: str, password: str) -> dict | None:
         "email": row["email"],
         "username": row["username"],
         "nickname": row["nickname"],
+        "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
     }
@@ -381,6 +397,7 @@ def register_endpoint(body: dict, request: Request, response: Response) -> dict:
             str((body or {}).get("password") or ""),
             username=(body or {}).get("username"),
             nickname=(body or {}).get("nickname"),
+            bio=(body or {}).get("bio"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -421,37 +438,32 @@ def me(request: Request) -> dict:
 
 @router.patch("/me")
 def update_me(body: dict, request: Request) -> dict:
-    """用户资料更新:username / nickname / space_visibility(至少一项)。"""
+    """用户资料更新:nickname / bio / space_visibility(至少一项)。用户名不可自行修改。"""
     user = current_user(request.cookies.get(SESSION_COOKIE))
     if user is None:
         raise HTTPException(status_code=401, detail="未登录")
     payload = body or {}
     updates: dict[str, str | None] = {}
+    if "username" in payload:
+        raise HTTPException(status_code=400, detail="用户名不可自行修改")
     visibility = payload.get("space_visibility")
     if visibility is not None:
         if visibility not in ("public", "private"):
             raise HTTPException(status_code=400, detail="space_visibility 仅支持 public / private")
         updates["space_visibility"] = visibility
-    if "username" in payload:
-        try:
-            updates["username"] = normalize_username(payload.get("username"))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "nickname" in payload:
         try:
             updates["nickname"] = normalize_nickname(payload.get("nickname"))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if "bio" in payload:
+        try:
+            updates["bio"] = normalize_bio(payload.get("bio"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not updates:
         return {"ok": True, "user": user}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        if "username" in updates:
-            taken = conn.execute(
-                "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE AND id != ?",
-                (updates["username"], user["id"]),
-            ).fetchone()
-            if taken:
-                raise HTTPException(status_code=400, detail="用户名已被使用,请换一个")
         sets = ", ".join(f"{key} = ?" for key in updates)
         conn.execute(
             f"UPDATE users SET {sets}, updatedAt = ? WHERE id = ?",

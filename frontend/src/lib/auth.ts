@@ -5,6 +5,7 @@ export interface AuthUser {
   email: string;
   username?: string; // 唯一用户名(展示/跃迁标识)
   nickname?: string | null; // 昵称(展示用,优先于用户名)
+  bio?: string | null; // 简介(长文本,可选)
   role: string;
   space_visibility?: "public" | "private"; // 星云可见性(星际跃迁是否可访问)
 }
@@ -92,8 +93,8 @@ export async function logout(): Promise<void> {
 }
 
 export interface ProfilePatch {
-  username?: string;
   nickname?: string | null;
+  bio?: string | null;
   space_visibility?: "public" | "private";
 }
 

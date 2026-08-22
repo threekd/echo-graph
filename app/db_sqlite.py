@@ -494,6 +494,13 @@ def _migration_v17(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE users SET username = ? WHERE id = ?", (cleaned, r["id"]))
 
 
+def _migration_v18(conn: sqlite3.Connection) -> None:
+    """用户简介字段:users.bio(长文本,可选)。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "bio" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN bio TEXT")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -512,6 +519,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (15, _migration_v15),
     (16, _migration_v16),
     (17, _migration_v17),
+    (18, _migration_v18),
 ]
 
 

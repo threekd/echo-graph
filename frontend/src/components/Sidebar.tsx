@@ -21,9 +21,9 @@ export default function Sidebar() {
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   // 侧边栏功能 Tab:space = 星云(主内容);settings = 设置(个人资料等)
   const [tab, setTab] = useState<"space" | "settings">("space");
-  const [profileForm, setProfileForm] = useState<{ username: string; nickname: string }>({
-    username: "",
+  const [profileForm, setProfileForm] = useState<{ nickname: string; bio: string }>({
     nickname: "",
+    bio: "",
   });
   const [profileError, setProfileError] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
@@ -74,29 +74,25 @@ export default function Sidebar() {
   useEffect(() => {
     if (state.user) {
       setProfileForm({
-        username: state.user.username || "",
         nickname: state.user.nickname || "",
+        bio: state.user.bio || "",
       });
     }
   }, [state.user]);
 
   const saveProfile = () => {
     setProfileError("");
-    if ((profileForm.username.trim() || "").length < 5) {
-      setProfileError("用户名至少 5 个字符");
-      return;
-    }
     setProfileBusy(true);
     updateProfile({
-      username: profileForm.username.trim(),
       nickname: profileForm.nickname.trim() || null,
+      bio: profileForm.bio.trim() || null,
     })
       .then((r) => {
         if (r.user) {
           dispatch({ type: "SET_USER", user: r.user });
           setProfileForm({
-            username: r.user.username || "",
             nickname: r.user.nickname || "",
+            bio: r.user.bio || "",
           });
           setProfileError("");
           dispatch({ type: "SET_TOAST", msg: "个人资料已保存", kind: "success" });
@@ -535,7 +531,7 @@ export default function Sidebar() {
                 <>
                   <div className="settings-section">
                     <h3>账号</h3>
-                    <div className="auth-email">{state.user.email}</div>
+                    <div className="auth-username">用户名:{state.user.username || "—"}</div>
                     <button
                       id="btn-logout"
                       className="side-btn"
@@ -547,16 +543,6 @@ export default function Sidebar() {
                   <div className="settings-section">
                     <h3>个人资料</h3>
                     <label className="settings-field">
-                      <span>用户名 <span className="req">*</span></span>
-                      <input
-                        type="text"
-                        value={profileForm.username}
-                        maxLength={32}
-                        onChange={(e) => setProfileForm((f) => ({ ...f, username: e.target.value }))}
-                        placeholder="5-32 位英文字母/数字/下划线"
-                      />
-                    </label>
-                    <label className="settings-field">
                       <span>昵称</span>
                       <input
                         type="text"
@@ -564,6 +550,16 @@ export default function Sidebar() {
                         maxLength={32}
                         onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
                         placeholder="展示用昵称(可选,默认用用户名)"
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>简介</span>
+                      <textarea
+                        value={profileForm.bio}
+                        maxLength={500}
+                        rows={4}
+                        onChange={(e) => setProfileForm((f) => ({ ...f, bio: e.target.value }))}
+                        placeholder="介绍一下自己(可选,最多 500 字)"
                       />
                     </label>
                     {profileError && <div className="auth-error">{profileError}</div>}

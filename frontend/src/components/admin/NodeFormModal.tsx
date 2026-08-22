@@ -14,27 +14,29 @@ import {
 
 export type NodeKind = "authors" | "works" | "edges";
 
-// 公共已审核数据的联想下拉:选中后由 onPick 自动填充相关字段
-function PublicSuggestField({
+// 本空间已有数据的联想下拉:输入时列出已有作者/作品,选中时提示数据已存在(新增必然是新的)
+function OwnSuggestField({
   value,
   onChange,
-  onPick,
   options,
   getLabel,
+  getFill,
   placeholder,
   maxLength,
+  onPickExisting,
 }: {
   value: string;
   onChange: (v: string) => void;
-  onPick: (item: any) => void;
   options: any[];
   getLabel: (item: any) => string;
+  getFill?: (item: any) => string;
   placeholder?: string;
   maxLength?: number;
+  onPickExisting: (item: any) => void;
 }) {
   const [open, setOpen] = useState(false);
   const q = value.trim().toLowerCase();
-  const filtered = q ? options.filter((o) => getLabel(o).toLowerCase().includes(q)) : [];
+  const filtered = q ? options.filter((o) => getLabel(o).toLowerCase().includes(q)).slice(0, 50) : [];
   return (
     <div className="suggest-input">
       <input
@@ -47,11 +49,15 @@ function PublicSuggestField({
       />
       {open && filtered.length > 0 && (
         <ul className="suggest-results">
-          {filtered.slice(0, 50).map((o) => (
+          {filtered.map((o) => (
             <li
-              key={o.id || o.originalName || o.originalTitle}
+              key={o.id}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onChange(getLabel(o)); onPick(o); setOpen(false); }}
+              onClick={() => {
+                onChange(getFill ? getFill(o) : getLabel(o));
+                onPickExisting(o);
+                setOpen(false);
+              }}
             >
               {getLabel(o)}
             </li>
@@ -62,10 +68,10 @@ function PublicSuggestField({
   );
 }
 
-const authorPublicLabel = (a: any) =>
-  [a.originalName || a.Name_CN || a.label, a.Name_CN || a.label].filter(Boolean).join(" · ");
-const workPublicLabel = (w: any) =>
-  [w.originalTitle || w.label, w.Title_CN || w.label].filter(Boolean).join(" · ");
+const ownAuthorLabel = (a: any) =>
+  [a.originalName || "", a.Name_CN || ""].filter(Boolean).join(" · ");
+const ownWorkLabel = (w: any) =>
+  [w.originalTitle || "", w.Title_CN || ""].filter(Boolean).join(" · ");
 
 const KIND_LABELS: Record<NodeKind, string> = {
   authors: "作者",
@@ -122,8 +128,6 @@ export default function NodeFormModal({
   worksList,
   edgesList,
   isAdmin,
-  publicAuthors,
-  publicWorks,
   onClose,
   onSaved,
   onReload,
@@ -137,8 +141,6 @@ export default function NodeFormModal({
   worksList: any[];
   edgesList: any[];
   isAdmin: boolean;
-  publicAuthors?: any[];
-  publicWorks?: any[];
   onClose: () => void;
   onSaved: (row: any) => void;
   onReload?: () => void;
@@ -183,48 +185,12 @@ export default function NodeFormModal({
     });
   };
 
-  // 选中公共已审核作者后自动填充中文名/英文名/国籍/生卒年
-  const fillAuthorFromPublic = (a: any) => {
-    setForm((prev: any) => ({
-      ...prev,
-      originalName: a.originalName || a.Name_CN || a.label || "",
-      Name_CN: a.Name_CN || a.label || "",
-      Name_EN: a.Name_EN ?? a.label_en ?? null,
-      nationality: a.nationality || null,
-      birthYear: a.birthYear ?? null,
-      deathYear: a.deathYear ?? null,
+  // 选中本空间已有数据:提示已存在(新增必然是新的),不阻止继续修改
+  const markExisting = (field: string, label: string) =>
+    setDupHints((h) => ({
+      ...h,
+      [field]: `「${label}」已存在,请勿重复新增(可到数据管理编辑)`,
     }));
-  };
-
-  // 选中公共已审核作品后自动填充语言/标题/年份/体裁;作者仅在本人空间存在时关联
-  const fillWorkFromPublic = (w: any) => {
-    const ids = Array.isArray(w.author_ids) ? w.author_ids : (w.author_id ? [w.author_id] : []);
-    setForm((prev: any) => {
-      let authorId = prev.author_id || "";
-      if (isAdmin) {
-        if (ids.length) authorId = ids.join(",");
-      } else if (!authorId) {
-        const pubAuthor = ids
-          .map((id: string) => (publicAuthors || []).find((a: any) => a.id === id))
-          .find(Boolean);
-        if (pubAuthor) {
-          const name = pubAuthor.Name_CN || pubAuthor.label || "";
-          const mine = (authorsList || []).find((a: any) => a.Name_CN === name);
-          if (mine) authorId = mine.id;
-        }
-      }
-      return {
-        ...prev,
-        originalTitle: w.originalTitle || w.label || "",
-        Title_CN: w.Title_CN || w.label || "",
-        Title_EN: w.Title_EN ?? w.label_en ?? null,
-        language: w.language || "",
-        publicationYear: w.publicationYear ?? null,
-        genre: w.genre || "",
-        author_id: authorId,
-      };
-    });
-  };
 
   const save = () => {
     for (const f of fields) {
@@ -241,6 +207,24 @@ export default function NodeFormModal({
         const n = Number(form[f.key]);
         if (!Number.isInteger(n) || n < f.min || n > f.max) {
           setFormError("「" + f.label + "」需为 " + f.min + "–" + f.max + " 之间的整数");
+          return;
+        }
+      }
+    }
+    // 新增时,原文名/原著标题命中本空间已有数据 → 禁止保存(选中下拉即触发)
+    if (mode === "add") {
+      const dupField =
+        kind === "authors" ? "originalName" : kind === "works" ? "originalTitle" : null;
+      if (dupField) {
+        const list = kind === "authors" ? authorsList : worksList;
+        const v = String(form[dupField] || "").trim().toLowerCase();
+        const hit = list.some(
+          (r: any) => !r.deletedAt && String(r[dupField] || "").trim().toLowerCase() === v
+        );
+        if (v && hit) {
+          const msg = "该数据已存在,请勿重复新增(可到数据管理编辑)";
+          setDupHints((h) => ({ ...h, [dupField]: msg }));
+          setFormError(msg);
           return;
         }
       }
@@ -286,14 +270,16 @@ export default function NodeFormModal({
               return (
                 <label key={f.key}>
                   <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                  <PublicSuggestField
+                  <OwnSuggestField
                     value={form[f.key] || ""}
-                    options={publicAuthors || []}
-                    getLabel={authorPublicLabel}
-                    placeholder="输入或选择已审核公共作者…"
+                    options={authorsList.filter((a) => !a.deletedAt)}
+                    getLabel={ownAuthorLabel}
+                    getFill={(a) => a.originalName || ownAuthorLabel(a)}
+                    placeholder="输入原文名(已有数据会提示)"
                     onChange={(v) => { setForm({ ...form, [f.key]: v }); clearDupHint(f.key); }}
-                    onPick={fillAuthorFromPublic}
+                    onPickExisting={(o) => markExisting(f.key, o.originalName || ownAuthorLabel(o))}
                   />
+                  {dupHints[f.key] && <div className="dup-hint">{dupHints[f.key]}</div>}
                 </label>
               );
             }
@@ -301,15 +287,17 @@ export default function NodeFormModal({
               return (
                 <label key={f.key}>
                   <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-                  <PublicSuggestField
+                  <OwnSuggestField
                     value={form[f.key] || ""}
-                    options={publicWorks || []}
-                    getLabel={workPublicLabel}
-                    placeholder="输入或选择已审核公共作品…"
+                    options={worksList.filter((w) => !w.deletedAt)}
+                    getLabel={ownWorkLabel}
+                    getFill={(w) => w.originalTitle || ownWorkLabel(w)}
+                    placeholder="输入原著标题(已有数据会提示)"
                     maxLength={200}
                     onChange={(v) => { setForm({ ...form, [f.key]: v }); clearDupHint(f.key); }}
-                    onPick={fillWorkFromPublic}
+                    onPickExisting={(o) => markExisting(f.key, o.originalTitle || ownWorkLabel(o))}
                   />
+                  {dupHints[f.key] && <div className="dup-hint">{dupHints[f.key]}</div>}
                 </label>
               );
             }

@@ -3,7 +3,7 @@
    「添加新作品 / 新作者」入口,弹出标准新增弹窗(与数据管理共用)。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useApp, type GraphData, type GraphNode } from "../store";
+import { useApp, type GraphNode } from "../store";
 import { loadGraphData, loadMyRows, type SpaceRows } from "../lib/api";
 import {
   authorSuggestionLabel,
@@ -137,7 +137,6 @@ export default function Contribute() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [myRows, setMyRows] = useState<SpaceRows | null>(null);
-  const [publicData, setPublicData] = useState<GraphData | null>(null);
   // 标准新增弹窗:{ kind, initial, target } —— target 记录从哪个下拉框发起
   const [addModal, setAddModal] = useState<{
     kind: "authors" | "works";
@@ -145,11 +144,10 @@ export default function Contribute() {
     target: string;
   } | null>(null);
 
-  // 打开时拉取本人空间行数据 + 公共星云(下拉列表合并两者,供搜索/筛选)
+  // 打开时拉取本人空间行数据(下拉列表只来自本人数据,与数据管理页一致)
   useEffect(() => {
     if (!state.contributeOpen) return;
     loadMyRows().then(setMyRows).catch(() => setMyRows(null));
-    loadGraphData("public").then(setPublicData).catch(() => setPublicData(null));
   }, [state.contributeOpen]);
 
   const refreshRows = (): Promise<void> =>
@@ -171,15 +169,6 @@ export default function Contribute() {
     })),
     [myRows]
   );
-  const publicAuthorNodes = useMemo<GraphNode[]>(
-    () => (publicData?.nodes || []).filter((n): n is GraphNode => n.type === "author"),
-    [publicData]
-  );
-  const publicWorkNodes = useMemo<GraphNode[]>(
-    () => (publicData?.nodes || []).filter((n): n is GraphNode => n.type === "work"),
-    [publicData]
-  );
-
   const authorsById = useMemo(() => {
     const map: Record<string, GraphNode> = {};
     authorNodes.forEach((n) => { map[n.id] = n; });
@@ -201,42 +190,8 @@ export default function Contribute() {
     });
     return map;
   }, [workNodes]);
-  const publicAuthorsById = useMemo(() => {
-    const map: Record<string, GraphNode> = {};
-    publicAuthorNodes.forEach((n) => { map[n.id] = n; });
-    return map;
-  }, [publicAuthorNodes]);
-  const publicAuthorsByLabel = useMemo(() => {
-    const map = new Map<string, GraphNode>();
-    publicAuthorNodes.forEach((n) => {
-      const label = authorSuggestionLabel(n);
-      if (label && !map.has(label)) map.set(label, n);
-    });
-    return map;
-  }, [publicAuthorNodes]);
-  const publicWorksByLabel = useMemo(() => {
-    const map = new Map<string, GraphNode>();
-    publicWorkNodes.forEach((n) => {
-      const label = workSuggestionLabel(n);
-      if (label && !map.has(label)) map.set(label, n);
-    });
-    return map;
-  }, [publicWorkNodes]);
-
-  const workSuggestions = useMemo(
-    () => {
-      const mine = workSuggestionLabels(workNodes);
-      return [...mine, ...workSuggestionLabels(publicWorkNodes).filter((l) => !mine.includes(l))];
-    },
-    [workNodes, publicWorkNodes]
-  );
-  const authorSuggestions = useMemo(
-    () => {
-      const mine = authorSuggestionLabels(authorNodes);
-      return [...mine, ...authorSuggestionLabels(publicAuthorNodes).filter((l) => !mine.includes(l))];
-    },
-    [authorNodes, publicAuthorNodes]
-  );
+  const workSuggestions = useMemo(() => workSuggestionLabels(workNodes), [workNodes]);
+  const authorSuggestions = useMemo(() => authorSuggestionLabels(authorNodes), [authorNodes]);
 
   if (!state.contributeOpen) return null;
 
@@ -244,9 +199,9 @@ export default function Contribute() {
 
   // 选中已有作品时自动填充其关联作者(多人用"、"连接;无作者信息时不动)
   const fillWorkAuthor = (which: "source" | "target") => (label: string) => {
-    const node = worksByLabel.get(label) || publicWorksByLabel.get(label);
+    const node = worksByLabel.get(label);
     if (!node) return;
-    const names = workAuthorNames(node, { ...authorsById, ...publicAuthorsById });
+    const names = workAuthorNames(node, authorsById);
     if (names.length) set(which === "source" ? "source_author" : "target_author", names.join("、"));
   };
 
@@ -283,54 +238,18 @@ export default function Contribute() {
     return d.row;
   };
 
-  // 复制公共星云作者到本人空间(下拉选中公共数据时的归属要求)
-  const copyPublicAuthorNode = async (an: GraphNode): Promise<string> => {
-    const existing = authorsByLabel.get(authorSuggestionLabel(an));
-    if (existing) return existing.id;
-    const row = await postRow("authors", {
-      originalName: an.originalName || an.label,
-      Name_CN: an.label,
-      Name_EN: (an as any).label_en || null,
-      nationality: an.nationality || null,
-    });
-    return row.id;
-  };
-
-  // 按标签解析或创建作者:本人空间 > 公共星云(复制) > 新建
+  // 按标签解析或创建作者:本人空间 > 新建
   const ensureAuthor = async (label: string): Promise<string> => {
     const existing = authorsByLabel.get(label.trim());
     if (existing) return existing.id;
-    const pub = publicAuthorsByLabel.get(label.trim());
-    if (pub) return copyPublicAuthorNode(pub);
     const row = await postRow("authors", { originalName: label.trim(), Name_CN: label.trim() });
     return row.id;
   };
 
-  // 按标签解析或创建作品:本人空间 > 公共星云(连同作者一起复制) > 新建
+  // 按标签解析或创建作品:本人空间 > 新建
   const ensureWork = async (label: string, typedAuthor: string): Promise<string> => {
     const existing = worksByLabel.get(label.trim());
     if (existing) return existing.id;
-    const pub = publicWorksByLabel.get(label.trim());
-    if (pub) {
-      const authorIds: string[] = [];
-      for (const aid of pub.author_ids || []) {
-        const an = publicAuthorsById[aid];
-        if (an) authorIds.push(await copyPublicAuthorNode(an));
-      }
-      if (!authorIds.length) {
-        authorIds.push(await ensureAuthor(typedAuthor));
-      }
-      const row = await postRow("works", {
-        language: pub.language || "zh",
-        originalTitle: pub.originalTitle || pub.label,
-        Title_CN: pub.label,
-        Title_EN: (pub as any).label_en || null,
-        publicationYear: (pub as any).publicationYear || null,
-        genre: (pub as any).genre || null,
-        author_id: authorIds.join(","),
-      });
-      return row.id;
-    }
     const authorId = await ensureAuthor(typedAuthor);
     const row = await postRow("works", {
       language: "zh",
@@ -390,7 +309,7 @@ export default function Contribute() {
           <h3>点亮星空(添加到我的星云)</h3>
           <p className="contribute-hint">
             以下内容会直接加入你的星云(仅本人可见),之后可在「数据管理」中继续编辑。
-            下拉列表合并公共星云与你的数据(选中公共作品/作者会自动复制一份到你的星云);
+            下拉列表来自你自己的星云数据;
             搜不到时第一行可打开标准新增弹窗,也可直接输入新名称提交。
           </p>
           <div id="admin-form">
@@ -482,12 +401,6 @@ export default function Contribute() {
           worksList={myRows?.works || []}
           edgesList={myRows?.edges || []}
           isAdmin={false}
-          publicAuthors={(publicData?.nodes || []).filter(
-            (n: GraphNode) => n.type === "author" && n.reviewStatus === "reviewed"
-          )}
-          publicWorks={(publicData?.nodes || []).filter(
-            (n: GraphNode) => n.type === "work" && n.reviewStatus === "reviewed"
-          )}
           onClose={() => setAddModal(null)}
           onSaved={(row) => {
             const label = nodeLabelOf(addModal.kind, row);

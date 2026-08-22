@@ -164,3 +164,7 @@
       统一单一来源;`adminTypes.ts` 补全 `visibility` / `recommendation` / `review` 字段
 - [x] 文档同步:`data_schema.md` 字段错位修正(评分/评价归入作品)、`sqlite-migration.md` 与
       `migrate_csv_to_sqlite.py` 过期表述更新、README 补充 Windows 账户变更环境处理
+- [x] 用户资料字段:users 新增 `username`(唯一)与 `nickname`(可选);注册/资料编辑支持,
+      `displayName` 改用「昵称 > 用户名」,星际跃迁与界面不再暴露邮箱
+- [x] 用户名规则收紧:仅英文字母/数字/下划线(v16 重写存量),登录支持用户名
+- [x] 用户名最短长度 5 位(v17 补齐存量),前后端校验与文案同步

@@ -3,7 +3,7 @@
 可见性:users.space_visibility(默认 public)。private 空间对访客不可见(404);
 本人通过 /api/me/* 访问;admin 可访问任意空间(审核/运营)。
 读取返回与 /api/graph 同形状的数据,附 spaceId / displayName(星云账号,
-当前用邮箱;正式公网部署前建议改为显示名或脱敏,避免暴露邮箱)。
+displayName 优先昵称,其次用户名,不再暴露邮箱)。
 
 跃迁后的完整交互(搜索/详情/扩散/路径)由 /api/space/{user_id}/search、
 /api/space/{user_id}/work/{id}、/api/space/{user_id}/expansion/{id}、
@@ -50,19 +50,28 @@ def _space_store(row: dict) -> SqliteStore:
     return SqliteStore(owner_id=row["id"], include_private=False)
 
 
+def _display_name(row: dict) -> str:
+    """星云显示名:昵称 > 用户名 > 兜底(不暴露邮箱)。"""
+    return (
+        (row.get("nickname") or "").strip()
+        or (row.get("username") or "").strip()
+        or "匿名星云"
+    )
+
+
 @router.get("/random/graph")
 def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
     with db_sqlite._db() as conn:
         row = conn.execute(
-            "SELECT id, email FROM users WHERE space_visibility = 'public'"
+            "SELECT id, username, nickname FROM users WHERE space_visibility = 'public'"
             " ORDER BY RANDOM() LIMIT 1"
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="暂无可公开访问的星云")
     return {
         "spaceId": row["id"],
-        "displayName": row["email"],
+        "displayName": _display_name(dict(row)),
         **_space_store(row).graph(),
     }
 
@@ -73,7 +82,7 @@ def space_graph(user_id: str, request: Request) -> dict:
     row = _require_visible(user_id, _viewer(request))
     return {
         "spaceId": row["id"],
-        "displayName": row["email"],
+        "displayName": _display_name(row),
         **_space_store(row).graph(),
     }
 

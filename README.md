@@ -131,10 +131,12 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 ### 账号体系(注册 / 登录)
 
-多用户账号体系已落地:邮箱+密码注册登录,Argon2 密码哈希,**httpOnly Cookie 会话**(30 天,登出立即失效),注册含 Cloudflare Turnstile 人机验证。
+多用户账号体系已落地:邮箱+密码注册;登录可用**邮箱或用户名**,Argon2 密码哈希,**httpOnly Cookie 会话**(30 天,登出立即失效),注册含 Cloudflare Turnstile 人机验证。
+注册时填写**用户名**(唯一,仅 5-32 位英文字母/数字/下划线,ASCII 大小写不敏感;缺省自动取邮箱本地部分)与
+**昵称**(可选,展示用);公开展示名优先昵称、其次用户名,不再暴露邮箱。
 
 - 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
-- 资料接口:`PATCH /api/auth/me`(当前支持 `space_visibility` 切换:公开 / 仅自己可见)
+- 资料接口:`PATCH /api/auth/me`(支持 `username` / `nickname` / `space_visibility` 修改)
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);全局中间件(`app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`、`/api/contribute`)做同源校验——带 Origin 头的跨站请求一律 403
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏

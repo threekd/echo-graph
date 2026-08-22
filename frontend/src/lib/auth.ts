@@ -3,6 +3,8 @@
 export interface AuthUser {
   id: string;
   email: string;
+  username?: string; // 唯一用户名(展示/跃迁标识)
+  nickname?: string | null; // 昵称(展示用,优先于用户名)
   role: string;
   space_visibility?: "public" | "private"; // 星云可见性(星际跃迁是否可访问)
 }
@@ -54,12 +56,20 @@ export async function fetchMe(): Promise<AuthUser | null> {
 export async function register(
   email: string,
   password: string,
-  turnstileToken?: string
+  turnstileToken?: string,
+  username?: string | null,
+  nickname?: string | null
 ): Promise<AuthResult> {
   const r = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, turnstile: turnstileToken || null }),
+    body: JSON.stringify({
+      email,
+      password,
+      turnstile: turnstileToken || null,
+      username: username || null,
+      nickname: nickname || null,
+    }),
   });
   return parseAuthResponse(r);
 }
@@ -81,11 +91,23 @@ export async function logout(): Promise<void> {
   }
 }
 
-export async function updateProfile(spaceVisibility: "public" | "private"): Promise<AuthResult> {
+export interface ProfilePatch {
+  username?: string;
+  nickname?: string | null;
+  space_visibility?: "public" | "private";
+}
+
+export async function updateProfile(patch: ProfilePatch): Promise<AuthResult> {
   const r = await fetch("/api/auth/me", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ space_visibility: spaceVisibility }),
+    body: JSON.stringify(patch),
   });
   return parseAuthResponse(r);
+}
+
+// 用户展示名:昵称 > 用户名 > 邮箱(邮箱仅兜底,不用于公开显示)
+export function userDisplayName(user: AuthUser | null | undefined): string {
+  if (!user) return "";
+  return (user.nickname || "").trim() || (user.username || "").trim() || user.email;
 }

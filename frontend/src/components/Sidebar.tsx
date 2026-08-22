@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
 import { jumpToRandomSpace, loadGraphData, search, type Space } from "../lib/api";
-import { logout, updateProfile } from "../lib/auth";
+import { logout, updateProfile, userDisplayName } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
@@ -18,6 +18,13 @@ export default function Sidebar() {
   const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState<{ username: string; nickname: string }>({
+    username: "",
+    nickname: "",
+  });
+  const [profileError, setProfileError] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
   const switchSpace = (space: Space) => {
     if (space === "mine" && !state.user) {
       dispatch({ type: "SET_AUTH", open: true }); // 我的星云需登录
@@ -26,7 +33,7 @@ export default function Sidebar() {
     dispatch({ type: "SET_SPACE", space });
     dispatch({
       type: "SET_SPACE_OWNER",
-      owner: space === "public" ? "public" : (state.user?.email || "我的星云"),
+      owner: space === "public" ? "public" : (userDisplayName(state.user) || "我的星云"),
     });
     loadGraphData(space)
       .then((data) => {
@@ -47,7 +54,7 @@ export default function Sidebar() {
     if (!state.user) return;
     const next: "public" | "private" =
       (state.user.space_visibility ?? "public") === "private" ? "public" : "private";
-    updateProfile(next)
+    updateProfile({ space_visibility: next })
       .then((r) => {
         if (r.user) {
           dispatch({ type: "SET_USER", user: r.user });
@@ -61,6 +68,39 @@ export default function Sidebar() {
         }
       })
       .catch((e) => dispatch({ type: "SET_TOAST", msg: "设置失败: " + e.message, kind: "error" }));
+  };
+
+  const openProfile = () => {
+    setProfileForm({
+      username: state.user?.username || "",
+      nickname: state.user?.nickname || "",
+    });
+    setProfileError("");
+    setProfileOpen(true);
+  };
+
+  const saveProfile = () => {
+    setProfileError("");
+    if ((profileForm.username.trim() || "").length < 5) {
+      setProfileError("用户名至少 5 个字符");
+      return;
+    }
+    setProfileBusy(true);
+    updateProfile({
+      username: profileForm.username.trim(),
+      nickname: profileForm.nickname.trim() || null,
+    })
+      .then((r) => {
+        if (r.user) {
+          dispatch({ type: "SET_USER", user: r.user });
+          dispatch({ type: "SET_TOAST", msg: "个人资料已保存", kind: "success" });
+          setProfileOpen(false);
+        } else {
+          setProfileError(r.error || "保存失败");
+        }
+      })
+      .catch((e) => setProfileError("保存失败: " + e.message))
+      .finally(() => setProfileBusy(false));
   };
 
   const doJump = () => {
@@ -249,7 +289,7 @@ export default function Sidebar() {
               title={state.user.email}
               onClick={() => setLogoutConfirm(true)}
             >
-              {state.user.email}
+              {userDisplayName(state.user)}
             </button>
           ) : (
             <button
@@ -425,6 +465,9 @@ export default function Sidebar() {
             <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
           )}
           {state.user && (
+            <button id="btn-profile" className="side-btn" onClick={openProfile}>个人资料</button>
+          )}
+          {state.user && (
             <button
               id="btn-space-visibility"
               className="side-btn"
@@ -453,6 +496,40 @@ export default function Sidebar() {
                 确认退出
               </button>
               <button onClick={() => setLogoutConfirm(false)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {profileOpen && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>个人资料</h3>
+            <label>
+              <span>用户名 <span className="req">*</span></span>
+              <input
+                type="text"
+                value={profileForm.username}
+                maxLength={32}
+                onChange={(e) => setProfileForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="5-32 位英文字母/数字/下划线"
+              />
+            </label>
+            <label>
+              <span>昵称</span>
+              <input
+                type="text"
+                value={profileForm.nickname}
+                maxLength={32}
+                onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
+                placeholder="展示用昵称(可选,默认用用户名)"
+              />
+            </label>
+            {profileError && <div className="auth-error">{profileError}</div>}
+            <div className="admin-modal-actions">
+              <button onClick={saveProfile} disabled={profileBusy}>
+                {profileBusy ? "保存中…" : "保存"}
+              </button>
+              <button onClick={() => setProfileOpen(false)}>取消</button>
             </div>
           </div>
         </div>

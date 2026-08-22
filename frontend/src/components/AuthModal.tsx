@@ -12,6 +12,8 @@ export default function AuthModal() {
   const { state, dispatch } = useApp();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -92,10 +94,14 @@ export default function AuthModal() {
     setError("");
     const em = email.trim();
     if (!em || !password) {
-      setError("请输入邮箱和密码");
+      setError("请输入邮箱/用户名和密码");
       return;
     }
     if (mode === "register") {
+      if ((username.trim() || "").length < 5) {
+        setError("用户名至少 5 个字符");
+        return;
+      }
       if (password.length < 8) {
         setError("密码至少 8 位");
         return;
@@ -107,7 +113,9 @@ export default function AuthModal() {
     }
     setBusy(true);
     const req =
-      mode === "register" ? register(em, password, captchaToken) : login(em, password);
+      mode === "register"
+        ? register(em, password, captchaToken, username.trim(), nickname.trim() || null)
+        : login(em, password);
     req
       .then((r) => {
         if (r.error) {
@@ -145,16 +153,40 @@ export default function AuthModal() {
           </button>
         </div>
         <label>
-          <span>邮箱</span>
+          <span>{mode === "login" ? "邮箱 / 用户名" : "邮箱"}</span>
           <input
-            type="email"
+            type={mode === "login" ? "text" : "email"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={submitOnEnter}
-            placeholder="you@example.com"
-            autoComplete="email"
+            placeholder={mode === "login" ? "you@example.com 或用户名" : "you@example.com"}
+            autoComplete={mode === "login" ? "username" : "email"}
           />
         </label>
+        {mode === "register" && (
+          <label>
+            <span>用户名 <span className="req">*</span></span>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="5-32 位英文字母/数字/下划线"
+              maxLength={32}
+            />
+          </label>
+        )}
+        {mode === "register" && (
+          <label>
+            <span>昵称</span>
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="展示用昵称(可选,默认用用户名)"
+              maxLength={32}
+            />
+          </label>
+        )}
         <label>
           <span>密码</span>
           <input

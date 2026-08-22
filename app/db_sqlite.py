@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -53,6 +54,15 @@ def new_uuid() -> str:
         return str(uuid.uuid7())
     except AttributeError:
         return str(uuid.uuid4())
+
+
+def username_from_email(email: str) -> str:
+    """从邮箱本地部分推导默认用户名(截断 +tag;仅保留 ASCII 字母/数字/下划线;不足 5 位补 user 前缀)。"""
+    local = (email or "").split("@", 1)[0].split("+", 1)[0].strip()
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "", local)
+    if not cleaned:
+        return "user"
+    return cleaned if len(cleaned) >= 5 else "user" + cleaned
 
 
 def _connect() -> sqlite3.Connection:
@@ -421,6 +431,69 @@ def _migration_v14(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE sessions DROP COLUMN last_seen_at")
 
 
+def _migration_v15(conn: sqlite3.Connection) -> None:
+    """用户资料字段:username(唯一标识,展示/跃迁用)+ nickname(昵称,可选)。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "username" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
+    if "nickname" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN nickname TEXT")
+    # 存量用户回填:username 取邮箱本地部分,冲突时追加 -2 / -3 ...
+    taken: set[str] = set()
+    rows = conn.execute("SELECT id, email FROM users ORDER BY email").fetchall()
+    for r in rows:
+        base = username_from_email(r["email"])
+        username = base
+        n = 2
+        while username.casefold() in taken:
+            username = f"{base}-{n}"
+            n += 1
+        taken.add(username.casefold())
+        conn.execute("UPDATE users SET username = ? WHERE id = ?", (username, r["id"]))
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username"
+        " ON users(username COLLATE NOCASE)"
+    )
+
+
+def _migration_v16(conn: sqlite3.Connection) -> None:
+    """用户名收紧为 ASCII 字母/数字/下划线:重写存量中含点/中划线/中文等非法字符的用户名。"""
+    rows = conn.execute("SELECT id, username FROM users").fetchall()
+    taken: set[str] = set()
+    for r in rows:
+        raw = r["username"] or ""
+        cleaned = re.sub(r"[^A-Za-z0-9_]", "", raw)
+        if not cleaned:
+            cleaned = "user"
+        elif len(cleaned) < 2:
+            cleaned = "user" + cleaned
+        base = cleaned
+        n = 2
+        while cleaned.casefold() in taken:
+            cleaned = f"{base}_{n}"
+            n += 1
+        taken.add(cleaned.casefold())
+        if cleaned != raw:
+            conn.execute("UPDATE users SET username = ? WHERE id = ?", (cleaned, r["id"]))
+
+
+def _migration_v17(conn: sqlite3.Connection) -> None:
+    """用户名最短长度收紧为 5 位:存量 2-4 位的用户名补 user 前缀并去重。"""
+    rows = conn.execute("SELECT id, username FROM users").fetchall()
+    taken: set[str] = set()
+    for r in rows:
+        raw = r["username"] or ""
+        cleaned = raw if len(raw) >= 5 else "user" + raw
+        base = cleaned
+        n = 2
+        while cleaned.casefold() in taken:
+            cleaned = f"{base}_{n}"
+            n += 1
+        taken.add(cleaned.casefold())
+        if cleaned != raw:
+            conn.execute("UPDATE users SET username = ? WHERE id = ?", (cleaned, r["id"]))
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -436,6 +509,9 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (12, _migration_v12),
     (13, _migration_v13),
     (14, _migration_v14),
+    (15, _migration_v15),
+    (16, _migration_v16),
+    (17, _migration_v17),
 ]
 
 

@@ -74,6 +74,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertNotEqual(row["token_hash"], token)
         self.assertEqual(auth.current_user(token), {
             "id": user["id"], "email": "session@example.com",
+            "username": "session", "nickname": None,
             "role": "user", "space_visibility": "public",
         })
         auth.delete_session(token)
@@ -177,6 +178,77 @@ class AuthStoreTest(unittest.TestCase):
                 {"space_visibility": "private"}, _FakeRequest(headers={}, cookies={})
             )
         self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_register_username_and_nickname(self) -> None:
+        user = auth.register(
+            "handle@example.com", "password123", username="starlit", nickname="小星星"
+        )
+        self.assertEqual(user["username"], "starlit")
+        self.assertEqual(user["nickname"], "小星星")
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT username, nickname FROM users WHERE id = ?", (user["id"],)
+            ).fetchone()
+        self.assertEqual(row["username"], "starlit")
+        self.assertEqual(row["nickname"], "小星星")
+
+    def test_register_username_defaults_from_email(self) -> None:
+        user = auth.register("John.Doe+tag@example.com", "password123")
+        # 邮箱已归一为小写;本地部分截断 +tag,仅保留字母/数字/下划线(点被移除)
+        self.assertEqual(user["username"], "johndoe")
+        self.assertIsNone(user["nickname"])
+
+    def test_register_username_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            auth.register("a@b.com", "password123", username="abcd")  # 不足 5 位
+        with self.assertRaises(ValueError):
+            auth.register("a@b.com", "password123", username="has space")
+        with self.assertRaises(ValueError):
+            auth.register("a@b.com", "password123", username="文学星人")  # 不支持中文
+        with self.assertRaises(ValueError):
+            auth.register("a@b.com", "password123", username="user.name")  # 不支持点/中划线
+        with self.assertRaises(ValueError):
+            auth.register("a@b.com", "password123", nickname="长" * 33)  # 昵称过长
+        # 5-32 位合法
+        user = auth.register("ok@example.com", "password123", username="abcde")
+        self.assertEqual(user["username"], "abcde")
+
+    def test_register_username_unique_case_insensitive(self) -> None:
+        auth.register("one@example.com", "password123", username="Reader")
+        with self.assertRaises(ValueError) as ctx:
+            auth.register("two@example.com", "password123", username="reader")
+        self.assertIn("用户名已被使用", str(ctx.exception))
+
+    def test_login_by_username(self) -> None:
+        auth.register("who@example.com", "password123", username="SkyWalker")
+        # 用户名登录(ASCII 大小写不敏感)
+        user = auth.login("skywalker", "password123")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["username"], "SkyWalker")
+        self.assertEqual(user["email"], "who@example.com")
+        # 邮箱登录不受影响
+        self.assertIsNotNone(auth.login("WHO@example.com", "password123"))
+        # 错误密码统一 None
+        self.assertIsNone(auth.login("SkyWalker", "wrong-password"))
+
+    def test_update_me_username_and_nickname(self) -> None:
+        user = auth.register("profile@test.local", "password123")
+        token = auth.create_session(user["id"])
+        req = _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token})
+        result = auth.update_me(
+            {"username": "new_name", "nickname": "新昵称"}, req
+        )
+        self.assertEqual(result["user"]["username"], "new_name")
+        self.assertEqual(result["user"]["nickname"], "新昵称")
+        # 与别人冲突 -> 400
+        auth.register("other@test.local", "password123", username="other_user")
+        with self.assertRaises(HTTPException) as ctx:
+            auth.update_me({"username": "other_user"}, req)
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 非法用户名 -> 400
+        with self.assertRaises(HTTPException) as ctx:
+            auth.update_me({"username": "a"}, req)
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):

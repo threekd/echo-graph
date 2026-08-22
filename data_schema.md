@@ -22,6 +22,8 @@
 |---|---|---|---|
 | `id` | UUID | 是 | 唯一标识,主键 |
 | `email` | String | 是 | 登录邮箱(唯一,统一小写) |
+| `username` | String | 是 | 用户名(仅 5-32 位英文字母/数字/下划线,ASCII 大小写不敏感唯一;注册必填,缺省由邮箱本地部分推导;登录可用邮箱或用户名) |
+| `nickname` | String | 否 | 昵称(展示用,优先于用户名;为空时展示名回退用户名) |
 | `password_hash` | String | 是 | Argon2 密码哈希,不存明文 |
 | `role` | String | 是 | `user` / `admin`(引导管理员邮箱注册自动为 admin) |
 | `status` | String | 是 | `active` / `disabled` |

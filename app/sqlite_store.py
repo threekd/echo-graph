@@ -58,6 +58,19 @@ def row_exists(conn, kind: str, row_id: str, owner_id: str | None = None) -> boo
     ).fetchone() is not None
 
 
+def active_row_exists(conn, kind: str, row_id: str, owner_id: str | None = None) -> bool:
+    """同空间内存在且未软删除的行(交叉引用校验用,软删除行不可作为引用目标)。"""
+    if owner_id is None:
+        return conn.execute(
+            f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ? AND deletedAt IS NULL",
+            (row_id,),
+        ).fetchone() is not None
+    return conn.execute(
+        f"SELECT 1 FROM {KIND_TABLE[kind]} WHERE id = ? AND owner_id = ? AND deletedAt IS NULL",
+        (row_id, owner_id),
+    ).fetchone() is not None
+
+
 def insert_row(
     conn,
     kind: str,

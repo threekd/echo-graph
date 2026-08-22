@@ -115,7 +115,7 @@ class BackupsTest(unittest.TestCase):
     def test_restore_csv_snapshot_rebuilds_db(self) -> None:
         # 补丁保持到测试结束(setUp 的 stopall 会复原),保证恢复时 admin 上下文一致
         patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local").start()
-        auth.register("admin@test.local", "admin-password-123")
+        auth.register("admin@test.local", "admin-password-123", username="admin")
         vdir = self.versions_dir / "20260820-120000-admin"
         vdir.mkdir()
         export_dir = self.root / "export"
@@ -136,7 +136,7 @@ class BackupsTest(unittest.TestCase):
 
         self._make_db(db_sqlite.DB_PATH, "current")
         # 用户私有行:CSV 恢复后必须原样保留
-        user = auth.register("user@test.local", "user-password-123")
+        user = auth.register("user@test.local", "user-password-123", username="user01")
         sqlite_store.rewrite_all(
             [{
                 "id": "01a013e6-e885-766b-b9db-315d518adeec",

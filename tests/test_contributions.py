@@ -85,7 +85,7 @@ class ContributionStoreTest(unittest.TestCase):
     def test_submission_attaches_user_id(self) -> None:
         import app.auth as auth
 
-        user = auth.register("contributor@test.local", "password123")
+        user = auth.register("contributor@test.local", "password123", username="contributor")
         row = c.submit_contribution({
             "source_work": "A", "target_work": "B",
             "source_author": "甲", "target_author": "乙",

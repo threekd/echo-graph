@@ -71,7 +71,8 @@ class SqliteStoreTest(unittest.TestCase):
         g = self.store.graph(status="reviewed")
         works = [n for n in g["nodes"] if n["type"] == "work"]
         self.assertEqual([n["id"] for n in works], [W1])
-        self.assertEqual(len([e for e in g["edges"] if e["type"] == "echo"]), 1)
+        # e1(W1→W2) 虽为 reviewed,但 target W2 是 draft——端点不可见,边不进视图(避免幽灵边)
+        self.assertEqual(len([e for e in g["edges"] if e["type"] == "echo"]), 0)
         g_draft = self.store.graph(status="draft")
         works = [n for n in g_draft["nodes"] if n["type"] == "work"]
         self.assertEqual(len(works), 3)  # W2/W3/W4 默认 draft
@@ -137,7 +138,8 @@ class SqliteStoreTest(unittest.TestCase):
         works = [n["id"] for n in g["nodes"] if n["type"] == "work"]
         self.assertEqual(works, [W1])
         echo_edges = [ed for ed in g["edges"] if ed["type"] == "echo"]
-        self.assertEqual(len(echo_edges), 1)  # 只有 e1 是 reviewed
+        # e1(W1→W2) 虽为 reviewed,但 W2 是 draft——目标不可见,边不进入公开视图(与 expansion 跳过不可见邻居一致)
+        self.assertEqual(len(echo_edges), 0)
 
         self.assertEqual(store.search("狂人"), [])  # 草稿作品不可搜索
         self.assertIsNone(store.work_detail(W2))  # 草稿作品详情 404

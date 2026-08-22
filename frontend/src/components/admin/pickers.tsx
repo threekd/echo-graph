@@ -1,6 +1,6 @@
 /* 数据管理页的表单选择器组件与选项数据(从 Admin.tsx 拆出,降低单体体积) */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import iso6391 from "../../lib/iso6391.json";
 import iso3166 from "../../lib/iso3166-1.json";
 
@@ -41,8 +41,10 @@ export function WorkPicker({
   worksList: any[];
   placeholder: string;
 }) {
+  // 软删除行不可作为引用目标(与后端 validate_row 的 deletedAt 过滤一致)
+  const activeWorks = useMemo(() => worksList.filter((w) => !w.deletedAt), [worksList]);
   const [query, setQuery] = useState(() => {
-    const w = worksList.find((x) => x.id === value);
+    const w = activeWorks.find((x) => x.id === value);
     return w ? workLabel(w) : "";
   });
   const [open, setOpen] = useState(false);
@@ -52,17 +54,17 @@ export function WorkPicker({
   useEffect(() => {
     if (value !== lastValue.current) {
       lastValue.current = value;
-      const w = worksList.find((x) => x.id === value);
+      const w = activeWorks.find((x) => x.id === value);
       if (w) setQuery(workLabel(w));
     }
-  }, [value, worksList]);
+  }, [value, activeWorks]);
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? worksList.filter((w) =>
+    ? activeWorks.filter((w) =>
         [w.Title_CN, w.originalTitle, w.Title_EN].filter(Boolean).join(" ").toLowerCase().includes(q)
       )
-    : worksList;
+    : activeWorks;
 
   const pick = (w: any) => {
     onChange(w.id);
@@ -83,7 +85,7 @@ export function WorkPicker({
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => {
-          const w = worksList.find((x) => x.id === value);
+          const w = activeWorks.find((x) => x.id === value);
           setQuery(w ? workLabel(w) : "");
           setOpen(false);
         }}
@@ -233,13 +235,14 @@ export function authorLabelOf(a: any): string {
 
 // 把逗号分隔的 author_id 字符串解析为 [{ value: id, label: 显示名 }]
 function parseAuthorIds(value: string, authorsList: any[]): { value: string; label: string }[] {
+  const active = authorsList.filter((a) => !a.deletedAt);
   return String(value || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((id) => {
-      const a = authorsList.find((x) => x.id === id);
-      return a ? { value: a.id, label: authorLabelOf(a) } : { value: id, label: id };
+    .flatMap((id) => {
+      const a = active.find((x) => x.id === id);
+      return a ? [{ value: a.id, label: authorLabelOf(a) }] : [];
     });
 }
 
@@ -255,6 +258,8 @@ export function AuthorPicker({
   authorsList: any[];
   placeholder: string;
 }) {
+  // 软删除行不可作为引用目标(与后端 validate_row 的 deletedAt 过滤一致)
+  const activeAuthors = authorsList.filter((a) => !a.deletedAt);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [dir, setDir] = useState("down");
@@ -273,10 +278,10 @@ export function AuthorPicker({
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? authorsList.filter((a) =>
+    ? activeAuthors.filter((a) =>
         (authorLabelOf(a) + " " + (a.originalName || "") + " " + (a.Name_EN || "")).toLowerCase().includes(q)
       )
-    : authorsList;
+    : activeAuthors;
   const available = filtered.filter((a) => !selected.some((s) => s.value === a.id));
 
   const commit = (next: { value: string; label: string }[]) => {

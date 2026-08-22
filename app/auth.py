@@ -159,11 +159,9 @@ def validate_password(value: str) -> str | None:
     return None
 
 
-def normalize_username(value: str | None, fallback_email: str = "") -> str:
-    """规范化用户名:去首尾空白;为空时从邮箱本地部分推导;校验格式与长度。"""
+def normalize_username(value: str | None) -> str:
+    """规范化用户名:去首尾空白;必填(空值报错);校验格式与长度。"""
     value = str(value or "").strip()
-    if not value and fallback_email:
-        value = db_sqlite.username_from_email(fallback_email)
     if not value:
         raise ValueError("用户名不能为空")
     if not USERNAME_RE.fullmatch(value):
@@ -331,7 +329,7 @@ def register(
     password_error = validate_password(password)
     if password_error:
         raise ValueError(password_error)
-    username = normalize_username(username, fallback_email=email)
+    username = normalize_username(username)
     nickname = normalize_nickname(nickname)
     bio = normalize_bio(bio)
     password_hash = hash_password(password)

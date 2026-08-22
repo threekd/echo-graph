@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app import db_sqlite
-from app.auth import SESSION_COOKIE, current_user
+from app.auth import SESSION_COOKIE, admin_user_id, current_user
 from app.db import SqliteStore
 
 router = APIRouter(prefix="/api/space", tags=["space"])
@@ -45,8 +45,14 @@ def _require_visible(user_id: str, viewer: dict | None) -> dict:
     raise HTTPException(status_code=404, detail="星云不存在或未公开")
 
 
-def _space_store(row: dict) -> SqliteStore:
-    """他人星云只读视图:与 /api/space/{user_id}/graph 一致的可见性规则(仅 public 节点)。"""
+def _space_store(row: dict, viewer: dict | None = None) -> SqliteStore:
+    """目标星云只读视图:访客仅看 public 节点;owner 本人与 admin 看全部节点。
+
+    admin 需要能审核/运营隐藏数据(与模块 docstring「admin 可访问任意空间」一致);
+    owner 通过空间深链访问自己时也应看到 visibility=private 的节点。
+    """
+    if viewer and (viewer["id"] == row["id"] or viewer["role"] == "admin"):
+        return SqliteStore(owner_id=row["id"], include_private=True)
     return SqliteStore(owner_id=row["id"], include_private=False)
 
 
@@ -62,10 +68,19 @@ def _display_name(row: dict) -> str:
 @router.get("/random/graph")
 def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
+    viewer = _viewer(request)
+    admin = admin_user_id()
+    where = "space_visibility = 'public'"
+    params: tuple = ()
+    if admin:
+        # 公共星云所有者(引导管理员)的空间与「公共星云」重复,排除在随机跃迁之外
+        where += " AND id != ?"
+        params = (admin,)
     with db_sqlite._db() as conn:
         row = conn.execute(
-            "SELECT id, username, nickname, bio FROM users WHERE space_visibility = 'public'"
-            " ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, username, nickname, bio FROM users"
+            f" WHERE {where} ORDER BY RANDOM() LIMIT 1",
+            params,
         ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="暂无可公开访问的星云")
@@ -77,14 +92,15 @@ def random_space_graph(request: Request) -> dict:
             "nickname": row["nickname"],
             "bio": row["bio"],
         },
-        **_space_store(row).graph(),
+        **_space_store(row, viewer).graph(),
     }
 
 
 @router.get("/{user_id}/graph")
 def space_graph(user_id: str, request: Request) -> dict:
     """定向访问:读取某用户公开的星云。"""
-    row = _require_visible(user_id, _viewer(request))
+    viewer = _viewer(request)
+    row = _require_visible(user_id, viewer)
     return {
         "spaceId": row["id"],
         "displayName": _display_name(row),
@@ -93,7 +109,7 @@ def space_graph(user_id: str, request: Request) -> dict:
             "nickname": row["nickname"],
             "bio": row["bio"],
         },
-        **_space_store(row).graph(),
+        **_space_store(row, viewer).graph(),
     }
 
 
@@ -105,15 +121,17 @@ def space_search(
     request: Request = None,  # noqa: B008 - FastAPI 注入
 ) -> dict:
     """在目标星云内搜索作家 / 作品。"""
-    row = _require_visible(user_id, _viewer(request))
-    return {"hits": _space_store(row).search(q.strip(), limit)}
+    viewer = _viewer(request)
+    row = _require_visible(user_id, viewer)
+    return {"hits": _space_store(row, viewer).search(q.strip(), limit)}
 
 
 @router.get("/{user_id}/work/{work_id}")
 def space_work_detail(user_id: str, work_id: str, request: Request = None) -> dict:  # noqa: B008
     """目标星云内作品详情(涟漪数据)。"""
-    row = _require_visible(user_id, _viewer(request))
-    detail = _space_store(row).work_detail(work_id)
+    viewer = _viewer(request)
+    row = _require_visible(user_id, viewer)
+    detail = _space_store(row, viewer).work_detail(work_id)
     if detail is None:
         raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
     return detail
@@ -127,8 +145,9 @@ def space_expansion(
     request: Request = None,  # noqa: B008 - FastAPI 注入
 ) -> dict:
     """目标星云内以某作品为中心的 N 级扩散子图。"""
-    row = _require_visible(user_id, _viewer(request))
-    data = _space_store(row).expansion(work_id, hops)
+    viewer = _viewer(request)
+    row = _require_visible(user_id, viewer)
+    data = _space_store(row, viewer).expansion(work_id, hops)
     if data is None:
         raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
     return data
@@ -143,8 +162,9 @@ def space_path(
     request: Request = None,  # noqa: B008 - FastAPI 注入
 ) -> dict:
     """目标星云内两作品间的有向最短提及链。"""
-    row = _require_visible(user_id, _viewer(request))
-    result = _space_store(row).path(frm.strip(), to.strip(), max_hops)
+    viewer = _viewer(request)
+    row = _require_visible(user_id, viewer)
+    result = _space_store(row, viewer).path(frm.strip(), to.strip(), max_hops)
     if result is None:
         raise HTTPException(status_code=404, detail="no mention path found")
     return result

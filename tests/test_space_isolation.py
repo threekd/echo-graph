@@ -41,9 +41,9 @@ class SpaceIsolationTest(unittest.TestCase):
         patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
         patch("app.space_crud.export_csv_files", lambda: None).start()
         self.addCleanup(patch.stopall)
-        self.admin = auth.register(self.ADMIN, "admin-password-123")
-        self.alice = auth.register(self.ALICE, "alice-password-123")
-        self.bob = auth.register(self.BOB, "bob-password-123")
+        self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
+        self.alice = auth.register(self.ALICE, "alice-password-123", username="alice")
+        self.bob = auth.register(self.BOB, "bob-password-123", username="bobby")
         self.addCleanup(self.tmp.cleanup)
 
     def test_user_space_isolated_from_public_and_others(self) -> None:

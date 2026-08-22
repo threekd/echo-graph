@@ -23,7 +23,7 @@ class ApiSmokeTest(unittest.TestCase):
         # 固定引导管理员,保证 admin 路径与角色不依赖机器 .env
         self.admin_email = "admin@test.local"
         patch.object(auth, "BOOTSTRAP_EMAIL", self.admin_email).start()
-        auth.register(self.admin_email, "admin-password-123")
+        auth.register(self.admin_email, "admin-password-123", username="admin")
         self.admin_id = auth.admin_user_id()
         self.assertIsNotNone(self.admin_id)
         patch("app.space_crud.export_csv_files", lambda: None).start()

@@ -249,6 +249,9 @@ class SqliteStore:
             authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
             works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
             edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
+        # 只返回端点均可见(未软删除且通过状态过滤)的边,避免幽灵边指向被过滤的作品
+        visible_work_ids = {w["id"] for w in works}
+        edges = [e for e in edges if e["source"] in visible_work_ids and e["target"] in visible_work_ids]
         authors_by_id = {a["id"]: a for a in authors}
         nodes = [_author_node(a) for a in authors]
         for w in works:

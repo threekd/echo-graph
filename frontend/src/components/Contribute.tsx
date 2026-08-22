@@ -155,18 +155,22 @@ export default function Contribute() {
 
   // 行数据 → 图节点形状,复用既有建议文案逻辑
   const authorNodes = useMemo<GraphNode[]>(
-    () => (myRows?.authors || []).map((a) => ({
-      id: a.id, type: "author", label: a.Name_CN,
-      originalName: a.originalName, nationality: a.nationality,
-    })),
+    () => (myRows?.authors || [])
+      .filter((a) => !a.deletedAt) // 软删除行不进联想下拉
+      .map((a) => ({
+        id: a.id, type: "author", label: a.Name_CN,
+        originalName: a.originalName, nationality: a.nationality,
+      })),
     [myRows]
   );
   const workNodes = useMemo<GraphNode[]>(
-    () => (myRows?.works || []).map((w) => ({
-      id: w.id, type: "work", label: w.Title_CN,
-      originalTitle: w.originalTitle, language: w.language,
-      author_ids: w.author_ids, author: w.author,
-    })),
+    () => (myRows?.works || [])
+      .filter((w) => !w.deletedAt) // 软删除行不进联想下拉
+      .map((w) => ({
+        id: w.id, type: "work", label: w.Title_CN,
+        originalTitle: w.originalTitle, language: w.language,
+        author_ids: w.author_ids, author: w.author,
+      })),
     [myRows]
   );
   const authorsById = useMemo(() => {

@@ -57,7 +57,10 @@ def new_uuid() -> str:
 
 
 def username_from_email(email: str) -> str:
-    """从邮箱本地部分推导默认用户名(截断 +tag;仅保留 ASCII 字母/数字/下划线;不足 5 位补 user 前缀)。"""
+    """从邮箱本地部分推导用户名(截断 +tag;仅保留 ASCII 字母/数字/下划线;不足 5 位补 user 前缀)。
+
+    仅用于 schema 迁移 v15 为存量用户回填用户名;注册流程用户名必填,不再推导。
+    """
     local = (email or "").split("@", 1)[0].split("+", 1)[0].strip()
     cleaned = re.sub(r"[^A-Za-z0-9_]+", "", local)
     if not cleaned:

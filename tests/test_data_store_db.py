@@ -80,8 +80,8 @@ class DataStoreDbTest(unittest.TestCase):
     def test_export_excludes_user_private_rows(self) -> None:
         """CSV 只导出公共星云(admin 认领),用户私有空间不得进 git 审计产物。"""
         with patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local"):
-            admin = auth.register("admin@test.local", "admin-password-123")
-            user = auth.register("user@test.local", "user-password-123")
+            admin = auth.register("admin@test.local", "admin-password-123", username="admin")
+            user = auth.register("user@test.local", "user-password-123", username="user01")
             a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
             a2 = "01a013e6-e885-766b-b9db-315d518adeec"
             sqlite_store.rewrite_all(

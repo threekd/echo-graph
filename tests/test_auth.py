@@ -38,7 +38,7 @@ class AuthStoreTest(unittest.TestCase):
         ratelimit.clear_rate_limits()
 
     def test_register_normalizes_email_and_hashes_password(self) -> None:
-        user = auth.register("  Test@Example.com ", "password123")
+        user = auth.register("  Test@Example.com ", "password123", username="tester")
         self.assertEqual(user["email"], "test@example.com")
         self.assertEqual(user["role"], "user")
         with db_sqlite._db() as conn:
@@ -50,15 +50,15 @@ class AuthStoreTest(unittest.TestCase):
 
     def test_register_validation_errors(self) -> None:
         with self.assertRaises(ValueError):
-            auth.register("not-an-email", "password123")
+            auth.register("not-an-email", "password123", username="tester")
         with self.assertRaises(ValueError):
-            auth.register("a@b.com", "short")
-        auth.register("dup@example.com", "password123")
+            auth.register("a@b.com", "short", username="tester")
+        auth.register("dup@example.com", "password123", username="dupper")
         with self.assertRaises(ValueError):
-            auth.register("DUP@example.com", "password123")  # 邮箱大小写归一后判重
+            auth.register("DUP@example.com", "password123", username="dupper2")  # 邮箱大小写归一后判重
 
     def test_login(self) -> None:
-        auth.register("user@example.com", "password123")
+        auth.register("user@example.com", "password123", username="user01")
         user = auth.login("USER@example.com", "password123")
         self.assertEqual(user["email"], "user@example.com")
         self.assertIsNone(auth.login("user@example.com", "wrong"))
@@ -66,7 +66,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertIsNone(auth.login("", ""))
 
     def test_session_flow_and_token_hashed(self) -> None:
-        user = auth.register("session@example.com", "password123")
+        user = auth.register("session@example.com", "password123", username="session")
         token = auth.create_session(user["id"])
         with db_sqlite._db() as conn:
             row = conn.execute("SELECT * FROM sessions").fetchone()
@@ -82,7 +82,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertIsNone(auth.current_user(None))
 
     def test_expired_session_rejected_and_cleaned(self) -> None:
-        user = auth.register("expire@example.com", "password123")
+        user = auth.register("expire@example.com", "password123", username="expirer")
         token = auth.create_session(user["id"])
         past = (dt.datetime.now(dt.UTC) - dt.timedelta(days=1)).isoformat(timespec="seconds")
         with db_sqlite._db() as conn:
@@ -96,7 +96,7 @@ class AuthStoreTest(unittest.TestCase):
         with patch.object(auth, "verify_turnstile", return_value=True):
             resp = Response()
             result = auth.register_endpoint(
-                {"email": "a@b.com", "password": "password123"},
+                {"email": "a@b.com", "password": "password123", "username": "abcomer"},
                 _FakeRequest(host="127.0.0.1"),
                 resp,
             )
@@ -108,7 +108,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertNotIn("Secure", cookie)  # 本地默认非 HTTPS
 
     def test_login_endpoint_wrong_password_401(self) -> None:
-        auth.register("x@example.com", "password123")
+        auth.register("x@example.com", "password123", username="xample")
         with self.assertRaises(HTTPException) as ctx:
             auth.login_endpoint(
                 {"email": "x@example.com", "password": "bad-password"},
@@ -177,14 +177,14 @@ class AuthStoreTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             auth.me(_FakeRequest(headers={}, cookies={}))
         self.assertEqual(ctx.exception.status_code, 401)
-        user = auth.register("me@example.com", "password123")
+        user = auth.register("me@example.com", "password123", username="memail")
         token = auth.create_session(user["id"])
         result = auth.me(_FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token}))
         self.assertEqual(result["user"]["email"], "me@example.com")
 
     def test_update_me_space_visibility(self) -> None:
         """PATCH /api/auth/me:星云可见性自服务切换。"""
-        user = auth.register("vis@test.local", "password123")
+        user = auth.register("vis@test.local", "password123", username="visitor")
         token = auth.create_session(user["id"])
         req = _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token})
         result = auth.update_me({"space_visibility": "private"}, req)
@@ -221,11 +221,13 @@ class AuthStoreTest(unittest.TestCase):
         self.assertEqual(row["nickname"], "小星星")
         self.assertEqual(row["bio"], "热爱文学,专注跨语言影响研究。")
 
-    def test_register_username_defaults_from_email(self) -> None:
-        user = auth.register("John.Doe+tag@example.com", "password123")
-        # 邮箱已归一为小写;本地部分截断 +tag,仅保留字母/数字/下划线(点被移除)
-        self.assertEqual(user["username"], "johndoe")
-        self.assertIsNone(user["nickname"])
+    def test_register_requires_username(self) -> None:
+        """用户名必填:不再从邮箱推导,缺省直接报错。"""
+        with self.assertRaises(ValueError) as ctx:
+            auth.register("John.Doe+tag@example.com", "password123")
+        self.assertIn("用户名不能为空", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            auth.register("john.doe@example.com", "password123", username="   ")
 
     def test_register_username_validation(self) -> None:
         with self.assertRaises(ValueError):
@@ -263,7 +265,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertIsNone(auth.login("SkyWalker", "wrong-password"))
 
     def test_update_me_nickname_and_bio(self) -> None:
-        user = auth.register("profile@test.local", "password123")
+        user = auth.register("profile@test.local", "password123", username="profilr")
         token = auth.create_session(user["id"])
         req = _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: token})
         result = auth.update_me(
@@ -287,7 +289,7 @@ class AuthStoreTest(unittest.TestCase):
                 [],
                 [],
             )
-            user = auth.register("Boss@Test.local", "password123")
+            user = auth.register("Boss@Test.local", "password123", username="bigboss")
             self.assertEqual(user["role"], "admin")
             with db_sqlite._db() as conn:
                 row = conn.execute(
@@ -298,7 +300,7 @@ class AuthStoreTest(unittest.TestCase):
 
     def test_bootstrap_admin_promotes_existing_user_and_claims(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
-            user = auth.register("boss@test.local", "password123")
+            user = auth.register("boss@test.local", "password123", username="boss01")
             self.assertEqual(user["role"], "user")
         sqlite_store.rewrite_all(
             [{"id": "01a00000-0000-7000-8000-000000000002", "originalName": "X", "Name_CN": "甲"}],
@@ -314,8 +316,8 @@ class AuthStoreTest(unittest.TestCase):
 
     def test_require_admin_enforces_role(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
-            boss = auth.register("boss@test.local", "password123")
-            joe = auth.register("joe@test.local", "password123")
+            boss = auth.register("boss@test.local", "password123", username="boss01")
+            joe = auth.register("joe@test.local", "password123", username="joey01")
             boss_token = auth.create_session(boss["id"])
             joe_token = auth.create_session(joe["id"])
         with self.assertRaises(HTTPException) as ctx:

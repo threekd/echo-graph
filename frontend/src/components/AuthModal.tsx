@@ -136,7 +136,13 @@ export default function AuthModal() {
         );
         return;
       }
-      if ((username.trim() || "").length < 5) {
+      const usernameVal = username.trim();
+      // 用户名必填(与后端 normalize_username 一致,不再自动推导)
+      if (!usernameVal) {
+        setError("请填写用户名");
+        return;
+      }
+      if (usernameVal.length < 5) {
         setError("用户名至少 5 个字符");
         return;
       }

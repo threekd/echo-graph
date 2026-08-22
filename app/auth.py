@@ -6,7 +6,9 @@
 - 注册人机验证:Cloudflare Turnstile(服务端 siteverify)。未配置
   TURNSTILE_SECRET_KEY 时跳过验证(便于本地开发),生产环境务必配置。
 - 限流:注册/登录按 IP 滑动窗口,复用 app.ratelimit(单 worker 精确)。
-- CSRF:SameSite=Lax 之外的补充防线——带 Origin 头的状态变更请求必须同源。
+- CSRF:SameSite=Lax 之外的补充防线由全局中间件(app/security.py)统一执行——
+  所有状态变更请求(含本模块的 register/login/logout/PATCH /me)带 Origin 头时
+  必须同源,否则 403;此处不再逐端点重复校验。
 """
 
 from __future__ import annotations
@@ -292,16 +294,6 @@ def login(email: str, password: str) -> dict | None:
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-def _check_same_origin(request: Request) -> None:
-    """CSRF 补充防线:带 Origin 头的状态变更请求必须与本站同源。"""
-    origin = request.headers.get("origin")
-    if not origin:
-        return
-    expected = str(request.base_url).rstrip("/")
-    if origin.rstrip("/") != expected:
-        raise HTTPException(status_code=403, detail="跨站请求被拒绝")
-
-
 def _set_session_cookie(response: Response, token: str) -> None:
     secure = os.getenv("COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
     response.set_cookie(
@@ -327,7 +319,6 @@ def auth_config() -> dict:
 
 @router.post("/register")
 def register_endpoint(body: dict, request: Request, response: Response) -> dict:
-    _check_same_origin(request)
     ip = client_ip(request)
     if sliding_limited(f"register:{ip}", REGISTER_LIMIT, RATE_WINDOW_SECONDS):
         raise HTTPException(status_code=429, detail="注册过于频繁,请稍后再试")
@@ -344,7 +335,6 @@ def register_endpoint(body: dict, request: Request, response: Response) -> dict:
 
 @router.post("/login")
 def login_endpoint(body: dict, request: Request, response: Response) -> dict:
-    _check_same_origin(request)
     ip = client_ip(request)
     if sliding_limited(f"login:{ip}", LOGIN_LIMIT, RATE_WINDOW_SECONDS):
         raise HTTPException(status_code=429, detail="登录尝试过于频繁,请稍后再试")
@@ -361,7 +351,6 @@ def login_endpoint(body: dict, request: Request, response: Response) -> dict:
 
 @router.post("/logout")
 def logout_endpoint(request: Request, response: Response) -> dict:
-    _check_same_origin(request)
     delete_session(request.cookies.get(SESSION_COOKIE))
     _clear_session_cookie(response)
     return {"ok": True}
@@ -378,7 +367,6 @@ def me(request: Request) -> dict:
 @router.patch("/me")
 def update_me(body: dict, request: Request) -> dict:
     """用户资料更新(当前仅支持 space_visibility:星云公开/仅自己可见切换)。"""
-    _check_same_origin(request)
     user = current_user(request.cookies.get(SESSION_COOKIE))
     if user is None:
         raise HTTPException(status_code=401, detail="未登录")

@@ -136,7 +136,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
 - 资料接口:`PATCH /api/auth/me`(当前支持 `space_visibility` 切换:公开 / 仅自己可见)
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`
-- 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);带 Origin 头的跨站状态变更请求会被拒绝
+- 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);全局中间件(`app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`、`/api/contribute`)做同源校验——带 Origin 头的跨站请求一律 403
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
   「公共星云 / 我的星云」切换。公共星云 = 引导管理员认领的数据,未登录游客可浏览。
 - 数据管理:侧边栏「数据管理」对所有登录用户显示,管理自己的作者/作品/涟漪;

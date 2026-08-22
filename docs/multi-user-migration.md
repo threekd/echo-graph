@@ -128,3 +128,6 @@
 - 2026-08-22:资料与模型卫生——schema v14 删除从未写入的 `sessions.last_seen_at`;
   `now_iso` / `new_uuid` / `KIND_TABLE` 收敛为单一来源(auth / space_crud / contributions 共用);
   `adminTypes.ts` 补全 `visibility` / `recommendation` / `review` 字段。
+- 2026-08-22:CSRF 同源检查全局化——新增 `app/security.py` 全局中间件,所有状态变更
+  请求(POST/PUT/PATCH/DELETE)带 Origin 头时统一校验同源,覆盖 `/api/auth`、
+  `/api/me`、`/api/admin`、`/api/contribute` 全部写接口;移除 auth 端点内的重复检查。

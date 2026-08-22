@@ -7,8 +7,8 @@ import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.admin import router as admin_router
 from app.auth import bootstrap_admin
@@ -16,6 +16,7 @@ from app.auth import router as auth_router
 from app.contributions import router as contributions_router
 from app.db import get_store
 from app.me import router as me_router
+from app.security import is_state_changing, same_origin_allowed
 from app.space import router as space_router
 
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +57,15 @@ app = FastAPI(
 )
 
 store = get_store()
+
+
+@app.middleware("http")
+async def csrf_same_origin_guard(request: Request, call_next):
+    """全局 CSRF 同源校验:所有状态变更请求(POST/PUT/PATCH/DELETE)带 Origin 头时
+    必须与本站同源,否则 403。覆盖 /api/auth、/api/me、/api/admin、/api/contribute 全部写接口。"""
+    if is_state_changing(request.method) and not same_origin_allowed(request):
+        return JSONResponse(status_code=403, content={"detail": "跨站请求被拒绝"})
+    return await call_next(request)
 
 
 @app.get("/")

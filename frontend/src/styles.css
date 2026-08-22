@@ -370,6 +370,17 @@ main { height: 100%; position: relative; min-height: 0; }
   color: transparent;
   filter: drop-shadow(0 0 14px rgba(138, 184, 255, 0.45));
 }
+.beta-badge {
+  font-size: 10px;
+  letter-spacing: 1px;
+  line-height: 1.4;
+  color: #9cc3ff;
+  border: 1px solid rgba(148, 163, 255, 0.35);
+  background: rgba(30, 44, 90, 0.45);
+  border-radius: 999px;
+  padding: 1px 7px;
+  user-select: none;
+}
 .brand .sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
 .store-badge {
   width: 100%;
@@ -1017,6 +1028,14 @@ th.sortable.active .sort-icon {
   background: linear-gradient(120deg, rgba(124, 58, 237, 0.25), rgba(34, 211, 238, 0.18));
   color: #e3d6ff;
   box-shadow: 0 0 18px rgba(139, 92, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.jump-btn-icon {
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 5px rgba(167, 139, 250, 0.6));
 }
 #btn-jump:hover {
   border-color: rgba(196, 181, 253, 0.9);

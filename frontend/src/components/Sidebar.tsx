@@ -344,6 +344,7 @@ export default function Sidebar() {
             <>
         <div className="brand">
           <h1>Litnebula</h1>
+          <span className="beta-badge">beta</span>
           {/* 账号入口已移入「设置」Tab,品牌行不再显示账号角标 */}
           <div className="store-badge">
             数据源:{state.spaceOwner || "public"}
@@ -364,7 +365,24 @@ export default function Sidebar() {
           </button>
         </div>
         <button id="btn-jump" className="side-btn jump-btn" onClick={doJump}>
-          ✦ 星际跃迁
+          <svg
+            className="jump-btn-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+            <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+            <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+            <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+          </svg>
+          星际跃迁
         </button>
         <nav>
           <div id="view-status">视图:{viewLabel(state.currentView)}</div>

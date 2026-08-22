@@ -77,6 +77,24 @@ def admin_user_id() -> str | None:
     return row["id"] if row else None
 
 
+def admin_profile() -> dict | None:
+    """引导管理员(公共星云所有者)的公开资料:用户名/昵称/简介(不含邮箱)。"""
+    if not BOOTSTRAP_EMAIL:
+        return None
+    with db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT username, nickname, bio FROM users WHERE email = ?",
+            (BOOTSTRAP_EMAIL,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "username": row["username"],
+        "nickname": row["nickname"],
+        "bio": row["bio"],
+    }
+
+
 def claim_public_rows(conn, admin_id: str) -> int:
     """把尚未认领(owner_id 为空)的业务行划归引导管理员(公共星云)。"""
     total = 0

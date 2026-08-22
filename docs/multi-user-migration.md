@@ -151,3 +151,6 @@
 - 2026-08-22:用户资料调整(schema v18)——新增 `users.bio`(简介,长文本最多 500 字);
   设置页个人资料只展示并编辑「昵称 / 简介」,用户名不再展示、`PATCH /api/auth/me`
   拒绝修改 username(系统标识,仅登录与兜底展示使用)。
+- 2026-08-22:右侧详情栏改为 Tab 列(涟漪 / 书签 / 个人资料)——书签展示所选作品的
+  评分与评价(work_detail 载荷补充 recommendation/review);个人资料展示当前星云所有者
+  的昵称与简介(`/api/graph`、`/api/me/graph`、`/api/space/*/graph` 响应附 owner 资料,不含邮箱)。

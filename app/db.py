@@ -93,6 +93,8 @@ def _work_payload(p: dict) -> dict:
         "publicationYear": p.get("publicationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
+        "recommendation": p.get("recommendation"),  # 个人评分(仅用户空间语义)
+        "review": p.get("review"),  # 个人评价(仅用户空间语义)
     }
 
 

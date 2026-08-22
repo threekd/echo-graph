@@ -147,7 +147,7 @@ main { height: 100%; position: relative; min-height: 0; }
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   z-index: 8;
   transform: translateX(102%);
   transition: transform 0.28s ease;
@@ -257,6 +257,21 @@ main { height: 100%; position: relative; min-height: 0; }
   font-size: 17px;
   line-height: 1;
   filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.5));
+}
+.sidebar-tab-svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.5));
+}
+/* 右侧详情栏:Tab 列置于最右(内容在左),钉住按钮让位到内容区右上角 */
+#panel .sidebar-tabs {
+  order: 2;
+  border-right: none;
+  border-left: 1px solid rgba(148, 163, 255, 0.14);
+}
+#btn-pin-right {
+  right: 64px;
 }
 .sidebar-content {
   flex: 1;
@@ -502,6 +517,7 @@ button.ghost { color: var(--muted); }
 #panel-content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 16px;
 }
@@ -1312,6 +1328,9 @@ th.sortable.active .sort-icon {
     flex-direction: column;
     padding: 0;
   }
+  #panel {
+    flex-direction: column;
+  }
   /* 移动端底部抽屉:Tab 列改为横向排布在顶部 */
   .sidebar-tabs {
     flex-direction: row;
@@ -1322,6 +1341,10 @@ th.sortable.active .sort-icon {
     padding: 6px 8px;
     border-right: none;
     border-bottom: 1px solid rgba(148, 163, 255, 0.14);
+  }
+  #panel .sidebar-tabs {
+    order: 0;
+    border-left: none;
   }
   .sidebar-tab {
     flex-direction: row;
@@ -1339,6 +1362,9 @@ th.sortable.active .sort-icon {
   }
   #panel-content {
     padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  #btn-pin-right {
+    right: 8px;
   }
 
   #guide .guide-card {

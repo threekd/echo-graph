@@ -38,7 +38,13 @@ def my_data(
 
 @router.get("/graph")
 def my_graph(user: dict = Depends(require_user)) -> dict:  # noqa: B008
-    return _store(user).graph()
+    data = _store(user).graph()
+    data["owner"] = {
+        "username": user.get("username"),
+        "nickname": user.get("nickname"),
+        "bio": user.get("bio"),
+    }
+    return data
 
 
 @router.get("/stats")

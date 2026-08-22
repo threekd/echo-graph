@@ -166,6 +166,7 @@ function AppContent() {
     Promise.all([loadGraphData(), loadStats()])
       .then(([data, stats]) => {
         dispatch({ type: "SET_DATA", data });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
         dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);

@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.admin import router as admin_router
-from app.auth import bootstrap_admin
+from app.auth import admin_profile, bootstrap_admin
 from app.auth import router as auth_router
 from app.contributions import router as contributions_router
 from app.db import get_store
@@ -123,7 +123,10 @@ def health() -> dict:
 def graph(
     status: str | None = Query(None, pattern="^(draft|reviewed|rejected)$"),
 ) -> dict:
-    return store.graph(status)
+    data = store.graph(status)
+    # 公共星云所有者(引导管理员)的公开资料,供前端「个人资料」Tab 展示
+    data["owner"] = admin_profile()
+    return data
 
 
 @app.get("/api/search")

@@ -71,6 +71,7 @@ export interface AppState {
   spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
   pinLeft: boolean; // 左侧功能栏钉住(不再自动隐藏)
   pinRight: boolean; // 右侧详情栏钉住(不再自动隐藏)
+  spaceProfile: { username?: string; nickname?: string | null; bio?: string | null } | null; // 当前星云所有者的公开资料
   guideVisible: boolean;
 }
 
@@ -102,6 +103,7 @@ export const initialState: AppState = {
   spaceOwner: "public",
   pinLeft: false,
   pinRight: false,
+  spaceProfile: null,
   guideVisible: false,
 };
 
@@ -157,6 +159,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, pinLeft: action.value };
     case "SET_PIN_RIGHT":
       return { ...state, pinRight: action.value };
+    case "SET_SPACE_PROFILE":
+      return { ...state, spaceProfile: action.profile || null };
     case "SET_GUIDE":
       return { ...state, guideVisible: action.value };
     default:

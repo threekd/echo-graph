@@ -64,7 +64,7 @@ def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
     with db_sqlite._db() as conn:
         row = conn.execute(
-            "SELECT id, username, nickname FROM users WHERE space_visibility = 'public'"
+            "SELECT id, username, nickname, bio FROM users WHERE space_visibility = 'public'"
             " ORDER BY RANDOM() LIMIT 1"
         ).fetchone()
     if row is None:
@@ -72,6 +72,11 @@ def random_space_graph(request: Request) -> dict:
     return {
         "spaceId": row["id"],
         "displayName": _display_name(dict(row)),
+        "owner": {
+            "username": row["username"],
+            "nickname": row["nickname"],
+            "bio": row["bio"],
+        },
         **_space_store(row).graph(),
     }
 
@@ -83,6 +88,11 @@ def space_graph(user_id: str, request: Request) -> dict:
     return {
         "spaceId": row["id"],
         "displayName": _display_name(row),
+        "owner": {
+            "username": row["username"],
+            "nickname": row["nickname"],
+            "bio": row["bio"],
+        },
         **_space_store(row).graph(),
     }
 

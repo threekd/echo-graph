@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp, type GraphData } from "../store";
 import { selectNode } from "../lib/graph";
 import { workAuthorIds } from "../lib/graphData";
@@ -104,9 +104,62 @@ function PathPanel({ panel, fullData }: { panel: any; fullData: GraphData }) {
   );
 }
 
+// 书签:当前所选作品的个人评分与评价
+function BookmarkPanel({ work }: { work: any }) {
+  if (!work) {
+    return (
+      <div className="panel-content-inner">
+        <h2>书签</h2>
+        <p className="no-path">请先点击一部作品,查看它的评分与评价。</p>
+      </div>
+    );
+  }
+  const rec = work.recommendation;
+  return (
+    <div className="panel-content-inner">
+      <h2>书签</h2>
+      <div className="meta">{work.title}</div>
+      <h3>评分</h3>
+      <p className={rec === "recommend" || rec === "not_recommend" ? "meta" : "no-path"}>
+        {rec === "recommend" ? "推荐" : rec === "not_recommend" ? "不推荐" : "未评分"}
+      </p>
+      <h3>评价</h3>
+      {work.review ? (
+        <p className="quote">{work.review}</p>
+      ) : (
+        <p className="no-path">暂无评价。</p>
+      )}
+    </div>
+  );
+}
+
+// 个人资料:当前星云所有者的昵称与简介
+function OwnerProfilePanel({
+  profile,
+}: {
+  profile: { username?: string; nickname?: string | null; bio?: string | null } | null;
+}) {
+  const name =
+    (profile?.nickname || "").trim() || (profile?.username || "").trim() || "匿名星云";
+  return (
+    <div className="panel-content-inner">
+      <h2>个人资料</h2>
+      <div className="meta">{name}</div>
+      <h3>简介</h3>
+      {profile?.bio ? (
+        <p className="quote">{profile.bio}</p>
+      ) : (
+        <p className="no-path">TA 还没有填写简介。</p>
+      )}
+    </div>
+  );
+}
+
 export default function Panel() {
   const { state, dispatch } = useApp();
   const panel = state.panel;
+  // 右侧详情栏功能 Tab:ripple = 当前视图内容;bookmarks = 书签(评分/评价);profile = 星云所有者资料
+  const [tab, setTab] = useState<"ripple" | "bookmarks" | "profile">("ripple");
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasInsideRef = useRef(false); // 鼠标是否曾经进入过面板(进过再移出 -> 立即隐藏)
 
@@ -229,7 +282,68 @@ export default function Panel() {
           title={state.pinRight ? "取消钉住(移出自动隐藏)" : "钉住(不再自动隐藏)"}
           onToggle={togglePinRight}
         />
-        <div id="panel-content">{content}</div>
+        <div className="sidebar-tabs" role="tablist" aria-label="详情栏功能">
+          <button
+            id="tab-ripple"
+            className={"sidebar-tab" + (tab === "ripple" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "ripple"}
+            title="涟漪"
+            onClick={() => setTab("ripple")}
+          >
+            <svg
+              className="sidebar-tab-svg"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+              <circle cx="12" cy="12" r="6" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            <span className="sidebar-tab-label">涟漪</span>
+          </button>
+          <button
+            id="tab-bookmarks"
+            className={"sidebar-tab" + (tab === "bookmarks" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "bookmarks"}
+            title="书签"
+            onClick={() => setTab("bookmarks")}
+          >
+            <svg className="sidebar-tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z" />
+            </svg>
+            <span className="sidebar-tab-label">书签</span>
+          </button>
+          <button
+            id="tab-profile"
+            className={"sidebar-tab" + (tab === "profile" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "profile"}
+            title="星云所有者的个人资料"
+            onClick={() => setTab("profile")}
+          >
+            <svg className="sidebar-tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+            <span className="sidebar-tab-label">书友</span>
+          </button>
+        </div>
+        <div id="panel-content">
+          {tab === "ripple" ? (
+            content
+          ) : tab === "bookmarks" ? (
+            <BookmarkPanel work={panel.type === "work" ? panel.d?.work : null} />
+          ) : (
+            <OwnerProfilePanel profile={state.spaceProfile} />
+          )}
+        </div>
       </aside>
     </>
   );

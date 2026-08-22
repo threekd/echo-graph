@@ -52,6 +52,13 @@ export interface SpaceRows {
 export interface SpaceJumpResult extends GraphData {
   spaceId: string;
   displayName: string;
+  owner?: OwnerProfile;
+}
+
+export interface OwnerProfile {
+  username?: string;
+  nickname?: string | null;
+  bio?: string | null;
 }
 
 async function getJson<T>(url: string): Promise<T> {

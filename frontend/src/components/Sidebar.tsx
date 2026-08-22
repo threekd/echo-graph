@@ -40,6 +40,7 @@ export default function Sidebar() {
     loadGraphData(space)
       .then((data) => {
         dispatch({ type: "SET_DATA", data });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
         renderMain({}, data);
       })
       .catch((e) =>
@@ -114,6 +115,7 @@ export default function Sidebar() {
     jumpToRandomSpace()
       .then((d) => {
         dispatch({ type: "SET_DATA", data: d });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (d as any).owner || null });
         // 跃迁后进入该星云的空间上下文:后续搜索/详情/扩散/路径都路由到 /api/space/{id}
         dispatch({ type: "SET_SPACE", space: "space:" + d.spaceId });
         dispatch({ type: "SET_SPACE_OWNER", owner: d.displayName || "未知星云" });

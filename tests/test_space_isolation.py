@@ -180,6 +180,49 @@ class SpaceIsolationTest(unittest.TestCase):
         self.assertNotIn(w1["id"], work_ids)
         self.assertEqual([e for e in visible_after["edges"] if e["type"] == "echo"], [])
 
+    def test_work_recommendation_and_review(self) -> None:
+        a1 = my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)["row"]
+        w = my_create(
+            "works", {
+                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
+                "author_id": a1["id"],
+                "recommendation": "recommend", "review": "值得一读",
+            },
+            user=self.alice,
+        )["row"]
+        self.assertEqual(w["recommendation"], "recommend")
+        self.assertEqual(w["review"], "值得一读")
+        # 非法评分取值
+        with self.assertRaises(HTTPException) as ctx:
+            my_create(
+                "works", {
+                    "language": "zh", "originalTitle": "B", "Title_CN": "乙书",
+                    "author_id": a1["id"], "recommendation": "maybe",
+                },
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 超长评价
+        with self.assertRaises(HTTPException) as ctx:
+            my_create(
+                "works", {
+                    "language": "zh", "originalTitle": "C", "Title_CN": "丙书",
+                    "author_id": a1["id"], "review": "x" * 2001,
+                },
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 表单空值 = 清除
+        upd = my_update(
+            "works", w["id"], {
+                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
+                "author_id": a1["id"], "recommendation": "", "review": "",
+            },
+            user=self.alice,
+        )
+        self.assertIsNone(upd["row"]["recommendation"])
+        self.assertIsNone(upd["row"]["review"])
+
     def test_owner_written_on_create(self) -> None:
         res = my_create(
             "authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice

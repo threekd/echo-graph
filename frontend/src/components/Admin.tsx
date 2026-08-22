@@ -61,6 +61,7 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "originalTitle", label: "原著标题" },
           { key: "author_id", label: "作者" },
           { key: "publicationYear", label: "年份" },
+          { key: "recommendation", label: "评分" },
           visibilityCol,
         ],
     edges: isAdmin
@@ -229,6 +230,7 @@ export default function Admin() {
         ],
         works: [
           { key: "visibility", type: "select" as const },
+          { key: "recommendation", type: "select" as const },
           { key: "genre", type: "select" as const },
           { key: "language", type: "select" as const },
           { key: "Title_CN", type: "text" as const },
@@ -361,6 +363,9 @@ export default function Admin() {
     }
     if (key === "visibility") {
       return r[key] === "private" ? "隐藏" : "公开";
+    }
+    if (key === "recommendation") {
+      return r[key] === "recommend" ? "推荐" : r[key] === "not_recommend" ? "不推荐" : "";
     }
     const v = r[key];
     return v == null ? "" : String(v);

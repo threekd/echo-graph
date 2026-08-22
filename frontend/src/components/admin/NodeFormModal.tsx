@@ -93,11 +93,17 @@ export default function NodeFormModal({
   const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [confirmReload, setConfirmReload] = useState(false);
 
-  // 普通用户空间:审核状态隐藏(用户输入即确认,固定已审核);
-  // 作者/作品额外提供可见性(公开/隐藏,默认公开);admin 保持策展语义。
-  const fields = FIELDS[kind].filter((f) => !(!isAdmin && f.key === "reviewStatus"));
+  // 普通用户空间:审核状态与备注隐藏(用户输入即确认);作者/作品提供可见性,
+  // 作品额外提供评分(推荐/不推荐)与评价(长文本);admin 保持策展语义。
+  const fields = FIELDS[kind].filter(
+    (f) => !(!isAdmin && (f.key === "reviewStatus" || f.key === "note"))
+  );
   if (!isAdmin && kind !== "edges") {
     fields.push({ key: "visibility", label: "可见性", type: "visibility" });
+  }
+  if (!isAdmin && kind === "works") {
+    fields.push({ key: "recommendation", label: "评分", type: "recommendation" });
+    fields.push({ key: "review", label: "评价", type: "textarea", maxLength: 2000 });
   }
 
   const selfId = mode === "edit" ? initial.id : undefined;
@@ -247,8 +253,24 @@ export default function NodeFormModal({
                   <span>{f.label}{f.required && <span className="req"> *</span>}</span>
                   <textarea
                     value={form[f.key] || ""}
+                    maxLength={f.maxLength}
                     onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                   />
+                </label>
+              );
+            }
+            if (f.type === "recommendation") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}</span>
+                  <select
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  >
+                    <option value="">请选择…</option>
+                    <option value="recommend">推荐</option>
+                    <option value="not_recommend">不推荐</option>
+                  </select>
                 </label>
               );
             }

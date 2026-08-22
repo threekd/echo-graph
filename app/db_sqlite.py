@@ -379,6 +379,22 @@ def _migration_v11(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_v12(conn: sqlite3.Connection) -> None:
+    """作品增加个人评价字段:recommendation(推荐/不推荐)+ review(长文本)。
+
+    属于用户空间的个人语义字段,不进 CSV(与 visibility 同策略);
+    admin 公共星云行保持 NULL(策展视图不展示)。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(works)")}
+    if "recommendation" not in cols:
+        conn.execute(
+            "ALTER TABLE works ADD COLUMN recommendation TEXT"
+            " CHECK (recommendation IN ('recommend','not_recommend'))"
+        )
+    if "review" not in cols:
+        conn.execute("ALTER TABLE works ADD COLUMN review TEXT")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -391,6 +407,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (9, _migration_v9),
     (10, _migration_v10),
     (11, _migration_v11),
+    (12, _migration_v12),
 ]
 
 

@@ -31,6 +31,11 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "snapshots", label: "快照" },
 ];
 
+// 作者/作品表默认按修改时间从新到旧排序(updatedAt 为 UTC ISO 字符串,字典序即时间序);其余 Tab 不默认排序
+function defaultSortFor(k: AdminTab): { key: string; dir: 1 | -1 } | null {
+  return k === "authors" || k === "works" ? { key: "updatedAt", dir: -1 } : null;
+}
+
 function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: string }[]> {
   const reviewCol = (label: string) => ({ key: "reviewStatus", label });
   const visibilityCol = { key: "visibility", label: "可见性" };
@@ -107,7 +112,7 @@ export default function Admin() {
     danger?: boolean;
     onConfirm: () => void;
   } | null>(null);
-  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(() => defaultSortFor("authors"));
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<any>(null);
@@ -259,7 +264,7 @@ export default function Admin() {
     setModal(null);
     setFilters({});
     setTextFilters({});
-    setSort(null);
+    setSort(defaultSortFor(k));
   };
 
   const openAdd = () => {

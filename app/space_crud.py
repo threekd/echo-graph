@@ -188,9 +188,9 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
     if not row.get("id"):
         row["id"] = _new_uuid()
     is_admin_space = owner_id == admin_user_id()
-    # 用户输入即确认:普通用户空间默认 reviewed;公共星云(admin)保持策展 draft
+    # 输入即确认:新增(含管理员手动新增)默认 reviewed;显式传 draft 仍可保留草稿
     if not row.get("reviewStatus"):
-        row["reviewStatus"] = "draft" if is_admin_space else "reviewed"
+        row["reviewStatus"] = "reviewed"
     visibility: str | None = None
     if kind in ("authors", "works"):
         visibility = "public" if is_admin_space else (row.get("visibility") or "public")

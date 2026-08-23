@@ -90,7 +90,7 @@ class SpaceIsolationTest(unittest.TestCase):
             "authors", {"originalName": "策展人", "Name_CN": "公共作者"}
         )
         aid = res["row"]["id"]
-        self.assertEqual(res["row"]["reviewStatus"], "draft")  # admin 保持策展语义
+        self.assertEqual(res["row"]["reviewStatus"], "reviewed")  # admin 手动新增默认已审核(输入即确认)
         self.assertEqual(res["row"]["visibility"], "public")  # 公共星云恒为公开
         nodes = SqliteStore().graph()["nodes"]
         self.assertEqual(len(nodes), 1)

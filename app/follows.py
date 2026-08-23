@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import db_sqlite
 from app.auth import require_user
 from app.ratelimit import sliding_limited
+from app.users import display_name, user_row
 
 router = APIRouter(prefix="/api/follow", tags=["follow"])
 
@@ -25,32 +26,13 @@ _now = db_sqlite.now_iso
 _new_uuid = db_sqlite.new_uuid
 
 
-def _display_name(row: dict) -> str:
-    """星云显示名:昵称 > 用户名 > 兜底(不暴露邮箱)。"""
-    return (
-        (row.get("nickname") or "").strip()
-        or (row.get("username") or "").strip()
-        or "匿名星云"
-    )
-
-
-def _user_row(user_id: str) -> dict | None:
-    """活跃用户(关注目标必须存在且 active)。"""
-    with db_sqlite._db() as conn:
-        row = conn.execute(
-            "SELECT id, username, nickname, bio FROM users WHERE id = ? AND status = 'active'",
-            (user_id,),
-        ).fetchone()
-    return dict(row) if row else None
-
-
 def _user_payload(row: dict) -> dict:
     return {
         "id": row["id"],
         "username": row["username"],
         "nickname": row["nickname"],
         "bio": row["bio"],
-        "displayName": _display_name(row),
+        "displayName": display_name(row),
     }
 
 
@@ -139,7 +121,7 @@ def follow(user_id: str, user: dict = Depends(require_user)) -> dict:  # noqa: B
         raise HTTPException(status_code=400, detail="不能关注自己")
     if sliding_limited(f"follow:{user['id']}", FOLLOW_LIMIT, WINDOW_SECONDS):
         raise HTTPException(status_code=429, detail="关注操作过于频繁,请稍后再试")
-    if _user_row(user_id) is None:
+    if user_row(user_id, active_only=True) is None:
         raise HTTPException(status_code=404, detail="用户不存在")
     _follow(user["id"], user_id)
     return {"ok": True, "following": True}

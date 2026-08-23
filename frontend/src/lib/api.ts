@@ -1,6 +1,7 @@
 /* 后端 API 封装(所有请求走这里,便于统一处理与类型收敛) */
 
 import type { GraphData } from "../store";
+import type { AuthorRow, EdgeRow, WorkRow } from "./adminTypes";
 
 // 浏览空间三元状态:public = 公共星云;mine = 我的星云(私有);
 // "space:<userId>" = 星际跃迁后正在浏览的他人星云。
@@ -44,9 +45,9 @@ export interface PathResponse {
 }
 
 export interface SpaceRows {
-  authors: Record<string, any>[];
-  works: Record<string, any>[];
-  edges: Record<string, any>[];
+  authors: AuthorRow[];
+  works: WorkRow[];
+  edges: EdgeRow[];
 }
 
 export interface SpaceJumpResult extends GraphData {
@@ -63,6 +64,19 @@ export interface OwnerProfile {
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
+  // 统一检查 HTTP 状态:404/500 的错误 JSON 不能当作成功载荷返回,
+  // 否则调用方会把 {detail: ...} 当正常数据渲染(与 jumpToRandomSpace / followUser 一致)。
+  if (!r.ok) {
+    let detail = "请求失败(" + r.status + ")";
+    try {
+      const d = await r.json();
+      if (d && typeof d.detail === "string" && d.detail) detail = d.detail;
+      else if (d && typeof d.message === "string" && d.message) detail = d.message;
+    } catch {
+      /* 非 JSON 错误响应,保留状态码文案 */
+    }
+    throw new Error(detail);
+  }
   return r.json() as Promise<T>;
 }
 

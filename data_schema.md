@@ -96,6 +96,24 @@
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
 
+## 关注关系(模型好友)
+
+表:`friendships`(schema v19 新增)——**单向关注**(user 关注 friend),不要求互相关注,
+不改变星云可见性;仅登录用户可用,不可关注自己。
+
+| 列 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | UUID | 是 | 主键,新增时后端自动生成 UUID v7 |
+| `user_id` | String | 是 | 关注者(引用 `users.id`) |
+| `friend_id` | String | 是 | 被关注者(引用 `users.id`) |
+| `created_at` | DateTime | 是 | 关注时间(UTC ISO-8601) |
+
+约束:`UNIQUE(user_id, friend_id)`、`CHECK(user_id <> friend_id)`;
+索引:`idx_friendships_user(user_id)`、`idx_friendships_friend(friend_id)`。
+接口:`POST/DELETE /api/follow/{user_id}`(关注/取关,幂等)、
+`GET /api/follow/following|followers`、`GET /api/follow/relation/{user_id}`;
+关注操作按用户每小时限流 50 次(取关不计入)。
+
 ## 约束与索引
 
 - 唯一约束:`Work.id`、`Author.id`

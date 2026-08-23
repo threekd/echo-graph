@@ -1,13 +1,14 @@
 /* 数据管理页的表单选择器组件与选项数据(从 Admin.tsx 拆出,降低单体体积) */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AuthorRow, WorkRow } from "../../lib/adminTypes";
 import iso6391 from "../../lib/iso6391.json";
 import iso3166 from "../../lib/iso3166-1.json";
 
 const iso6391Map = iso6391 as Record<string, string>;
 const iso3166Map = iso3166 as Record<string, string>;
 
-export function workLabel(w: any): string {
+export function workLabel(w: WorkRow | null | undefined): string {
   return w ? (w.Title_CN || "") + " - " + (w.originalTitle || "") : "";
 }
 
@@ -38,7 +39,7 @@ export function WorkPicker({
 }: {
   value: string;
   onChange: (v: string) => void;
-  worksList: any[];
+  worksList: WorkRow[];
   placeholder: string;
 }) {
   // 软删除行不可作为引用目标(与后端 validate_row 的 deletedAt 过滤一致)
@@ -66,7 +67,7 @@ export function WorkPicker({
       )
     : activeWorks;
 
-  const pick = (w: any) => {
+  const pick = (w: WorkRow) => {
     onChange(w.id);
     setQuery(workLabel(w));
     setOpen(false);
@@ -228,13 +229,13 @@ export function CodePicker({
   );
 }
 
-export function authorLabelOf(a: any): string {
+export function authorLabelOf(a: AuthorRow): string {
   const name = a.Name_CN || a.originalName || "";
   return a.birthYear ? name + "-" + a.birthYear : name;
 }
 
 // 把逗号分隔的 author_id 字符串解析为 [{ value: id, label: 显示名 }]
-function parseAuthorIds(value: string, authorsList: any[]): { value: string; label: string }[] {
+function parseAuthorIds(value: string, authorsList: AuthorRow[]): { value: string; label: string }[] {
   const active = authorsList.filter((a) => !a.deletedAt);
   return String(value || "")
     .split(",")
@@ -256,7 +257,7 @@ export function AuthorPicker({
 }: {
   value: string;
   onChange: (v: string) => void;
-  authorsList: any[];
+  authorsList: AuthorRow[];
   placeholder: string;
   onAddNew?: (query: string) => void;
 }) {
@@ -296,7 +297,7 @@ export function AuthorPicker({
     onChange(next.map((s) => s.value).join(","));
   };
 
-  const addAuthor = (a: any) => {
+  const addAuthor = (a: AuthorRow) => {
     if (selected.some((s) => s.value === a.id)) return;
     commit([...selected, { value: a.id, label: authorLabelOf(a) }]);
     setQuery("");

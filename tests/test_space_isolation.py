@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,7 +19,6 @@ from app.me import (
     my_create,
     my_data,
     my_delete,
-    my_graph,
     my_update,
 )
 
@@ -26,6 +26,42 @@ from app.me import (
 class _FakeReq:
     def __init__(self, cookies: dict | None = None) -> None:
         self.cookies = cookies or {}
+        self.state = types.SimpleNamespace()
+
+
+def _space_graph(request, user_id: str) -> dict:
+    """与只读路由工厂同一解析路径:可见性校验 + 目标星云 store.graph()。"""
+    row, viewer = space._space_context(request, user_id)
+    return space._space_store(row, viewer).graph()
+
+
+def _space_search(request, user_id: str, q: str, limit: int) -> dict:
+    row, viewer = space._space_context(request, user_id)
+    return {"hits": space._space_store(row, viewer).search(q.strip(), limit)}
+
+
+def _space_work_detail(request, user_id: str, work_id: str) -> dict:
+    row, viewer = space._space_context(request, user_id)
+    detail = space._space_store(row, viewer).work_detail(work_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
+    return detail
+
+
+def _space_expansion(request, user_id: str, work_id: str, hops: int) -> dict:
+    row, viewer = space._space_context(request, user_id)
+    data = space._space_store(row, viewer).expansion(work_id, hops)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
+    return data
+
+
+def _space_path(request, user_id: str, frm: str, to: str, max_hops: int) -> dict:
+    row, viewer = space._space_context(request, user_id)
+    result = space._space_store(row, viewer).path(frm.strip(), to.strip(), max_hops)
+    if result is None:
+        raise HTTPException(status_code=404, detail="no mention path found")
+    return result
 
 
 class SpaceIsolationTest(unittest.TestCase):
@@ -53,19 +89,19 @@ class SpaceIsolationTest(unittest.TestCase):
         aid = created["row"]["id"]
         # 公共星云与第三方空间均不可见
         self.assertEqual(SqliteStore().graph()["nodes"], [])
-        self.assertEqual(my_graph(user=self.bob)["nodes"], [])
+        self.assertEqual(SqliteStore(owner_id=self.bob["id"]).graph()["nodes"], [])
         self.assertEqual(admin.get_data()["authors"], [])
         # 第三方不可改(视为不存在,404)
         with self.assertRaises(HTTPException) as ctx:
             my_update("authors", aid, {"originalName": "B", "Name_CN": "篡改"}, user=self.bob)
         self.assertEqual(ctx.exception.status_code, 404)
         # 本人可见可改可删
-        self.assertEqual(len(my_graph(user=self.alice)["nodes"]), 1)
+        self.assertEqual(len(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"]), 1)
         my_update(
             "authors", aid, {"originalName": "A2", "Name_CN": "改了"}, user=self.alice
         )
         my_delete("authors", aid, user=self.alice)
-        self.assertEqual(my_graph(user=self.alice)["nodes"], [])
+        self.assertEqual(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"], [])
 
     def test_cross_space_reference_rejected(self) -> None:
         bob_author = my_create(
@@ -96,7 +132,7 @@ class SpaceIsolationTest(unittest.TestCase):
         self.assertEqual(len(nodes), 1)
         self.assertEqual(nodes[0]["id"], aid)
         # 用户空间看不到公共数据,也不能改
-        self.assertEqual(my_graph(user=self.alice)["nodes"], [])
+        self.assertEqual(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"], [])
         with self.assertRaises(HTTPException) as ctx:
             my_update("authors", aid, {"Name_CN": "篡改"}, user=self.alice)
         self.assertEqual(ctx.exception.status_code, 404)
@@ -119,13 +155,13 @@ class SpaceIsolationTest(unittest.TestCase):
             {"originalName": "A", "Name_CN": "甲2", "visibility": "private"},
             user=self.alice,
         )
-        self.assertEqual(len(my_graph(user=self.alice)["nodes"]), 1)
+        self.assertEqual(len(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"]), 1)
         with db_sqlite._db() as conn:
             conn.execute(
                 "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
                 (self.admin["id"], self.bob["id"]),
             )
-        g = space.space_graph(self.alice["id"], _FakeReq())
+        g = _space_graph(_FakeReq(), self.alice["id"])
         self.assertEqual(len(g["nodes"]), 0)
         # 非法可见性取值
         with self.assertRaises(HTTPException) as ctx:
@@ -164,7 +200,7 @@ class SpaceIsolationTest(unittest.TestCase):
                 "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
                 (self.admin["id"], self.bob["id"]),
             )
-        visible_before = space.space_graph(self.alice["id"], _FakeReq())
+        visible_before = _space_graph(_FakeReq(), self.alice["id"])
         echo_before = [e for e in visible_before["edges"] if e["type"] == "echo"]
         self.assertEqual(len(echo_before), 1)
         # 隐藏 w1 后:访客看不到它,相关的涟漪边也一并隐藏
@@ -176,7 +212,7 @@ class SpaceIsolationTest(unittest.TestCase):
             },
             user=self.alice,
         )
-        visible_after = space.space_graph(self.alice["id"], _FakeReq())
+        visible_after = _space_graph(_FakeReq(), self.alice["id"])
         work_ids = {n["id"] for n in visible_after["nodes"]}
         self.assertNotIn(w1["id"], work_ids)
         self.assertEqual([e for e in visible_after["edges"] if e["type"] == "echo"], [])
@@ -249,7 +285,7 @@ class SpaceIsolationTest(unittest.TestCase):
                 (self.admin["id"], self.bob["id"]),
             )
         # 游客可读公开星云
-        g = space.space_graph(self.alice["id"], _FakeReq())
+        g = _space_graph(_FakeReq(), self.alice["id"])
         self.assertEqual(len(g["nodes"]), 1)
         # 随机跃迁命中唯一公开星云
         r = space.random_space_graph(_FakeReq())
@@ -260,13 +296,13 @@ class SpaceIsolationTest(unittest.TestCase):
         with db_sqlite._db() as conn:
             conn.execute("UPDATE users SET space_visibility = 'private' WHERE id = ?", (self.alice["id"],))
         with self.assertRaises(HTTPException) as ctx:
-            space.space_graph(self.alice["id"], _FakeReq())
+            _space_graph(_FakeReq(), self.alice["id"])
         self.assertEqual(ctx.exception.status_code, 404)
         alice_token = auth.create_session(self.alice["id"])
-        g2 = space.space_graph(self.alice["id"], _FakeReq({auth.SESSION_COOKIE: alice_token}))
+        g2 = _space_graph(_FakeReq({auth.SESSION_COOKIE: alice_token}), self.alice["id"])
         self.assertEqual(len(g2["nodes"]), 1)
         admin_token = auth.create_session(self.admin["id"])
-        g3 = space.space_graph(self.alice["id"], _FakeReq({auth.SESSION_COOKIE: admin_token}))
+        g3 = _space_graph(_FakeReq({auth.SESSION_COOKIE: admin_token}), self.alice["id"])
         self.assertEqual(len(g3["nodes"]), 1)
         # 全部 private 后随机跃迁 404
         with self.assertRaises(HTTPException) as ctx:
@@ -319,19 +355,17 @@ class SpaceIsolationTest(unittest.TestCase):
                 (self.admin["id"], self.bob["id"]),
             )
         req = _FakeReq()
-        hits = space.space_search(self.alice["id"], "甲书", 20, req)
+        hits = _space_search(req, self.alice["id"], "甲书", 20)
         self.assertEqual([h["id"] for h in hits["hits"]], [w1["id"]])
-        detail = space.space_work_detail(self.alice["id"], w1["id"], req)
+        detail = _space_work_detail(req, self.alice["id"], w1["id"])
         self.assertEqual(detail["work"]["id"], w1["id"])
         self.assertEqual(detail["mentions"][0]["target"], w2["id"])
-        ex = space.space_expansion(self.alice["id"], w1["id"], 2, req)
+        ex = _space_expansion(req, self.alice["id"], w1["id"], 2)
         self.assertEqual(ex["centerId"], w1["id"])
         self.assertIn(w2["id"], [n["id"] for n in ex["nodes"]])
-        p = space.space_path(
-            self.alice["id"], w1["id"], w2["id"], max_hops=15, request=req
-        )
+        p = _space_path(req, self.alice["id"], w1["id"], w2["id"], 15)
         self.assertEqual(p["nodes"], [w1["id"], w2["id"]])
         # 不存在的作品 404
         with self.assertRaises(HTTPException) as ctx:
-            space.space_work_detail(self.alice["id"], "no-such-id", req)
+            _space_work_detail(req, self.alice["id"], "no-such-id")
         self.assertEqual(ctx.exception.status_code, 404)

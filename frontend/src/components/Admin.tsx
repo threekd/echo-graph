@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
-import type { AdminData, AdminTab } from "../lib/adminTypes";
+import type {
+  AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, ContributionRow, EdgeRow, WorkRow,
+} from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
 import ContributionsPanel from "./admin/ContributionsPanel";
@@ -100,13 +102,13 @@ export default function Admin() {
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
   const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["contributions", "audit", "snapshots"].includes(k.key));
   const [kind, setKind] = useState<AdminTab>("authors");
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [contribs, setContribs] = useState<any[]>([]);
+  const [contribs, setContribs] = useState<ContributionRow[]>([]);
   const [contribsLoading, setContribsLoading] = useState(false);
   const [contribCount, setContribCount] = useState(0);
-  const [viewContrib, setViewContrib] = useState<any>(null);
+  const [viewContrib, setViewContrib] = useState<ContributionRow | null>(null);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message: string;
@@ -116,8 +118,9 @@ export default function Admin() {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(() => defaultSortFor("authors"));
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
-  const [warnings, setWarnings] = useState<any>(null);
-  const [modal, setModal] = useState<any>(null); // { mode: "add" | "edit", row: {} }
+  const [warnings, setWarnings] = useState<AdminData["warnings"] | null>(null);
+  // { mode: "add" | "edit", row: 表单初始值(编辑时为完整行) }
+  const [modal, setModal] = useState<{ mode: "add" | "edit"; row: Partial<AdminRow> } | null>(null);
 
   // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
@@ -174,7 +177,7 @@ export default function Admin() {
         const items = d.items || [];
         setContribs(items);
         // Tab 角标保持"待审核"数(筛选/排序由表格内完成)
-        setContribCount(items.filter((c: any) => c.status === "pending").length);
+        setContribCount(items.filter((c: ContributionRow) => c.status === "pending").length);
         setContribsLoading(false);
       })
       .catch((e) => { setStatus("加载贡献失败: " + e.message); setContribsLoading(false); });
@@ -191,15 +194,17 @@ export default function Admin() {
 
   if (!state.adminOpen) return null;
 
-  const allRows: any[] = data ? data[kind] || [] : [];
+  const allRows: AdminRow[] = data ? (data[kind as AdminKind] || []) : [];
   const cols = colsFor(isAdmin)[kind];
-  const counts = data ? data.counts || {} : {};
+  const counts = data ? data.counts : undefined;
 
   // Tab 角标计数:贡献/日志为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
     if (k === "contributions") return String(contribCount);
     if (k === "audit" || k === "snapshots") return "";
-    return counts[k] != null ? String(counts[k]) : (data ? String((data[k] || []).length) : "");
+    const n = counts ? (counts as Record<AdminKind, number>)[k as AdminKind] : undefined;
+    if (n != null) return String(n);
+    return data ? String((data[k as AdminKind] || []).length) : "";
   };
 
   // 每类数据的可筛选列:select 为精确下拉,text 为按列搜索框
@@ -251,7 +256,9 @@ export default function Admin() {
         ],
       }) as Record<AdminTab, { key: string; type: "select" | "text" }[]>;
   const uniqueValues = (key: string): string[] =>
-    Array.from(new Set(allRows.map((r) => String(r[key] || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    Array.from(
+      new Set(allRows.map((r) => String((r as unknown as Record<string, unknown>)[key] || "")).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b));
 
   const toggleSort = (key: string) => {
     setSort((prev) => {
@@ -272,7 +279,7 @@ export default function Admin() {
     setModal({ mode: "add", row: {} });
   };
 
-  const openEdit = (row: any) => {
+  const openEdit = (row: AdminRow) => {
     setModal({ mode: "edit", row });
   };
 
@@ -290,7 +297,7 @@ export default function Admin() {
     if (relevant) refreshSpaceGraph();
   };
 
-  const doDelete = (row: any) => {
+  const doDelete = (row: AdminRow) => {
     const id = row.id;
     setConfirmState({
       title: "确认删除",
@@ -314,7 +321,7 @@ export default function Admin() {
               const key = kind as "authors" | "works" | "edges";
               applyLocal((prev) => ({
                 ...prev,
-                [key]: (prev[key] || []).map((r: any) =>
+                [key]: (prev[key] || []).map((r: AdminRow) =>
                   r.id === id ? { ...r, deletedAt: d.deletedAt } : r
                 ),
               }));
@@ -345,7 +352,7 @@ export default function Admin() {
           const key = kind as "authors" | "works" | "edges";
           applyLocal((prev) => ({
             ...prev,
-            [key]: (prev[key] || []).map((r: any) =>
+            [key]: (prev[key] || []).map((r: AdminRow) =>
               r.id === id ? { ...r, deletedAt: null } : r
             ),
           }));
@@ -355,36 +362,38 @@ export default function Admin() {
       .catch((e) => setStatus("恢复失败: " + e.message));
   };
 
-  const worksList = data ? data.works || [] : [];
-  const authorsList = data ? data.authors || [] : [];
-  const worksById: Record<string, any> = {};
-  const authorsById: Record<string, any> = {};
-  worksList.forEach((w: any) => { worksById[w.id] = w; });
-  authorsList.forEach((a: any) => { authorsById[a.id] = a; });
+  const worksList: WorkRow[] = data ? data.works || [] : [];
+  const authorsList: AuthorRow[] = data ? data.authors || [] : [];
+  const worksById: Record<string, WorkRow> = {};
+  const authorsById: Record<string, AuthorRow> = {};
+  worksList.forEach((w) => { worksById[w.id] = w; });
+  authorsList.forEach((a) => { authorsById[a.id] = a; });
 
   // 行显示名(删除确认/状态提示用):作者名 / 作品标题 / 涟漪 A → B
-  const rowLabel = (row: any): string => {
-    if (kind === "authors") return authorLabelOf(row);
-    if (kind === "works") return workLabel(row);
-    return edgeDisplayLabel(row, worksById, workLabel);
+  const rowLabel = (row: AdminRow): string => {
+    if (kind === "authors") return authorLabelOf(row as AuthorRow);
+    if (kind === "works") return workLabel(row as WorkRow);
+    return edgeDisplayLabel(row as EdgeRow, worksById, workLabel);
   };
 
   // 单元格显示值(与表格渲染一致,排序/筛选共用)
-  const cellValue = (r: any, key: string): string => {
+  const cellValue = (r: AdminRow, key: string): string => {
+    const rec = r as unknown as Record<string, unknown>;
     if (kind === "edges" && (key === "source_work_id" || key === "target_work_id")) {
-      const w = worksById[r[key]];
-      return w ? workLabel(w) : String(r[key] ?? "");
+      const wid = String(rec[key] ?? "");
+      const w = worksById[wid];
+      return w ? workLabel(w) : wid;
     }
     if (kind === "works" && key === "author_id") {
-      return authorDisplayNames(r, authorsById, authorLabelOf);
+      return authorDisplayNames(r as WorkRow, authorsById, authorLabelOf);
     }
     if (key === "visibility") {
-      return r[key] === "private" ? "隐藏" : "公开";
+      return rec[key] === "private" ? "隐藏" : "公开";
     }
     if (key === "recommendation") {
-      return r[key] === "recommend" ? "推荐" : r[key] === "not_recommend" ? "不推荐" : "";
+      return rec[key] === "recommend" ? "推荐" : rec[key] === "not_recommend" ? "不推荐" : "";
     }
-    const v = r[key];
+    const v = rec[key];
     return v == null ? "" : String(v);
   };
 
@@ -575,7 +584,7 @@ export default function Admin() {
             });
             refreshGraphAfterWrite();
           }}
-          onDelete={modal.mode === "edit" ? () => doDelete(modal.row) : undefined}
+          onDelete={modal.mode === "edit" ? () => doDelete(modal.row as AdminRow) : undefined}
         />
       )}
     </div>

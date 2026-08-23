@@ -3,6 +3,7 @@
    「添加新作品 / 新作者」入口,弹出标准新增弹窗(与数据管理共用)。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AdminRow, AuthorRow, WorkRow } from "../lib/adminTypes";
 import { useApp, type GraphNode } from "../store";
 import { loadMyRows, type SpaceRows } from "../lib/api";
 import { refreshSpaceGraph } from "../lib/graph";
@@ -141,7 +142,7 @@ export default function Contribute() {
   // 标准新增弹窗:{ kind, initial, target } —— target 记录从哪个下拉框发起
   const [addModal, setAddModal] = useState<{
     kind: "authors" | "works";
-    initial: any;
+    initial: Partial<AdminRow>;
     target: string;
   } | null>(null);
 
@@ -170,7 +171,7 @@ export default function Contribute() {
       .map((w) => ({
         id: w.id, type: "work", label: w.Title_CN,
         originalTitle: w.originalTitle, language: w.language,
-        author_ids: w.author_ids, author: w.author,
+        author_ids: w.author_ids,
       })),
     [myRows]
   );
@@ -221,16 +222,18 @@ export default function Contribute() {
     });
   };
 
-  const nodeLabelOf = (kind: "authors" | "works", row: any): string => {
+  const nodeLabelOf = (kind: "authors" | "works", row: AdminRow): string => {
     if (kind === "authors") {
+      const a = row as AuthorRow;
       return authorSuggestionLabel({
-        id: row.id, type: "author", label: row.Name_CN,
-        originalName: row.originalName, nationality: row.nationality,
+        id: a.id, type: "author", label: a.Name_CN,
+        originalName: a.originalName, nationality: a.nationality,
       });
     }
+    const w = row as WorkRow;
     return workSuggestionLabel({
-      id: row.id, type: "work", label: row.Title_CN,
-      originalTitle: row.originalTitle, language: row.language,
+      id: w.id, type: "work", label: w.Title_CN,
+      originalTitle: w.originalTitle, language: w.language,
     });
   };
 

@@ -179,10 +179,12 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        # 缓存键含空间与视图模式:owner 视图与访客视图(隐藏节点)互不串缓存
+        # 缓存键含空间、视图模式与审核过滤:owner/访客视图互不串缓存,
+        # 同一 DB 路径下不同 reviewed_only 的公共 store 也不串缓存
         key = _cache_key() + (
             self.owner_id or "public",
             "owner" if self.include_private else "visitor",
+            self.reviewed_only,
         )
         hit = _read_cache.get(key)
         if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:

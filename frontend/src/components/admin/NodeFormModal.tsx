@@ -2,6 +2,7 @@
    通过 apiBase 区分空间:/api/me(个人空间)或 /api/admin(公共星云)。 */
 
 import { useState } from "react";
+import type { AdminRow, AuthorRow, EdgeRow, WorkRow } from "../../lib/adminTypes";
 import {
   AuthorPicker,
   CodePicker,
@@ -15,7 +16,7 @@ import {
 export type NodeKind = "authors" | "works" | "edges";
 
 // 本空间已有数据的联想下拉:输入时列出已有作者/作品,选中时提示数据已存在(新增必然是新的)
-function OwnSuggestField({
+function OwnSuggestField<T extends AdminRow>({
   value,
   onChange,
   options,
@@ -27,12 +28,12 @@ function OwnSuggestField({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: any[];
-  getLabel: (item: any) => string;
-  getFill?: (item: any) => string;
+  options: T[];
+  getLabel: (item: T) => string;
+  getFill?: (item: T) => string;
   placeholder?: string;
   maxLength?: number;
-  onPickExisting: (item: any) => void;
+  onPickExisting: (item: T) => void;
 }) {
   const [open, setOpen] = useState(false);
   const q = value.trim().toLowerCase();
@@ -68,9 +69,9 @@ function OwnSuggestField({
   );
 }
 
-const ownAuthorLabel = (a: any) =>
+const ownAuthorLabel = (a: AuthorRow) =>
   [a.originalName || "", a.Name_CN || ""].filter(Boolean).join(" · ");
-const ownWorkLabel = (w: any) =>
+const ownWorkLabel = (w: WorkRow) =>
   [w.originalTitle || "", w.Title_CN || ""].filter(Boolean).join(" · ");
 
 const KIND_LABELS: Record<NodeKind, string> = {
@@ -79,8 +80,29 @@ const KIND_LABELS: Record<NodeKind, string> = {
   edges: "涟漪",
 };
 
-// 表单字段配置
-const FIELDS: Record<NodeKind, any[]> = {
+interface FieldDef {
+  key: string;
+  label: string;
+  required?: boolean;
+  type?:
+    | "number"
+    | "select"
+    | "textarea"
+    | "workPicker"
+    | "authorPicker"
+    | "languagePicker"
+    | "countryPicker"
+    | "visibility"
+    | "recommendation";
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  maxLength?: number;
+}
+
+// 表单字段配置(与后端字段一一对应)
+const FIELDS: Record<NodeKind, FieldDef[]> = {
   authors: [
     { key: "originalName", label: "原文名", required: true },
     { key: "nationality", label: "国家", type: "countryPicker" },
@@ -136,17 +158,17 @@ export default function NodeFormModal({
 }: {
   kind: NodeKind;
   mode: "add" | "edit";
-  initial: any;
+  initial: Partial<AdminRow>;
   apiBase: string;
-  authorsList: any[];
-  worksList: any[];
-  edgesList: any[];
+  authorsList: AuthorRow[];
+  worksList: WorkRow[];
+  edgesList: EdgeRow[];
   isAdmin: boolean;
   onClose: () => void;
-  onSaved: (row: any) => void;
+  onSaved: (row: AdminRow) => void;
   onReload?: () => void;
-  onDelete?: (row: any) => void;
-  onAuthorAdded?: (row: any) => void;
+  onDelete?: (row: AdminRow) => void;
+  onAuthorAdded?: (row: AuthorRow) => void;
 }) {
   const [form, setForm] = useState<any>({ ...initial });
   const [formError, setFormError] = useState("");
@@ -173,11 +195,15 @@ export default function NodeFormModal({
     const list = kind === "authors" ? authorsList : worksList;
     const v = String(value || "").trim().toLowerCase();
     if (!v) return false;
-    return list.some((r: any) => r.id !== selfId && String(r[field] || "").trim().toLowerCase() === v);
+    return list.some(
+      (r) =>
+        (r as unknown as Record<string, unknown>).id !== selfId &&
+        String((r as unknown as Record<string, unknown>)[field] || "").trim().toLowerCase() === v
+    );
   };
   const edgePairHasDup = (s: string, t: string): boolean => {
     if (!s || !t) return false;
-    return edgesList.some((r: any) => r.source_work_id === s && r.target_work_id === t);
+    return edgesList.some((r) => r.source_work_id === s && r.target_work_id === t);
   };
 
   const clearDupHint = (key: string) => {
@@ -209,7 +235,11 @@ export default function NodeFormModal({
         form[f.key] != null
       ) {
         const n = Number(form[f.key]);
-        if (!Number.isInteger(n) || n < f.min || n > f.max) {
+        if (
+          !Number.isInteger(n)
+          || (f.min != null && n < f.min)
+          || (f.max != null && n > f.max)
+        ) {
           setFormError("「" + f.label + "」需为 " + f.min + "–" + f.max + " 之间的整数");
           return;
         }
@@ -223,7 +253,9 @@ export default function NodeFormModal({
         const list = kind === "authors" ? authorsList : worksList;
         const v = String(form[dupField] || "").trim().toLowerCase();
         const hit = list.some(
-          (r: any) => !r.deletedAt && String(r[dupField] || "").trim().toLowerCase() === v
+          (r) =>
+            !(r as unknown as Record<string, unknown>).deletedAt &&
+            String((r as unknown as Record<string, unknown>)[dupField] || "").trim().toLowerCase() === v
         );
         if (v && hit) {
           const msg = "该数据已存在,请勿重复新增(可到数据管理编辑)";
@@ -238,7 +270,7 @@ export default function NodeFormModal({
       Object.entries(form).map(([k, v]) => [k, typeof v === "string" ? (v.trim() || null) : v])
     );
     const url = mode === "edit"
-      ? apiBase + "/" + kind + "/" + encodeURIComponent(initial.id)
+      ? apiBase + "/" + kind + "/" + encodeURIComponent(initial.id!)
       : apiBase + "/" + kind;
     fetch(url, {
       method: mode === "edit" ? "PUT" : "POST",
@@ -406,7 +438,7 @@ export default function NodeFormModal({
                     onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                   >
                     <option value="">请选择…</option>
-                    {f.options.map((o: any) => <option key={o} value={o}>{o}</option>)}
+                    {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </label>
               );
@@ -458,7 +490,7 @@ export default function NodeFormModal({
         {formError && <div id="admin-form-errors">{formError}</div>}
         <div className="admin-modal-actions">
           {mode === "edit" && onDelete && (
-            <button className="del" onClick={() => onDelete(initial)}>删除</button>
+            <button className="del" onClick={() => onDelete(initial as AdminRow)}>删除</button>
           )}
           <div className="admin-modal-actions-right">
             <button onClick={save}>保存</button>
@@ -500,7 +532,7 @@ export default function NodeFormModal({
             const prev = String(form.author_id || "").trim();
             // 新作者加入当前作品:多作者用逗号拼接(与 AuthorPicker 的 value 格式一致)
             setForm({ ...form, author_id: prev ? `${prev},${row.id}` : row.id });
-            if (onAuthorAdded) onAuthorAdded(row); // 通知父级刷新作者列表,让新作者立即可见
+            if (onAuthorAdded) onAuthorAdded(row as AuthorRow); // 通知父级刷新作者列表,让新作者立即可见
             setAuthorAdd(null);
           }}
         />

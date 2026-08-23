@@ -1,5 +1,22 @@
-import { describe, expect, it } from "vitest";
-import { apiRoot, spaceFromParam, spaceParamFromState, spaceUserId } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  apiRoot, findPath, loadGraphData, search, spaceFromParam, spaceParamFromState, spaceUserId,
+} from "./api";
+
+function mockFetch(ok: boolean, body: unknown, status = 200) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok,
+      status,
+      json: async () => body,
+    }))
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("space API routing", () => {
   it("routes public / mine / user space to the right prefix", () => {
@@ -25,5 +42,27 @@ describe("space API routing", () => {
     expect(spaceFromParam("")).toBeNull();
     expect(spaceFromParam("bogus")).toBeNull();
     expect(spaceFromParam(undefined)).toBeNull();
+  });
+});
+
+describe("getJson HTTP error handling", () => {
+  it("resolves successful responses", async () => {
+    mockFetch(true, { nodes: [], edges: [] });
+    await expect(loadGraphData("public")).resolves.toEqual({ nodes: [], edges: [] });
+  });
+
+  it("throws with backend detail on 404", async () => {
+    mockFetch(false, { detail: "work not found: abc" }, 404);
+    await expect(loadGraphData("public")).rejects.toThrow("work not found: abc");
+  });
+
+  it("throws with generic status message on non-JSON errors", async () => {
+    mockFetch(false, "boom", 500);
+    await expect(search("q")).rejects.toThrow("请求失败(500)");
+  });
+
+  it("throws on findPath errors instead of resolving an error payload", async () => {
+    mockFetch(false, { detail: "no mention path found" }, 404);
+    await expect(findPath("a", "b")).rejects.toThrow("no mention path found");
   });
 });

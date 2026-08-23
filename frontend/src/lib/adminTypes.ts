@@ -82,6 +82,9 @@ export interface AuditEntry {
   after?: string | null;
 }
 
+// 三张业务表行的联合(管理表格/表单的通用行类型)
+export type AdminRow = AuthorRow | WorkRow | EdgeRow;
+
 export interface AdminData {
   authors: AuthorRow[];
   works: WorkRow[];

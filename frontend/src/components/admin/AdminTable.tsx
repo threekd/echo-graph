@@ -8,23 +8,23 @@ export interface AdminCol {
   label: string;
 }
 
-interface Props {
+interface Props<T> {
   cols: AdminCol[];
-  rows: any[];
+  rows: T[];
   filterCols: { key: string; type: "select" | "text" }[];
   filters: Record<string, string>;
   textFilters: Record<string, string>;
   sort: { key: string; dir: 1 | -1 } | null;
-  cellValue: (row: any, key: string) => string;
+  cellValue: (row: T, key: string) => string;
   uniqueValues: (key: string) => string[];
   onSort: (key: string) => void;
   onFilter: (key: string, value: string) => void;
   onTextFilter: (key: string, value: string) => void;
-  renderActions: (row: any) => ReactNode;
+  renderActions: (row: T) => ReactNode;
   kind: string;
 }
 
-export default function AdminTable({
+export default function AdminTable<T extends object>({
   cols,
   rows,
   filterCols,
@@ -38,7 +38,7 @@ export default function AdminTable({
   onTextFilter,
   renderActions,
   kind,
-}: Props) {
+}: Props<T>) {
   const tableRef = useRef<HTMLTableElement | null>(null);
 
   // 固定筛选行:实测表头行高度,作为筛选行的 sticky 吸附偏移
@@ -115,12 +115,15 @@ export default function AdminTable({
       <tbody>
         {visible.length === 0 ? (
           <tr><td className="empty-cell" colSpan={cols.length + 1}>无匹配记录</td></tr>
-        ) : visible.map((r) => (
-          <tr key={r.id || r.source_work_id + ":" + r.target_work_id} className={r.deletedAt ? "deleted" : ""}>
+        ) : visible.map((r) => {
+          const rec = r as Record<string, unknown>;
+          return (
+          <tr key={String(rec.id || rec.source_work_id + ":" + rec.target_work_id)} className={rec.deletedAt ? "deleted" : ""}>
             {cols.map((c) => <td key={c.key}>{cellValue(r, c.key)}</td>)}
             <td>{renderActions(r)}</td>
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AuthorRow, EdgeRow, WorkRow } from "../../lib/adminTypes";
 import { applyAdminQuery, authorDisplayNames, edgeDisplayLabel } from "./query";
 
 const authors = [
@@ -106,11 +107,11 @@ describe("applyAdminQuery", () => {
 });
 
 describe("authorDisplayNames", () => {
-  const authorsById: Record<string, any> = {
-    a1: { Name_CN: "甲", birthYear: 1920 },
-    a2: { Name_CN: "乙" },
+  const authorsById: Record<string, AuthorRow> = {
+    a1: { Name_CN: "甲", birthYear: 1920 } as AuthorRow,
+    a2: { Name_CN: "乙" } as AuthorRow,
   };
-  const labelOf = (a: any) => a.Name_CN + (a.birthYear ? "-" + a.birthYear : "");
+  const labelOf = (a: AuthorRow) => a.Name_CN + (a.birthYear ? "-" + a.birthYear : "");
 
   it("多作者全部解析为名称,容忍逗号后空格", () => {
     expect(authorDisplayNames("a1, a2", authorsById, labelOf)).toBe("甲-1920、乙");
@@ -132,19 +133,19 @@ describe("authorDisplayNames", () => {
 });
 
 describe("edgeDisplayLabel", () => {
-  const worksById: Record<string, any> = {
-    w1: { Title_CN: "局外人", originalTitle: "L'Étranger" },
-    w2: { Title_CN: "鼠疫", originalTitle: "La Peste" },
+  const worksById: Record<string, WorkRow> = {
+    w1: { Title_CN: "局外人", originalTitle: "L'Étranger" } as WorkRow,
+    w2: { Title_CN: "鼠疫", originalTitle: "La Peste" } as WorkRow,
   };
-  const labelOf = (w: any) => (w.Title_CN || "") + " - " + (w.originalTitle || "");
+  const labelOf = (w: WorkRow) => (w.Title_CN || "") + " - " + (w.originalTitle || "");
 
   it("源/目标作品均解析为标题", () => {
-    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "w2" }, worksById, labelOf))
+    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "w2" } as EdgeRow, worksById, labelOf))
       .toBe("局外人 - L'Étranger → 鼠疫 - La Peste");
   });
 
   it("未知作品 id 保留原样", () => {
-    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "nope" }, worksById, labelOf))
+    expect(edgeDisplayLabel({ source_work_id: "w1", target_work_id: "nope" } as EdgeRow, worksById, labelOf))
       .toBe("局外人 - L'Étranger → nope");
   });
 });

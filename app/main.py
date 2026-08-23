@@ -7,7 +7,7 @@ import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.admin import router as admin_router
@@ -17,6 +17,7 @@ from app.contributions import router as contributions_router
 from app.db import get_store
 from app.follows import router as follows_router
 from app.me import router as me_router
+from app.read_routes import register_read_routes
 from app.security import is_state_changing, same_origin_allowed
 from app.space import router as space_router
 
@@ -120,58 +121,20 @@ def health() -> dict:
     return {"status": "ok", "store": store.name}
 
 
-@app.get("/api/graph")
-def graph(
-    status: str | None = Query(None, pattern="^(draft|reviewed|rejected)$"),
-) -> dict:
-    data = store.graph(status)
-    # 公共星云所有者(引导管理员)的公开资料,供前端「个人资料」Tab 展示
-    data["owner"] = admin_profile()
-    return data
-
-
-@app.get("/api/search")
-def search(q: str = Query(..., min_length=1), limit: int = Query(20, ge=1, le=50)) -> dict:
-    return {"hits": store.search(q.strip(), limit)}
-
-
-@app.get("/api/work/{work_id}")
-def work_detail(work_id: str) -> dict:
-    detail = store.work_detail(work_id)
-    if detail is None:
-        raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
-    return detail
-
-
-@app.get("/api/expansion/{work_id}")
-def expansion(
-    work_id: str,
-    hops: int = Query(1, ge=1, description="向外扩散的级数(无上限,BFS 无更多节点时自动终止)"),
-) -> dict:
-    data = store.expansion(work_id, hops)
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
-    return data
-
-
-@app.get("/api/path")
-def path(
-    frm: str = Query(..., alias="from", description="起点作品 id"),
-    to: str = Query(..., description="终点作品 id"),
-    max_hops: int = Query(15, ge=1, le=30),
-) -> dict:
-    result = store.path(frm.strip(), to.strip(), max_hops)
-    if result is None:
-        raise HTTPException(status_code=404, detail="no mention path found")
-    return result
-
-
 app.include_router(admin_router)
 app.include_router(contributions_router)
 app.include_router(auth_router)
 app.include_router(follows_router)
 app.include_router(me_router)
 app.include_router(space_router)
+
+# 公共只读五件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
+register_read_routes(
+    app,
+    lambda request, user_id: get_store(),
+    owner_provider=lambda request, user_id: admin_profile(),
+    path_prefix="/api",
+)
 
 
 if __name__ == "__main__":

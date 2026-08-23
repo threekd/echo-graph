@@ -23,6 +23,7 @@ import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
 } from "./lib/graph";
+import { enterSpace } from "./lib/space";
 import { setOnCameraChange } from "./lib/renderer";
 
 // 管理页与贡献弹窗按需加载(普通用户默认不可见,不打进首屏包)
@@ -82,12 +83,7 @@ function AppContent() {
         : space === "mine"
           ? ((data as any).owner?.nickname || (data as any).owner?.username || "我的星云")
           : ((data as any).displayName || "未知星云");
-      flushSync(() => {
-        dispatch({ type: "SET_DATA", data });
-        dispatch({ type: "SET_SPACE", space });
-        dispatch({ type: "SET_SPACE_OWNER", owner });
-        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
-      });
+      enterSpace(dispatch, space, data, owner, (data as any).owner, { flush: true });
       return { data };
     };
     if (target === "mine") {

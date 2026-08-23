@@ -32,9 +32,9 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "snapshots", label: "快照" },
 ];
 
-// 作者/作品表默认按修改时间从新到旧排序(updatedAt 为 UTC ISO 字符串,字典序即时间序);其余 Tab 不默认排序
+// 作者/作品/涟漪表默认按修改时间从新到旧排序(updatedAt 为 UTC ISO 字符串,字典序即时间序);其余 Tab 不默认排序
 function defaultSortFor(k: AdminTab): { key: string; dir: 1 | -1 } | null {
-  return k === "authors" || k === "works" ? { key: "updatedAt", dir: -1 } : null;
+  return k === "authors" || k === "works" || k === "edges" ? { key: "updatedAt", dir: -1 } : null;
 }
 
 function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: string }[]> {

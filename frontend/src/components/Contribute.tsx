@@ -216,7 +216,7 @@ export default function Contribute() {
       kind,
       target,
       initial: kind === "works"
-        ? { Title_CN: query, originalTitle: query }
+        ? { originalTitle: query } // 新增作品只预填原著名,中文名留空由用户填写
         : { originalName: query }, // 新增作者只预填原著名,中文名留空由用户填写
     });
   };

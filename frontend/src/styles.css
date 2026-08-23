@@ -225,6 +225,16 @@ main { height: 100%; position: relative; min-height: 0; }
   background: rgba(110, 231, 183, 0.16);
   color: #d1fae5;
 }
+.follow-badge.self {
+  border-color: rgba(148, 163, 255, 0.25);
+  background: rgba(30, 44, 90, 0.35);
+  color: var(--muted);
+  cursor: default;
+}
+.follow-badge.self:hover {
+  background: rgba(30, 44, 90, 0.35);
+  color: var(--muted);
+}
 .space-card-divider {
   height: 1px;
   margin: 10px 0;

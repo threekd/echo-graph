@@ -194,6 +194,7 @@ function OwnerProfilePanel({
       <div className="space-owner-head">
         <div className="space-owner-name" title={name}>{name}</div>
         {ownerId && !isSelf && <FollowButton ownerId={ownerId} />}
+        {ownerId && isSelf && <span className="follow-badge self">我</span>}
       </div>
       <div className="space-card-divider" />
       {profile?.bio ? (

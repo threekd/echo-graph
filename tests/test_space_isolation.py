@@ -273,6 +273,22 @@ class SpaceIsolationTest(unittest.TestCase):
             space.random_space_graph(_FakeReq())
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_random_jump_excludes_own_space(self) -> None:
+        """随机跃迁不会落到浏览者自己的星云(自己无法关注自己,卡片角标为「我」)。"""
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
+                (self.admin["id"], self.bob["id"]),
+            )
+        # 唯一公开星云是 alice 自己:作为 alice 访问时随机跃迁应 404(排除自己)
+        alice_token = auth.create_session(self.alice["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            space.random_space_graph(_FakeReq({auth.SESSION_COOKIE: alice_token}))
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 游客视角不受影响:仍可跃迁到 alice 的公开星云
+        r = space.random_space_graph(_FakeReq())
+        self.assertEqual(r["spaceId"], self.alice["id"])
+
     def test_space_read_endpoints_for_visitors(self) -> None:
         """星际跃迁后的完整交互:搜索/详情/扩散/路径全部路由到目标星云。"""
         a1 = my_create("authors", {"originalName": "甲", "Name_CN": "甲"}, user=self.alice)["row"]

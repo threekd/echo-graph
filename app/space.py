@@ -72,10 +72,12 @@ def random_space_graph(request: Request) -> dict:
     admin = admin_user_id()
     where = "space_visibility = 'public'"
     params: tuple = ()
-    if admin:
-        # 公共星云所有者(引导管理员)的空间与「公共星云」重复,排除在随机跃迁之外
-        where += " AND id != ?"
-        params = (admin,)
+    # 排除公共星云所有者(与「公共星云」重复)与浏览者本人(避免跃迁到自己的星云)
+    excludes = [x for x in (admin, viewer["id"] if viewer else None) if x]
+    if excludes:
+        placeholders = ",".join("?" for _ in excludes)
+        where += f" AND id NOT IN ({placeholders})"
+        params = tuple(excludes)
     with db_sqlite._db() as conn:
         row = conn.execute(
             "SELECT id, username, nickname, bio FROM users"

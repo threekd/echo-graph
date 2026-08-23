@@ -134,7 +134,7 @@ function BookmarkPanel({ work }: { work: any }) {
   );
 }
 
-// 关注按钮:浏览他人星云时在「个人资料」Tab 显示(不可关注自己)
+// 关注角标:浏览他人星云时显示在用户名右上角(不可关注自己)
 function FollowButton({ ownerId }: { ownerId: string }) {
   const { dispatch } = useApp();
   const [following, setFollowing] = useState(false);
@@ -167,11 +167,12 @@ function FollowButton({ ownerId }: { ownerId: string }) {
 
   return (
     <button
-      className={"side-btn follow-btn" + (following ? " following" : "")}
+      className={"follow-badge" + (following ? " following" : "")}
       onClick={toggle}
       disabled={busy}
+      title={following ? "取消关注" : "关注 TA"}
     >
-      {busy ? "请稍候…" : following ? "已关注 · 点击取关" : "＋ 关注"}
+      {busy ? "…" : following ? "已关注" : "关注"}
     </button>
   );
 }
@@ -190,10 +191,11 @@ function OwnerProfilePanel({
     (profile?.nickname || "").trim() || (profile?.username || "").trim() || "匿名星云";
   return (
     <div className="panel-content-inner">
-      <h2>个人资料</h2>
-      <div className="meta">{name}</div>
-      {ownerId && !isSelf && <FollowButton ownerId={ownerId} />}
-      <h3>简介</h3>
+      <div className="space-owner-head">
+        <div className="space-owner-name" title={name}>{name}</div>
+        {ownerId && !isSelf && <FollowButton ownerId={ownerId} />}
+      </div>
+      <div className="space-card-divider" />
       {profile?.bio ? (
         <p className="quote">{profile.bio}</p>
       ) : (
@@ -206,8 +208,11 @@ function OwnerProfilePanel({
 export default function Panel() {
   const { state, dispatch } = useApp();
   const panel = state.panel;
-  // 右侧详情栏功能 Tab:ripple = 当前视图内容;bookmarks = 书签(评分/评价);profile = 星云所有者资料
-  const [tab, setTab] = useState<"ripple" | "bookmarks" | "profile">("ripple");
+  // 跃迁后常驻的悬浮书友卡片(当前星云所有者资料 + 关注按钮)
+  const spaceOwnerId = spaceUserId(state.space);
+  // 右侧详情栏功能 Tab:ripple = 当前视图内容;bookmarks = 书签(评分/评价);
+  // 星云所有者资料已移出 Tab,改为跃迁后右上角常驻悬浮卡片
+  const [tab, setTab] = useState<"ripple" | "bookmarks">("ripple");
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasInsideRef = useRef(false); // 鼠标是否曾经进入过面板(进过再移出 -> 立即隐藏)
 
@@ -369,34 +374,24 @@ export default function Panel() {
             </svg>
             <span className="sidebar-tab-label">书签</span>
           </button>
-          <button
-            id="tab-profile"
-            className={"sidebar-tab" + (tab === "profile" ? " active" : "")}
-            role="tab"
-            aria-selected={tab === "profile"}
-            title="星云所有者的个人资料"
-            onClick={() => setTab("profile")}
-          >
-            <svg className="sidebar-tab-svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-            </svg>
-            <span className="sidebar-tab-label">书友</span>
-          </button>
         </div>
         <div id="panel-content">
           {tab === "ripple" ? (
             content
-          ) : tab === "bookmarks" ? (
-            <BookmarkPanel work={panel.type === "work" ? panel.d?.work : null} />
           ) : (
-            <OwnerProfilePanel
-              profile={state.spaceProfile}
-              ownerId={spaceUserId(state.space)}
-              isSelf={!!state.user && spaceUserId(state.space) === state.user.id}
-            />
+            <BookmarkPanel work={panel.type === "work" ? panel.d?.work : null} />
           )}
         </div>
       </aside>
+      {spaceOwnerId && (
+        <div className="space-profile-card" key={spaceOwnerId}>
+          <OwnerProfilePanel
+            profile={state.spaceProfile}
+            ownerId={spaceOwnerId}
+            isSelf={!!state.user && spaceOwnerId === state.user.id}
+          />
+        </div>
+      )}
     </>
   );
 }

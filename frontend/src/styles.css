@@ -153,6 +153,93 @@ main { height: 100%; position: relative; min-height: 0; }
   transition: transform 0.28s ease;
   box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
 }
+/* 跃迁后右上角常驻的「书友」悬浮卡片(星云所有者资料 + 关注按钮) */
+.space-profile-card {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 42px; /* 避开右侧 30px 边缘感应条(见 #sidebar-zone-right) */
+  z-index: 40;
+  width: min(270px, calc(100vw - 84px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  background: linear-gradient(160deg, rgba(38, 52, 110, 0.32), rgba(16, 22, 50, 0.34));
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  padding: 14px 16px;
+  animation: space-card-in 0.4s ease-out;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+}
+/* 卡片从上方向下滑入出现(每次跃迁换 space 时通过 key 重新播放) */
+@keyframes space-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.space-owner-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #e6eeff;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-owner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.follow-badge {
+  flex-shrink: 0;
+  margin-top: 1px; /* 与用户名顶部对齐(角标位) */
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(138, 184, 255, 0.45);
+  background: rgba(30, 44, 90, 0.5);
+  color: #a9c8ff;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.follow-badge:hover {
+  background: rgba(138, 184, 255, 0.25);
+  color: #fff;
+}
+.follow-badge.following {
+  border-color: rgba(110, 231, 183, 0.4);
+  color: #8be3c0;
+}
+.follow-badge.following:hover {
+  background: rgba(110, 231, 183, 0.16);
+  color: #d1fae5;
+}
+.space-card-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: linear-gradient(90deg, rgba(148, 163, 255, 0.4), rgba(148, 163, 255, 0.08));
+}
+.space-profile-card .panel-content-inner {
+  padding: 0; /* 卡片自带内边距,去掉面板内容区默认内边距 */
+}
+/* 右侧详情栏出现时收起个人资料卡片(淡出上移),面板收起后恢复 */
+#panel.show ~ .space-profile-card {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-12px);
+  pointer-events: none;
+}
 #panel.show {
   transform: translateX(0);
 }
@@ -425,9 +512,6 @@ main { height: 100%; position: relative; min-height: 0; }
   cursor: pointer;
 }
 .follow-jump:hover { color: #7dd3fc; border-color: rgba(138, 184, 255, 0.5); }
-.follow-btn.following {
-  opacity: 0.82;
-}
 .brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .brand h1 {
   font-size: 16px;
@@ -1411,6 +1495,14 @@ th.sortable.active .sort-icon {
   }
   .sidebar-tab.tab-bottom {
     margin-top: 0; /* 移动端横向排布,不适用底部吸附 */
+  }
+  /* 移动端无边缘感应条,卡片改为顶栏悬浮;详情面板是底部抽屉,无横向重合 */
+  .space-profile-card {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 42vh;
   }
   .sidebar-content {
     padding: 14px 16px;

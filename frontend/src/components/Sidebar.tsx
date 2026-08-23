@@ -190,10 +190,6 @@ export default function Sidebar() {
   const composingRef = useRef(false);
   const currentViewRef = useRef(state.currentView);
   currentViewRef.current = state.currentView;
-  // 扩散滑条标签:当前视图(涟漪/作者)数据中的作品数
-  const expandWorks = state.viewData.nodes.filter((n) => n.type === "work").length;
-  const expandText = expandWorks + " 本书";
-
   // 外部(深链/视图切换)改变扩散级数时同步输入框显示
   useEffect(() => {
     setExpandInput(String(state.expandHops));
@@ -603,7 +599,7 @@ export default function Sidebar() {
                 aria-label="减小扩散范围"
                 onClick={() => stepExpand(-1)}
                 disabled={state.expandHops <= 1}
-              >−</button>
+              >◀</button>
               <input
                 type="number"
                 id="expand-input"
@@ -623,9 +619,8 @@ export default function Sidebar() {
                 aria-label="增大扩散范围"
                 onClick={() => stepExpand(1)}
                 disabled={state.expandHops >= state.expandMax}
-              >+</button>
+              >▶</button>
             </div>
-            <span id="expand-value">{expandText}</span>
           </div>
         </nav>
         <div className="sidebar-bottom">

@@ -81,7 +81,7 @@ main { height: 100%; position: relative; min-height: 0; }
 #expand-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between; /* 全宽盒子:标签靠左、步进控件靠右,空间均匀分布 */
   margin-top: 10px;
   padding: 8px 14px;
   border-radius: 10px;
@@ -146,7 +146,6 @@ main { height: 100%; position: relative; min-height: 0; }
   opacity: 0.35;
   cursor: not-allowed;
 }
-#expand-value { min-width: 42px; text-align: center; color: #9cc3ff; }
 
 #stars {
   position: absolute;

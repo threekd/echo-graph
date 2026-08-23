@@ -22,6 +22,8 @@ export default function Sidebar() {
   const [toOpen, setToOpen] = useState(false);
   const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 扩散范围数字输入框:本地字符串态允许输入中间值,提交时收敛到 [1, expandMax]
+  const [expandInput, setExpandInput] = useState(String(state.expandHops));
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   // 侧边栏功能 Tab:space = 星云(主内容);mine = 我的(个人资料 + 关注/粉丝);
   // messages = 消息(第二阶段通知);settings = 设置(账号 + 星云可见性)
@@ -190,7 +192,12 @@ export default function Sidebar() {
   currentViewRef.current = state.currentView;
   // 扩散滑条标签:当前视图(涟漪/作者)数据中的作品数
   const expandWorks = state.viewData.nodes.filter((n) => n.type === "work").length;
-  const expandText = state.expandHops + " 级 · " + expandWorks + " 本书";
+  const expandText = expandWorks + " 本书";
+
+  // 外部(深链/视图切换)改变扩散级数时同步输入框显示
+  useEffect(() => {
+    setExpandInput(String(state.expandHops));
+  }, [state.expandHops]);
 
   useEffect(() => {
     lookups.current = buildWorkLookups(state.fullData);
@@ -231,7 +238,8 @@ export default function Sidebar() {
     const ae = document.activeElement;
     if (!ae || !sidebarRef.current || !sidebarRef.current.contains(ae)) return false;
     // 仅文本输入(搜索/路径)聚焦时保持打开;复选框/按钮点击后焦点残留不应阻止收起
-    return ae instanceof HTMLInputElement && (ae.type === "text" || ae.type === "search");
+    return ae instanceof HTMLInputElement
+      && (ae.type === "text" || ae.type === "search" || ae.type === "number");
   };
 
   const chooseHit = (h: any) => {
@@ -281,6 +289,33 @@ export default function Sidebar() {
       if (currentViewRef.current === "author") expandAuthorDebounced(hops);
       else expandRippleDebounced(hops);
     }, 400);
+  };
+
+  // 扩散级数收敛到 [1, expandMax](与旧滑条边界一致)
+  const clampExpand = (hops: number): number =>
+    Math.min(Math.max(Math.round(hops) || 1, 1), Math.max(state.expandMax, 1));
+
+  // ± 按钮步进
+  const stepExpand = (delta: number) => {
+    const next = clampExpand(state.expandHops + delta);
+    setExpandInput(String(next));
+    onExpand(next);
+  };
+
+  // 输入框直接输入:只接受正整数;合法时立即生效(自动收敛到上限)
+  const onExpandInputChange = (raw: string) => {
+    if (raw !== "" && !/^\d+$/.test(raw)) return;
+    setExpandInput(raw);
+    const n = parseInt(raw, 10);
+    if (n >= 1) onExpand(clampExpand(n));
+  };
+
+  // 失焦/回车提交:空值或非法值回退到当前级数
+  const commitExpandInput = () => {
+    const n = parseInt(expandInput, 10);
+    const next = n >= 1 ? clampExpand(n) : state.expandHops;
+    setExpandInput(String(next));
+    if (next !== state.expandHops) onExpand(next);
   };
 
   // 起点/终点作品建议列表:按输入文本过滤,点选已存在作品(可自由输入,提交时校验)
@@ -561,10 +596,35 @@ export default function Sidebar() {
           </div>
           <div id="expand-bar" style={{ display: state.currentView === "ripple" || state.currentView === "author" ? "flex" : "none" }}>
             <span className="expand-label">扩散范围</span>
-            <input
-              type="range" id="expand-range" min="1" max={state.expandMax} step="1" value={state.expandHops}
-              onChange={(e) => onExpand(parseInt(e.target.value, 10) || 1)}
-            />
+            <div className="expand-stepper">
+              <button
+                type="button"
+                className="expand-step"
+                aria-label="减小扩散范围"
+                onClick={() => stepExpand(-1)}
+                disabled={state.expandHops <= 1}
+              >−</button>
+              <input
+                type="number"
+                id="expand-input"
+                min={1}
+                max={state.expandMax}
+                step={1}
+                value={expandInput}
+                onChange={(e) => onExpandInputChange(e.target.value)}
+                onBlur={commitExpandInput}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+              <button
+                type="button"
+                className="expand-step"
+                aria-label="增大扩散范围"
+                onClick={() => stepExpand(1)}
+                disabled={state.expandHops >= state.expandMax}
+              >+</button>
+            </div>
             <span id="expand-value">{expandText}</span>
           </div>
         </nav>

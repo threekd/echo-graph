@@ -1282,6 +1282,12 @@ th.sortable.active .sort-icon {
   color: #ff6b6b;
   margin-left: 2px;
 }
+#admin-form input.missing,
+#admin-form textarea.missing,
+#admin-form .suggest-input.missing input {
+  border-color: rgba(255, 107, 107, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.35);
+}
 #admin-form input, #admin-form select, #admin-form textarea {
   padding: 7px 9px;
   border-radius: 8px;

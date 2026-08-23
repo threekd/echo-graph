@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   AppProvider,
   useApp,
@@ -13,7 +14,9 @@ import Panel from "./components/Panel";
 import Toast from "./components/Toast";
 import Guide from "./components/Guide";
 import AuthModal from "./components/AuthModal";
-import { loadGraphData, loadStats, workDetail } from "./lib/api";
+import {
+  loadGraphData, loadSpaceGraph, loadStats, spaceFromParam, spaceUserId, workDetail, type Space,
+} from "./lib/api";
 import { fetchMe } from "./lib/auth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import {
@@ -49,6 +52,16 @@ function parseCam(s: string): CameraState | null {
   return { theta: parts[0], phi: parts[1], radius: parts[2], cx: parts[3], cy: parts[4], cz: parts[5] };
 }
 
+// 从 hash 中解析 space 参数(#v=main&space=mine / space=<用户id> 等)
+function hashSpaceParam(): string | null {
+  const h = location.hash.replace(/^#/, "");
+  for (const p of h.split("&")) {
+    const kv = p.split("=");
+    if (kv[0] === "space") return kv[1] == null ? "" : decodeURIComponent(kv[1]);
+  }
+  return null;
+}
+
 function AppContent() {
   const { state, dispatch } = useApp();
   const stateRef = useRef<{ state: AppState; dispatch: (a: AppAction) => void } | null>(null);
@@ -58,6 +71,46 @@ function AppContent() {
   // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
   const lastAppliedHash = useRef<string | null>(null);
   const lastAppliedAt = useRef(0);
+  // 防止空间切换加载期间/回退公共星云时,对同一 hash 重复触发切换
+  const lastAppliedSpace = useRef<Space | null>(null);
+
+  // 切换空间上下文(hash 的 space 参数变化):加载目标星云并应用;未登录/不可访问回退公共星云
+  const applyHashSpace = useCallback((target: Space): Promise<{ data: GraphData }> => {
+    const apply = (space: Space, data: GraphData) => {
+      const owner =
+        space === "public" ? "public"
+        : space === "mine"
+          ? ((data as any).owner?.nickname || (data as any).owner?.username || "我的星云")
+          : ((data as any).displayName || "未知星云");
+      flushSync(() => {
+        dispatch({ type: "SET_DATA", data });
+        dispatch({ type: "SET_SPACE", space });
+        dispatch({ type: "SET_SPACE_OWNER", owner });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
+      });
+      return { data };
+    };
+    if (target === "mine") {
+      return fetchMe().then((user) => {
+        if (user) {
+          dispatch({ type: "SET_USER", user });
+          return loadGraphData("mine").then((d) => apply("mine", d));
+        }
+        dispatch({ type: "SET_TOAST", msg: "请先登录,已回到公共星云", kind: "info" });
+        return loadGraphData("public").then((d) => apply("public", d));
+      });
+    }
+    if (target !== "public") {
+      const uid = spaceUserId(target);
+      return loadSpaceGraph(uid!)
+        .then((d) => apply(target, d))
+        .catch(() => {
+          dispatch({ type: "SET_TOAST", msg: "该星云不可访问,已回到公共星云", kind: "info" });
+          return loadGraphData("public").then((d) => apply("public", d));
+        });
+    }
+    return loadGraphData("public").then((d) => apply("public", d));
+  }, [dispatch]);
 
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
   // cam / islands / authors 参数用于恢复旧版分享链接;数据加载完成后再次应用,保证首载深链生效
@@ -94,7 +147,16 @@ function AppContent() {
       parts[kv[0]] = kv[1] == null ? "" : decodeURIComponent(kv[1]);
     });
     const v = parts.v || "";
-    const fullData = data || stateRef.current!.state.fullData;
+    const st = stateRef.current!.state;
+    // hash 的 space 参数与当前星云不一致时,先切换星云再应用视图
+    const targetSpace = spaceFromParam(parts.space);
+    if (targetSpace && targetSpace !== st.space && lastAppliedSpace.current !== targetSpace) {
+      lastAppliedSpace.current = targetSpace;
+      applyHashSpace(targetSpace).then(({ data: newData }) => { applyHash(newData); });
+      return;
+    }
+    lastAppliedSpace.current = null;
+    const fullData = data || st.fullData;
     if (!fullData || !fullData.nodes.length) return;
     const cam = parts.cam ? parseCam(parts.cam) : null;
     const flags = {
@@ -102,7 +164,6 @@ function AppContent() {
       showAuthors: parts.authors !== "0",
       fullData: data, // 首载深链:显式传入刚加载的全量图,避免 state 尚未刷新
     };
-    const st = stateRef.current!.state;
     // 同步过滤状态到 React store(渲染函数同时接收显式 flags,不依赖同步生效)
     if (st.hideIslands !== flags.hideIslands || st.showAuthors !== flags.showAuthors) {
       dispatch({ type: "SET_HIDE_ISLANDS", value: flags.hideIslands });
@@ -137,7 +198,7 @@ function AppContent() {
     } else if (v === "main" || cam || flags.hideIslands || !flags.showAuthors) {
       renderMain(cam ? { camera: cam } : {}, fullData, flags);
     }
-  }, [dispatch]);
+  }, [dispatch, applyHashSpace]);
 
   // 启动时恢复会话(带 httpOnly Cookie,浏览器自动携带):有登录态则展示用户信息
   useEffect(() => {
@@ -163,11 +224,51 @@ function AppContent() {
     setOnCameraChange((camera) => {
       dispatch({ type: "SET_CAMERA", camera });
     });
-    Promise.all([loadGraphData(), loadStats()])
+    let cancelled = false;
+    // 首载空间上下文:优先取 hash 的 space 参数(public / mine / <用户id>)
+    let target: Space = spaceFromParam(hashSpaceParam()) || "public";
+    let mineOwner = "我的星云";
+
+    const loadTarget = async (): Promise<GraphData> => {
+      if (target === "mine") {
+        const user = await fetchMe();
+        if (user) {
+          dispatch({ type: "SET_USER", user });
+          mineOwner = (user.nickname || "").trim() || (user.username || "") || "我的星云";
+          return loadGraphData("mine");
+        }
+        target = "public";
+        dispatch({ type: "SET_TOAST", msg: "请先登录,已回到公共星云", kind: "info" });
+        return loadGraphData("public");
+      }
+      if (target !== "public") {
+        const uid = spaceUserId(target);
+        try {
+          return await loadSpaceGraph(uid!);
+        } catch {
+          target = "public";
+          dispatch({ type: "SET_TOAST", msg: "该星云不可访问,已回到公共星云", kind: "info" });
+          return loadGraphData("public");
+        }
+      }
+      return loadGraphData("public");
+    };
+
+    Promise.all([loadTarget(), loadStats()])
       .then(([data, stats]) => {
-        dispatch({ type: "SET_DATA", data });
-        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
-        dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
+        if (cancelled) return;
+        const owner =
+          target === "public" ? "public"
+          : target === "mine" ? mineOwner
+          : ((data as any).displayName || "未知星云");
+        // flushSync 保证 applyHash/renderMain 读到的是最新 space
+        flushSync(() => {
+          dispatch({ type: "SET_DATA", data });
+          dispatch({ type: "SET_SPACE", space: target });
+          dispatch({ type: "SET_SPACE_OWNER", owner });
+          dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
+          dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
+        });
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);
         } else {
@@ -175,8 +276,9 @@ function AppContent() {
         }
       })
       .catch((err) => {
-        dispatch({ type: "SET_TOAST", msg: "加载图谱失败: " + err.message });
+        if (!cancelled) dispatch({ type: "SET_TOAST", msg: "加载图谱失败: " + err.message });
       });
+    return () => { cancelled = true; };
   }, [applyHash, dispatch]);
 
   // 恢复钉住状态(桌面):钉住的栏在加载后保持展开;状态记忆在 localStorage

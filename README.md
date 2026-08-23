@@ -195,7 +195,10 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 | 涟漪 | 以某作品为中心的 3D 扩散球(N 级扩散) | `http://127.0.0.1:8000/#v=ripple:{workId}:2` |
 | 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:{authorId}` |
 
-URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、`cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,仍兼容解析)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
+URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、
+`space=public|mine|<用户id>`(当前星云,刷新/分享后保持;他人星云按可见性访问,
+未登录访问 `mine` 或 private/无效星云时自动回退公共星云)、
+`cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,仍兼容解析)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
 
 ### API
 

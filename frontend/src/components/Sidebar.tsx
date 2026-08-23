@@ -47,7 +47,7 @@ export default function Sidebar() {
       .then((data) => {
         dispatch({ type: "SET_DATA", data });
         dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
-        renderMain({}, data);
+        renderMain({ space }, data);
       })
       .catch((e) =>
         dispatch({
@@ -125,7 +125,7 @@ export default function Sidebar() {
         // 跃迁后进入该星云的空间上下文:后续搜索/详情/扩散/路径都路由到 /api/space/{id}
         dispatch({ type: "SET_SPACE", space: "space:" + d.spaceId });
         dispatch({ type: "SET_SPACE_OWNER", owner: d.displayName || "未知星云" });
-        renderMain({}, d);
+        renderMain({ space: "space:" + d.spaceId }, d);
         dispatch({
           type: "SET_TOAST",
           msg: "已跃迁到「" + (d.displayName || "未知星云") + "」的星云",
@@ -145,7 +145,7 @@ export default function Sidebar() {
         dispatch({ type: "SET_SPACE_PROFILE", profile: (d as any).owner || null });
         dispatch({ type: "SET_SPACE", space: "space:" + userId });
         dispatch({ type: "SET_SPACE_OWNER", owner: displayName || "未知星云" });
-        renderMain({}, d);
+        renderMain({ space: "space:" + userId }, d);
         dispatch({
           type: "SET_TOAST",
           msg: "已跃迁到「" + (displayName || "未知星云") + "」的星云",

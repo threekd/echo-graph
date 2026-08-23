@@ -1,5 +1,5 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { workDetail, expansion, findPath, type Space } from "./api";
+import { workDetail, expansion, findPath, spaceParamFromState, type Space } from "./api";
 import {
   isAnonymousAuthor,
   filterSingleWorkAuthors,
@@ -77,6 +77,7 @@ interface ViewOpts {
   hops?: number;
   from?: string;
   to?: string;
+  space?: Space; // 显式指定星云上下文:空间切换时 state 尚未提交,避免 syncUrl 读到旧值
   hideIslands?: boolean;
   showAuthors?: boolean;
   preserveCamera?: boolean;
@@ -136,6 +137,8 @@ function buildHash(opts: ViewOpts | undefined): string {
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
   if (hideIslands) parts.push("islands=1");
   if (!showAuthors) parts.push("authors=0");
+  // 当前星云上下文写入 URL:刷新/分享后保持(空间切换用 replaceState,不产生历史条目)
+  parts.push("space=" + spaceParamFromState((opts && opts.space) || st.space || "public"));
   return parts.join("&");
 }
 
@@ -167,7 +170,7 @@ export function renderMain(opts: any, dataOverride?: GraphData | null, overrides
   if (hideIslands) data = filterIslands(data);
   data = filterAuthorsWith(data, showAuthors);
   commitView("main", data, opts || {});
-  syncUrl({ view: "main", hideIslands, showAuthors });
+  syncUrl({ view: "main", hideIslands, showAuthors, space: opts && opts.space });
   // 详情栏内容取决于当前视图:主视图无中心节点,一律清空
   dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
 }

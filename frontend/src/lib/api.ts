@@ -70,6 +70,21 @@ export function spaceUserId(space: Space): string | null {
   return space.startsWith("space:") ? space.slice("space:".length) : null;
 }
 
+// 空间状态值 <-> URL hash 参数互转:
+// URL 里用 public / mine / <用户id> 表示,状态里用户空间带 "space:" 前缀
+export function spaceParamFromState(space: Space): string {
+  if (space === "public" || space === "mine") return space;
+  return spaceUserId(space) || "public";
+}
+
+export function spaceFromParam(param: string | undefined | null): Space | null {
+  if (!param) return null;
+  if (param === "public" || param === "mine") return param;
+  // 用户空间以 UUID 表示(36 位含连字符)
+  if (/^[0-9a-fA-F-]{36}$/.test(param)) return `space:${param}`;
+  return null;
+}
+
 // 按空间上下文选择 API 前缀:公共 /api、我的 /api/me、他人星云 /api/space/{userId}。
 // 后端空间系列接口(/graph|search|work|expansion|path)共享同一可见性规则。
 export function apiRoot(space: Space): string {

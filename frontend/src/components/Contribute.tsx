@@ -215,7 +215,9 @@ export default function Contribute() {
     setAddModal({
       kind,
       target,
-      initial: kind === "works" ? { Title_CN: query, originalTitle: query } : { Name_CN: query, originalName: query },
+      initial: kind === "works"
+        ? { Title_CN: query, originalTitle: query }
+        : { originalName: query }, // 新增作者只预填原著名,中文名留空由用户填写
     });
   };
 

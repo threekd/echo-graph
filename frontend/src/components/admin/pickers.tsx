@@ -36,11 +36,13 @@ export function WorkPicker({
   onChange,
   worksList,
   placeholder,
+  onAddNew,
 }: {
   value: string;
   onChange: (v: string) => void;
   worksList: WorkRow[];
   placeholder: string;
+  onAddNew?: (query: string) => void;
 }) {
   // 软删除行不可作为引用目标(与后端 validate_row 的 deletedAt 过滤一致)
   const activeWorks = useMemo(() => worksList.filter((w) => !w.deletedAt), [worksList]);
@@ -60,17 +62,28 @@ export function WorkPicker({
     }
   }, [value, activeWorks]);
 
-  const q = query.trim().toLowerCase();
+  const rawQuery = query.trim();
+  const q = rawQuery.toLowerCase();
   const filtered = q
     ? activeWorks.filter((w) =>
         [w.Title_CN, w.originalTitle, w.Title_EN].filter(Boolean).join(" ").toLowerCase().includes(q)
       )
     : activeWorks;
+  // 搜不到任何作品且提供 onAddNew 时,给出「添加新作品」入口(与点亮星空一致)
+  const showAdd = Boolean(onAddNew && q && filtered.length === 0);
 
   const pick = (w: WorkRow) => {
     onChange(w.id);
     setQuery(workLabel(w));
     setOpen(false);
+  };
+
+  // 已选中作品时再次聚焦:清空筛选词打开完整列表,
+  // 避免把选中标签(如「甲书 - A书」)当筛选词导致「没有匹配的作品」
+  const handleFocus = () => {
+    const w = activeWorks.find((x) => x.id === value);
+    if (w && query === workLabel(w)) setQuery("");
+    setOpen(true);
   };
 
   return (
@@ -84,7 +97,7 @@ export function WorkPicker({
           if (value) onChange(""); // 手动编辑即取消已选,必须重新选择已存在条目
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={handleFocus}
         onBlur={() => {
           const w = activeWorks.find((x) => x.id === value);
           setQuery(w ? workLabel(w) : "");
@@ -92,14 +105,32 @@ export function WorkPicker({
         }}
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
+          if (showAdd && e.key === "Enter") {
+            e.preventDefault();
+            setOpen(false);
+            onAddNew!(rawQuery);
+            return;
+          }
           if (e.key === "Enter" && open && filtered.length) {
             e.preventDefault();
             pick(filtered[0]);
           }
         }}
       />
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || showAdd) && (
         <ul className="work-picker-results" style={{ display: "block" }}>
+          {showAdd && (
+            <li
+              className="add-option"
+              onMouseDown={(e) => e.preventDefault()} // 先于 blur 触发
+              onClick={() => {
+                setOpen(false);
+                onAddNew!(rawQuery);
+              }}
+            >
+              ＋ 添加新作品「{rawQuery}」
+            </li>
+          )}
           {filtered.slice(0, 80).map((w) => (
             <li
               key={w.id}
@@ -113,7 +144,7 @@ export function WorkPicker({
           ))}
         </ul>
       )}
-      {open && q && filtered.length === 0 && (
+      {open && q && filtered.length === 0 && !showAdd && (
         <div className="work-picker-warn">没有匹配的作品,只能选择已存在条目</div>
       )}
     </div>

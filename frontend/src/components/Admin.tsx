@@ -559,6 +559,10 @@ export default function Admin() {
             applyLocal((prev) => ({ ...prev, authors: [...(prev.authors || []), row] }));
             refreshGraphAfterWrite();
           }}
+          onWorkAdded={(row) => {
+            applyLocal((prev) => ({ ...prev, works: [...(prev.works || []), row] }));
+            refreshGraphAfterWrite();
+          }}
           onReload={() => {
             setModal(null);
             load();

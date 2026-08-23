@@ -156,6 +156,7 @@ export default function NodeFormModal({
   onReload,
   onDelete,
   onAuthorAdded,
+  onWorkAdded,
 }: {
   kind: NodeKind;
   mode: "add" | "edit";
@@ -170,6 +171,7 @@ export default function NodeFormModal({
   onReload?: () => void;
   onDelete?: (row: AdminRow) => void;
   onAuthorAdded?: (row: AuthorRow) => void;
+  onWorkAdded?: (row: WorkRow) => void;
 }) {
   const [form, setForm] = useState<any>({ ...initial });
   const [formError, setFormError] = useState("");
@@ -177,6 +179,8 @@ export default function NodeFormModal({
   const [confirmReload, setConfirmReload] = useState(false);
   // 新增作品时搜不到作者:内嵌「添加新作者」弹窗(与点亮星空同一模式)
   const [authorAdd, setAuthorAdd] = useState<string | null>(null);
+  // 新增涟漪时源/目标作品搜不到:内嵌「添加新作品」弹窗(与点亮星空同一模式)
+  const [workAdd, setWorkAdd] = useState<{ field: string; query: string } | null>(null);
 
   // 普通用户空间:审核状态与备注隐藏(用户输入即确认);作者/作品提供可见性,
   // 作品额外提供评分(推荐/不推荐)与评价(长文本);admin 保持策展语义。
@@ -354,6 +358,7 @@ export default function NodeFormModal({
                     }}
                     worksList={worksList}
                     placeholder="输入筛选并选择…"
+                    onAddNew={(query) => setWorkAdd({ field: f.key, query })}
                   />
                   {dup && <div className="dup-hint">{dup}</div>}
                 </label>
@@ -544,6 +549,25 @@ export default function NodeFormModal({
             setForm({ ...form, author_id: prev ? `${prev},${row.id}` : row.id });
             if (onAuthorAdded) onAuthorAdded(row as AuthorRow); // 通知父级刷新作者列表,让新作者立即可见
             setAuthorAdd(null);
+          }}
+        />
+      )}
+      {workAdd && (
+        <NodeFormModal
+          kind="works"
+          mode="add"
+          initial={{ originalTitle: workAdd.query }} // 只预填原著标题,其余由用户填写
+          apiBase={apiBase}
+          authorsList={authorsList}
+          worksList={worksList}
+          edgesList={edgesList}
+          isAdmin={isAdmin}
+          onClose={() => setWorkAdd(null)}
+          onSaved={(row) => {
+            // 新作品填入当前涟漪的源/目标字段,立即可作为引用目标
+            setForm({ ...form, [workAdd.field]: row.id });
+            if (onWorkAdded) onWorkAdded(row as WorkRow); // 通知父级刷新作品列表
+            setWorkAdd(null);
           }}
         />
       )}

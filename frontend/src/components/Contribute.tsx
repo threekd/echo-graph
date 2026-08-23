@@ -320,30 +320,30 @@ export default function Contribute() {
       return;
     }
     setMissingKeys([]);
-    const sourceWorkId = ensureWork(form.source_work);
-    if (!sourceWorkId) {
-      setError(`「${form.source_work.trim()}」不是已存在的作品,请在弹出的新增窗口中完整填写后保存`);
-      openAddNode("source_work", "works", form.source_work.trim());
+    // 一次性检查四个名称字段:未知项只提示需要新建,不自动弹窗(由用户决定是否走新增入口)
+    type EdgeNameField = "source_work" | "source_author" | "target_work" | "target_author";
+    const ids: Record<EdgeNameField, string | null> = {
+      source_work: ensureWork(form.source_work),
+      source_author: ensureAuthor(form.source_author),
+      target_work: ensureWork(form.target_work),
+      target_author: ensureAuthor(form.target_author),
+    };
+    const NAME_FIELDS: { key: EdgeNameField; label: string }[] = [
+      { key: "source_work", label: "源作品" },
+      { key: "source_author", label: "源作品作者" },
+      { key: "target_work", label: "目标作品" },
+      { key: "target_author", label: "目标作品作者" },
+    ];
+    const unknown = NAME_FIELDS.filter((f) => !ids[f.key]);
+    if (unknown.length) {
+      setError(
+        "以下内容不在你的星云中,请通过下拉列表的「添加新作品 / 新作者」按新增页面完整填写后再提交:"
+        + unknown.map((f) => `${f.label}「${String(form[f.key] || "").trim()}」`).join("、")
+      );
       return;
     }
-    const sourceAuthorId = ensureAuthor(form.source_author);
-    if (!sourceAuthorId) {
-      setError(`「${form.source_author.trim()}」不是已存在的作者,请在弹出的新增窗口中完整填写后保存`);
-      openAddNode("source_author", "authors", form.source_author.trim());
-      return;
-    }
-    const targetWorkId = ensureWork(form.target_work);
-    if (!targetWorkId) {
-      setError(`「${form.target_work.trim()}」不是已存在的作品,请在弹出的新增窗口中完整填写后保存`);
-      openAddNode("target_work", "works", form.target_work.trim());
-      return;
-    }
-    const targetAuthorId = ensureAuthor(form.target_author);
-    if (!targetAuthorId) {
-      setError(`「${form.target_author.trim()}」不是已存在的作者,请在弹出的新增窗口中完整填写后保存`);
-      openAddNode("target_author", "authors", form.target_author.trim());
-      return;
-    }
+    const sourceWorkId = ids.source_work!;
+    const targetWorkId = ids.target_work!;
     if (sourceWorkId === targetWorkId) {
       setError("源作品与目标作品不能相同");
       return;

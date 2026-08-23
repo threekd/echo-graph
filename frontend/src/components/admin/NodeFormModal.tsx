@@ -489,7 +489,7 @@ export default function NodeFormModal({
         <NodeFormModal
           kind="authors"
           mode="add"
-          initial={{ Name_CN: authorAdd, originalName: authorAdd }}
+          initial={{ originalName: authorAdd }} // 只预填原著名,中文名留空由用户填写
           apiBase={apiBase}
           authorsList={authorsList}
           worksList={worksList}

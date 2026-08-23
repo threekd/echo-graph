@@ -299,6 +299,7 @@ export function AuthorPicker({
     if (selected.some((s) => s.value === a.id)) return;
     commit([...selected, { value: a.id, label: authorLabelOf(a) }]);
     setQuery("");
+    setOpen(false); // 填入作者后自动收起下拉框(再点输入框可继续添加合著者)
   };
 
   const removeAuthor = (v: string) => commit(selected.filter((s) => s.value !== v));

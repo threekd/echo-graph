@@ -253,6 +253,10 @@ main { height: 100%; position: relative; min-height: 0; }
   background: rgba(30, 44, 90, 0.55);
   box-shadow: 0 0 14px rgba(138, 184, 255, 0.25);
 }
+/* 「设置」Tab 钉在 Tab 列底部(类 VS Code Activity Bar 底部的设置入口) */
+.sidebar-tab.tab-bottom {
+  margin-top: auto;
+}
 .sidebar-tab-icon {
   font-size: 17px;
   line-height: 1;
@@ -375,6 +379,54 @@ main { height: 100%; position: relative; min-height: 0; }
 .settings-field select:focus {
   outline: none;
   border-color: rgba(138, 184, 255, 0.8);
+}
+.follow-count {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--muted);
+}
+.follow-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.follow-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.follow-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: #9cc3ff;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.follow-name:hover { color: #7dd3fc; text-decoration: underline; }
+.follow-jump {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(30, 44, 90, 0.4);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.follow-jump:hover { color: #7dd3fc; border-color: rgba(138, 184, 255, 0.5); }
+.follow-btn.following {
+  opacity: 0.82;
 }
 .brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .brand h1 {
@@ -1356,6 +1408,9 @@ th.sortable.active .sort-icon {
     gap: 6px;
     width: auto;
     padding: 7px 14px;
+  }
+  .sidebar-tab.tab-bottom {
+    margin-top: 0; /* 移动端横向排布,不适用底部吸附 */
   }
   .sidebar-content {
     padding: 14px 16px;

@@ -15,6 +15,7 @@ from app.auth import admin_profile, bootstrap_admin
 from app.auth import router as auth_router
 from app.contributions import router as contributions_router
 from app.db import get_store
+from app.follows import router as follows_router
 from app.me import router as me_router
 from app.security import is_state_changing, same_origin_allowed
 from app.space import router as space_router
@@ -168,6 +169,7 @@ def path(
 app.include_router(admin_router)
 app.include_router(contributions_router)
 app.include_router(auth_router)
+app.include_router(follows_router)
 app.include_router(me_router)
 app.include_router(space_router)
 

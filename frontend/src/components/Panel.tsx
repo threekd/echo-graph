@@ -3,6 +3,7 @@ import { useApp, type GraphData } from "../store";
 import { selectNode } from "../lib/graph";
 import { workAuthorIds } from "../lib/graphData";
 import { isMobileLayout } from "../lib/mobileGestures";
+import { followRelation, followUser, spaceUserId, unfollowUser } from "../lib/api";
 import PinButton from "./PinButton";
 import iso3166 from "../lib/iso3166-1.json";
 import GuideItems from "./GuideItems";
@@ -133,11 +134,57 @@ function BookmarkPanel({ work }: { work: any }) {
   );
 }
 
-// 个人资料:当前星云所有者的昵称与简介
+// 关注按钮:浏览他人星云时在「个人资料」Tab 显示(不可关注自己)
+function FollowButton({ ownerId }: { ownerId: string }) {
+  const { dispatch } = useApp();
+  const [following, setFollowing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    followRelation(ownerId)
+      .then((r) => { if (!cancelled) setFollowing(r.following); })
+      .catch(() => { /* 关系查询失败不阻塞页面 */ });
+    return () => { cancelled = true; };
+  }, [ownerId]);
+
+  const toggle = () => {
+    if (busy) return;
+    setBusy(true);
+    const req = following ? unfollowUser(ownerId) : followUser(ownerId);
+    req
+      .then(() => {
+        setFollowing(!following);
+        dispatch({
+          type: "SET_TOAST",
+          msg: following ? "已取消关注" : "已关注",
+          kind: "success",
+        });
+      })
+      .catch((e) => dispatch({ type: "SET_TOAST", msg: e.message || "操作失败", kind: "error" }))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <button
+      className={"side-btn follow-btn" + (following ? " following" : "")}
+      onClick={toggle}
+      disabled={busy}
+    >
+      {busy ? "请稍候…" : following ? "已关注 · 点击取关" : "＋ 关注"}
+    </button>
+  );
+}
+
+// 个人资料:当前星云所有者的昵称与简介;浏览他人星云时提供关注入口
 function OwnerProfilePanel({
   profile,
+  ownerId,
+  isSelf,
 }: {
   profile: { username?: string; nickname?: string | null; bio?: string | null } | null;
+  ownerId: string | null;
+  isSelf: boolean;
 }) {
   const name =
     (profile?.nickname || "").trim() || (profile?.username || "").trim() || "匿名星云";
@@ -145,6 +192,7 @@ function OwnerProfilePanel({
     <div className="panel-content-inner">
       <h2>个人资料</h2>
       <div className="meta">{name}</div>
+      {ownerId && !isSelf && <FollowButton ownerId={ownerId} />}
       <h3>简介</h3>
       {profile?.bio ? (
         <p className="quote">{profile.bio}</p>
@@ -341,7 +389,11 @@ export default function Panel() {
           ) : tab === "bookmarks" ? (
             <BookmarkPanel work={panel.type === "work" ? panel.d?.work : null} />
           ) : (
-            <OwnerProfilePanel profile={state.spaceProfile} />
+            <OwnerProfilePanel
+              profile={state.spaceProfile}
+              ownerId={spaceUserId(state.space)}
+              isSelf={!!state.user && spaceUserId(state.space) === state.user.id}
+            />
           )}
         </div>
       </aside>

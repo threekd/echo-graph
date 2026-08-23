@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
-import { jumpToRandomSpace, loadGraphData, search, type Space } from "../lib/api";
+import {
+  jumpToRandomSpace, loadFollowers, loadFollowing, loadGraphData, loadSpaceGraph,
+  search, type FollowUser, type Space,
+} from "../lib/api";
 import { logout, updateProfile, userDisplayName } from "../lib/auth";
 import { buildWorkLookups, islandWorkCount, type WorkLookups } from "../lib/graphData";
 import PinButton from "./PinButton";
@@ -19,14 +22,17 @@ export default function Sidebar() {
   const [qActive, setQActive] = useState(-1);
   const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
-  // 侧边栏功能 Tab:space = 星云(主内容);settings = 设置(个人资料等)
-  const [tab, setTab] = useState<"space" | "settings">("space");
+  // 侧边栏功能 Tab:space = 星云(主内容);mine = 我的(个人资料 + 关注/粉丝);
+  // messages = 消息(第二阶段通知);settings = 设置(账号 + 星云可见性)
+  const [tab, setTab] = useState<"space" | "mine" | "messages" | "settings">("space");
   const [profileForm, setProfileForm] = useState<{ nickname: string; bio: string }>({
     nickname: "",
     bio: "",
   });
   const [profileError, setProfileError] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
+  const [following, setFollowing] = useState<FollowUser[]>([]);
+  const [followers, setFollowers] = useState<FollowUser[]>([]);
   const switchSpace = (space: Space) => {
     if (space === "mine" && !state.user) {
       dispatch({ type: "SET_AUTH", open: true }); // 我的星云需登录
@@ -130,6 +136,41 @@ export default function Sidebar() {
         dispatch({ type: "SET_TOAST", msg: "跃迁失败: " + e.message, kind: "error" })
       );
   };
+
+  // 定向跃迁到指定用户星云(关注/粉丝列表入口)
+  const jumpToSpace = (userId: string, displayName: string) => {
+    loadSpaceGraph(userId)
+      .then((d) => {
+        dispatch({ type: "SET_DATA", data: d });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (d as any).owner || null });
+        dispatch({ type: "SET_SPACE", space: "space:" + userId });
+        dispatch({ type: "SET_SPACE_OWNER", owner: displayName || "未知星云" });
+        renderMain({}, d);
+        dispatch({
+          type: "SET_TOAST",
+          msg: "已跃迁到「" + (displayName || "未知星云") + "」的星云",
+          kind: "info",
+        });
+      })
+      .catch((e) =>
+        dispatch({ type: "SET_TOAST", msg: "跃迁失败: " + e.message, kind: "error" })
+      );
+  };
+
+  // 「我的」Tab 打开(或登录态/当前空间变化)时刷新关注/粉丝列表
+  useEffect(() => {
+    if (tab !== "mine" || !state.user) return;
+    let cancelled = false;
+    Promise.all([loadFollowing(), loadFollowers()])
+      .then(([f, fs]) => {
+        if (cancelled) return;
+        setFollowing(f.items || []);
+        setFollowers(fs.items || []);
+      })
+      .catch(() => { /* 列表加载失败静默,下次进入重试 */ });
+    return () => { cancelled = true; };
+  }, [tab, state.user, state.space]);
+
   const lookups = useRef<WorkLookups>({ workLookup: {}, workById: {}, options: [] });
   const sidebarRef = useRef<HTMLElement | null>(null);
   const composingRef = useRef(false);
@@ -312,7 +353,7 @@ export default function Sidebar() {
             onToggle={togglePinLeft}
           />
         )}
-        {/* Tab 列(类 VS Code Activity Bar):星云 / 设置,便于后续功能扩展 */}
+        {/* Tab 列(类 VS Code Activity Bar):星云 / 我的 / 消息 / 设置 */}
         <div className="sidebar-tabs" role="tablist" aria-label="侧边栏功能">
           <button
             id="tab-space"
@@ -326,8 +367,30 @@ export default function Sidebar() {
             <span className="sidebar-tab-label">星云</span>
           </button>
           <button
+            id="tab-mine"
+            className={"sidebar-tab" + (tab === "mine" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "mine"}
+            title="我的(个人资料与关注)"
+            onClick={() => setTab("mine")}
+          >
+            <span className="sidebar-tab-icon">◉</span>
+            <span className="sidebar-tab-label">我的</span>
+          </button>
+          <button
+            id="tab-messages"
+            className={"sidebar-tab" + (tab === "messages" ? " active" : "")}
+            role="tab"
+            aria-selected={tab === "messages"}
+            title="消息(第二阶段)"
+            onClick={() => setTab("messages")}
+          >
+            <span className="sidebar-tab-icon">✉</span>
+            <span className="sidebar-tab-label">消息</span>
+          </button>
+          <button
             id="tab-settings"
-            className={"sidebar-tab" + (tab === "settings" ? " active" : "")}
+            className={"sidebar-tab tab-bottom" + (tab === "settings" ? " active" : "")}
             role="tab"
             aria-selected={tab === "settings"}
             title="设置"
@@ -527,21 +590,10 @@ export default function Sidebar() {
           )}
         </div>
             </>
-          ) : (
+          ) : tab === "mine" ? (
             <div className="settings-pane">
               {state.user ? (
                 <>
-                  <div className="settings-section">
-                    <h3>账号</h3>
-                    <div className="auth-username">用户名:{state.user.username || "—"}</div>
-                    <button
-                      id="btn-logout"
-                      className="side-btn"
-                      onClick={() => setLogoutConfirm(true)}
-                    >
-                      退出登录
-                    </button>
-                  </div>
                   <div className="settings-section">
                     <h3>个人资料</h3>
                     <label className="settings-field">
@@ -575,6 +627,89 @@ export default function Sidebar() {
                     </button>
                   </div>
                   <div className="settings-section">
+                    <h3>关注 <span className="follow-count">{following.length}</span></h3>
+                    {following.length === 0 ? (
+                      <p className="settings-hint">还没有关注任何人,去他人星云点「关注」吧。</p>
+                    ) : (
+                      <ul className="follow-list">
+                        {following.map((u) => (
+                          <li key={u.id} className="follow-item">
+                            <button
+                              className="follow-name"
+                              title="跃迁到 TA 的星云"
+                              onClick={() => jumpToSpace(u.id, u.displayName)}
+                            >
+                              {u.displayName}
+                            </button>
+                            <button className="follow-jump" onClick={() => jumpToSpace(u.id, u.displayName)}>
+                              跃迁
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="settings-section">
+                    <h3>粉丝 <span className="follow-count">{followers.length}</span></h3>
+                    {followers.length === 0 ? (
+                      <p className="settings-hint">还没有粉丝。</p>
+                    ) : (
+                      <ul className="follow-list">
+                        {followers.map((u) => (
+                          <li key={u.id} className="follow-item">
+                            <button
+                              className="follow-name"
+                              title="跃迁到 TA 的星云"
+                              onClick={() => jumpToSpace(u.id, u.displayName)}
+                            >
+                              {u.displayName}
+                            </button>
+                            <button className="follow-jump" onClick={() => jumpToSpace(u.id, u.displayName)}>
+                              跃迁
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="settings-section">
+                  <h3>我的</h3>
+                  <p className="settings-hint">请先登录,即可编辑个人资料并查看关注/粉丝。</p>
+                  <button
+                    id="btn-mine-login"
+                    className="side-btn"
+                    onClick={() => dispatch({ type: "SET_AUTH", open: true })}
+                  >
+                    登录 / 注册
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : tab === "messages" ? (
+            <div className="settings-pane">
+              <div className="settings-section">
+                <h3>消息</h3>
+                <p className="settings-hint">消息通知功能规划中(第二阶段),敬请期待。</p>
+              </div>
+            </div>
+          ) : (
+            <div className="settings-pane">
+              {state.user ? (
+                <>
+                  <div className="settings-section">
+                    <h3>账号</h3>
+                    <div className="auth-username">用户名:{state.user.username || "—"}</div>
+                    <button
+                      id="btn-logout"
+                      className="side-btn"
+                      onClick={() => setLogoutConfirm(true)}
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                  <div className="settings-section">
                     <h3>星云可见性</h3>
                     <p className="settings-hint">
                     </p>
@@ -592,7 +727,7 @@ export default function Sidebar() {
               ) : (
                 <div className="settings-section">
                   <h3>设置</h3>
-                  <p className="settings-hint">请先登录,即可管理个人资料与星云可见性。</p>
+                  <p className="settings-hint">请先登录,即可管理账号与星云可见性。</p>
                   <button
                     id="btn-settings-login"
                     className="side-btn"

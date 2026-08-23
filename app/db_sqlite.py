@@ -504,6 +504,24 @@ def _migration_v18(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN bio TEXT")
 
 
+def _migration_v19(conn: sqlite3.Connection) -> None:
+    """关注模型好友:friendships(user_id 单向关注 friend_id)。"""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS friendships (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            friend_id TEXT NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            UNIQUE (user_id, friend_id),
+            CHECK (user_id <> friend_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id)")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -523,6 +541,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (16, _migration_v16),
     (17, _migration_v17),
     (18, _migration_v18),
+    (19, _migration_v19),
 ]
 
 

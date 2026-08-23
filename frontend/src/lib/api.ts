@@ -125,3 +125,55 @@ export async function jumpToRandomSpace(): Promise<SpaceJumpResult> {
   }
   return r.json() as Promise<SpaceJumpResult>;
 }
+
+// ---- 关注模型好友 ----
+
+export interface FollowUser {
+  id: string;
+  username: string;
+  nickname: string | null;
+  bio: string | null;
+  displayName: string;
+}
+
+export interface FollowListResponse {
+  items: FollowUser[];
+}
+
+export interface FollowRelation {
+  following: boolean;
+  follower: boolean;
+}
+
+export function loadFollowing(): Promise<FollowListResponse> {
+  return getJson<FollowListResponse>("/api/follow/following");
+}
+
+export function loadFollowers(): Promise<FollowListResponse> {
+  return getJson<FollowListResponse>("/api/follow/followers");
+}
+
+export function followRelation(userId: string): Promise<FollowRelation> {
+  return getJson<FollowRelation>("/api/follow/relation/" + encodeURIComponent(userId));
+}
+
+export async function followUser(userId: string): Promise<void> {
+  const r = await fetch("/api/follow/" + encodeURIComponent(userId), { method: "POST" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => null);
+    throw new Error((d && d.detail) || "关注失败");
+  }
+}
+
+export async function unfollowUser(userId: string): Promise<void> {
+  const r = await fetch("/api/follow/" + encodeURIComponent(userId), { method: "DELETE" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => null);
+    throw new Error((d && d.detail) || "取关失败");
+  }
+}
+
+// 定向跃迁到指定用户星云(好友列表 / 粉丝列表入口)
+export function loadSpaceGraph(userId: string): Promise<SpaceJumpResult> {
+  return getJson<SpaceJumpResult>("/api/space/" + encodeURIComponent(userId) + "/graph");
+}

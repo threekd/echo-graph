@@ -45,7 +45,7 @@
 | `publicationYear` | Integer | 否 | 出版年份 |
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
-| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；公共星云默认 `draft`，普通用户空间默认 `reviewed`——用户输入即确认） |
+| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；新增默认 `reviewed`——输入即确认，含管理员手动新增；CSV 引导的存量策展数据保持 `draft` 待审核） |
 | `visibility` | String | 否 | 可见性（`public` 公开 / `private` 隐藏，默认 `public`）；仅对访客视图生效，owner 自己始终可见；公共星云恒为公开 |
 | `recommendation` | String | 否 | 个人评分（`recommend` 推荐 / `not_recommend` 不推荐，默认空）；仅用户空间语义，不进 CSV |
 | `review` | String | 否 | 个人评价（长文本，最多 2000 字，默认空）；仅用户空间语义，不进 CSV |
@@ -65,7 +65,7 @@
 | `birthYear` | Integer | 否 | 出生年份(取值 -9999 ~ 9999) |
 | `deathYear` | Integer | 否 | 去世年份(取值 -9999 ~ 9999) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
-| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；公共星云默认 `draft`，普通用户空间默认 `reviewed`） |
+| `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；新增默认 `reviewed`——输入即确认，含管理员手动新增；CSV 引导的存量策展数据保持 `draft` 待审核） |
 | `visibility` | String | 否 | 可见性（`public` / `private`，默认 `public`，仅作者/作品节点） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
@@ -91,7 +91,7 @@
 | `evidence` | String | 是 | 原文片段(摘抄文本),即正文某片段出现另一本书的名称 |
 | `evidenceSource` | String | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | String | 否 | 备注或补充说明 |
-| `reviewStatus` | String | 否 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回),默认 `draft` |
+| `reviewStatus` | String | 否 | 审核状态,枚举:`draft`(草稿)/ `reviewed`(已审核)/ `rejected`(驳回);新增默认 `reviewed`,CSV 引导存量保持 `draft` |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |

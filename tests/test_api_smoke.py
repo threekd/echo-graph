@@ -133,7 +133,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("works", stats["reviewStatus"])
         self.assertIn("edges", stats["reviewStatus"])
 
-    def test_admin_create_sets_timestamps_and_default_status(self) -> None:
+    def test_admin_create_sets_timestamps_and_reviewed_status(self) -> None:
         import app.admin as admin
 
         res = admin.create(
@@ -143,7 +143,7 @@ class ApiSmokeTest(unittest.TestCase):
         row = res["row"]
         self.assertTrue(row["createdAt"])
         self.assertTrue(row["updatedAt"])
-        self.assertEqual(row["reviewStatus"], "draft")
+        self.assertEqual(row["reviewStatus"], "reviewed")  # admin 手动新增默认已审核
         self.assertEqual(row["originalName"], "某作家")  # 落盘前去除首尾空白与零宽字符
         self.assertEqual(row["Name_CN"], "某")
         # 行级写入已落库

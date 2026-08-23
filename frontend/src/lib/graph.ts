@@ -1,5 +1,6 @@
 // 图谱视图编排:过滤、主图谱、涟漪、作者视图、路径
-import { workDetail, expansion, findPath, spaceParamFromState, type Space } from "./api";
+import { flushSync } from "react-dom";
+import { workDetail, expansion, findPath, loadGraphData, spaceParamFromState, type Space } from "./api";
 import {
   isAnonymousAuthor,
   filterSingleWorkAuthors,
@@ -365,6 +366,28 @@ export function reRenderAuthor(opts?: ViewOpts) {
   const author = st.currentAuthorId ? findNode(st.currentAuthorId) : undefined;
   if (!author) return;
   renderAuthorView(author, { preserveCamera: true, hops: st.expandHops, ...(opts || {}) });
+}
+
+// 数据写入(数据管理/点亮星空)后刷新当前星云图谱并重绘当前视图,无需整页刷新
+export function refreshSpaceGraph(): void {
+  const st = getState();
+  const space = st.space || "public";
+  loadGraphData(space)
+    .then((data) => {
+      flushSync(() => {
+        dispatch({ type: "SET_DATA", data });
+        dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
+      });
+      const view = getState().currentView;
+      if (view === "main") {
+        renderMain({ preserveCamera: true }, data);
+      } else if (view === "ripple") {
+        reRenderRipple();
+      } else if (view === "author") {
+        reRenderAuthor();
+      }
+    })
+    .catch(() => { /* 刷新失败不影响写入结果,下次进入空间时会加载最新数据 */ });
 }
 
 export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promise<any> {

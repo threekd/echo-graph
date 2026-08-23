@@ -6,6 +6,7 @@ import AuditPanel from "./admin/AuditPanel";
 import ContributionsPanel from "./admin/ContributionsPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
+import { refreshSpaceGraph } from "../lib/graph";
 import {
   authorLabelOf,
   workLabel,
@@ -280,6 +281,15 @@ export default function Admin() {
     if (data) setData(updater(data));
   };
 
+  // 数据写入后刷新星云图(仅当管理空间与当前浏览空间一致时才有意义:
+  // admin 管理公共星云,其「我的星云」同源;普通用户管理自己的星云)
+  const refreshGraphAfterWrite = () => {
+    const relevant = isAdmin
+      ? state.space === "public" || state.space === "mine"
+      : state.space === "mine";
+    if (relevant) refreshSpaceGraph();
+  };
+
   const doDelete = (row: any) => {
     const id = row.id;
     setConfirmState({
@@ -308,6 +318,7 @@ export default function Admin() {
                   r.id === id ? { ...r, deletedAt: d.deletedAt } : r
                 ),
               }));
+              refreshGraphAfterWrite();
             }
           })
           .catch((e) => setStatus("删除失败: " + e.message));
@@ -338,6 +349,7 @@ export default function Admin() {
               r.id === id ? { ...r, deletedAt: null } : r
             ),
           }));
+          refreshGraphAfterWrite();
         }
       })
       .catch((e) => setStatus("恢复失败: " + e.message));
@@ -542,6 +554,10 @@ export default function Admin() {
           edgesList={data?.edges || []}
           isAdmin={isAdmin}
           onClose={() => setModal(null)}
+          onAuthorAdded={(row) => {
+            applyLocal((prev) => ({ ...prev, authors: [...(prev.authors || []), row] }));
+            refreshGraphAfterWrite();
+          }}
           onReload={() => {
             setModal(null);
             load();
@@ -557,6 +573,7 @@ export default function Admin() {
               }
               return { ...prev, [key]: [...list, row] };
             });
+            refreshGraphAfterWrite();
           }}
           onDelete={modal.mode === "edit" ? () => doDelete(modal.row) : undefined}
         />

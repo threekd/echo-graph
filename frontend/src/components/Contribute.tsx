@@ -4,7 +4,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp, type GraphNode } from "../store";
-import { loadGraphData, loadMyRows, type SpaceRows } from "../lib/api";
+import { loadMyRows, type SpaceRows } from "../lib/api";
+import { refreshSpaceGraph } from "../lib/graph";
 import {
   authorSuggestionLabel,
   authorSuggestionLabels,
@@ -291,9 +292,9 @@ export default function Contribute() {
       const fresh = await loadMyRows();
       setMyRows(fresh);
       try {
-        if (state.space === "mine") {
-          const data = await loadGraphData("mine");
-          dispatch({ type: "SET_DATA", data });
+        // 写入本人星云后刷新图谱(admin 的「我的星云」与公共星云同源)
+        if (state.space === "mine" || (state.user?.role === "admin" && state.space === "public")) {
+          refreshSpaceGraph();
         }
       } catch {
         /* 图谱视图刷新失败不影响添加结果 */
@@ -406,6 +407,7 @@ export default function Contribute() {
           edgesList={myRows?.edges || []}
           isAdmin={false}
           onClose={() => setAddModal(null)}
+          onAuthorAdded={() => refreshRows()}
           onSaved={(row) => {
             const label = nodeLabelOf(addModal.kind, row);
             set(addModal.target, label || "");

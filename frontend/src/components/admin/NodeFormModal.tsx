@@ -132,6 +132,7 @@ export default function NodeFormModal({
   onSaved,
   onReload,
   onDelete,
+  onAuthorAdded,
 }: {
   kind: NodeKind;
   mode: "add" | "edit";
@@ -145,6 +146,7 @@ export default function NodeFormModal({
   onSaved: (row: any) => void;
   onReload?: () => void;
   onDelete?: (row: any) => void;
+  onAuthorAdded?: (row: any) => void;
 }) {
   const [form, setForm] = useState<any>({ ...initial });
   const [formError, setFormError] = useState("");
@@ -498,6 +500,7 @@ export default function NodeFormModal({
             const prev = String(form.author_id || "").trim();
             // 新作者加入当前作品:多作者用逗号拼接(与 AuthorPicker 的 value 格式一致)
             setForm({ ...form, author_id: prev ? `${prev},${row.id}` : row.id });
+            if (onAuthorAdded) onAuthorAdded(row); // 通知父级刷新作者列表,让新作者立即可见
             setAuthorAdd(null);
           }}
         />

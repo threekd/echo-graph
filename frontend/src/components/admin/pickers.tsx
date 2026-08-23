@@ -272,11 +272,12 @@ export function AuthorPicker({
   const lastValue = useRef(value);
 
   useEffect(() => {
-    if (value !== lastValue.current) {
-      lastValue.current = value;
-      setSelected(parseAuthorIds(value, authorsList));
-      setQuery(""); // 外部值变化(如新增作者后回填)时清空输入,让位给已选标签
-    }
+    // value 变化或作者列表更新(如新增作者回填后)都重新解析已选作者;
+    // 列表刷新后才能把刚新增的作者 id 解析成标签显示
+    const valueChanged = value !== lastValue.current;
+    lastValue.current = value;
+    setSelected(parseAuthorIds(value, authorsList));
+    if (valueChanged) setQuery(""); // 外部值变化时清空输入,让位给已选标签
   }, [value, authorsList]);
 
   const rawQuery = query.trim();

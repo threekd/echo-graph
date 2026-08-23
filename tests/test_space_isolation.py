@@ -31,34 +31,34 @@ class _FakeReq:
 
 def _space_graph(request, user_id: str) -> dict:
     """与只读路由工厂同一解析路径:可见性校验 + 目标星云 store.graph()。"""
-    row, viewer = space._space_context(request, user_id)
-    return space._space_store(row, viewer).graph()
+    row, _ = space._space_context(request, user_id)
+    return space._space_store(row).graph()
 
 
 def _space_search(request, user_id: str, q: str, limit: int) -> dict:
-    row, viewer = space._space_context(request, user_id)
-    return {"hits": space._space_store(row, viewer).search(q.strip(), limit)}
+    row, _ = space._space_context(request, user_id)
+    return {"hits": space._space_store(row).search(q.strip(), limit)}
 
 
 def _space_work_detail(request, user_id: str, work_id: str) -> dict:
-    row, viewer = space._space_context(request, user_id)
-    detail = space._space_store(row, viewer).work_detail(work_id)
+    row, _ = space._space_context(request, user_id)
+    detail = space._space_store(row).work_detail(work_id)
     if detail is None:
         raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
     return detail
 
 
 def _space_expansion(request, user_id: str, work_id: str, hops: int) -> dict:
-    row, viewer = space._space_context(request, user_id)
-    data = space._space_store(row, viewer).expansion(work_id, hops)
+    row, _ = space._space_context(request, user_id)
+    data = space._space_store(row).expansion(work_id, hops)
     if data is None:
         raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
     return data
 
 
 def _space_path(request, user_id: str, frm: str, to: str, max_hops: int) -> dict:
-    row, viewer = space._space_context(request, user_id)
-    result = space._space_store(row, viewer).path(frm.strip(), to.strip(), max_hops)
+    row, _ = space._space_context(request, user_id)
+    result = space._space_store(row).path(frm.strip(), to.strip(), max_hops)
     if result is None:
         raise HTTPException(status_code=404, detail="no mention path found")
     return result
@@ -127,7 +127,6 @@ class SpaceIsolationTest(unittest.TestCase):
         )
         aid = res["row"]["id"]
         self.assertEqual(res["row"]["reviewStatus"], "reviewed")  # admin 手动新增默认已审核(输入即确认)
-        self.assertEqual(res["row"]["visibility"], "public")  # 公共星云恒为公开
         nodes = SqliteStore().graph()["nodes"]
         self.assertEqual(len(nodes), 1)
         self.assertEqual(nodes[0]["id"], aid)
@@ -137,11 +136,10 @@ class SpaceIsolationTest(unittest.TestCase):
             my_update("authors", aid, {"Name_CN": "篡改"}, user=self.alice)
         self.assertEqual(ctx.exception.status_code, 404)
 
-    def test_user_space_reviewed_default_and_visibility(self) -> None:
+    def test_user_space_reviewed_default(self) -> None:
         created = my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)
         row = created["row"]
         self.assertEqual(row["reviewStatus"], "reviewed")  # 用户输入即确认
-        self.assertEqual(row["visibility"], "public")
         # 用户不能把数据改回草稿
         updated = my_update(
             "authors", row["id"],
@@ -149,73 +147,6 @@ class SpaceIsolationTest(unittest.TestCase):
             user=self.alice,
         )
         self.assertEqual(updated["row"]["reviewStatus"], "reviewed")
-        # 隐藏后:本人仍可见,访客不可见
-        my_update(
-            "authors", row["id"],
-            {"originalName": "A", "Name_CN": "甲2", "visibility": "private"},
-            user=self.alice,
-        )
-        self.assertEqual(len(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"]), 1)
-        with db_sqlite._db() as conn:
-            conn.execute(
-                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
-                (self.admin["id"], self.bob["id"]),
-            )
-        g = _space_graph(_FakeReq(), self.alice["id"])
-        self.assertEqual(len(g["nodes"]), 0)
-        # 非法可见性取值
-        with self.assertRaises(HTTPException) as ctx:
-            my_update(
-                "authors", row["id"],
-                {"originalName": "A", "Name_CN": "甲2", "visibility": "secret"},
-                user=self.alice,
-            )
-        self.assertEqual(ctx.exception.status_code, 400)
-
-    def test_work_visibility_hides_edges_from_visitors(self) -> None:
-        a1 = my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)["row"]
-        w1 = my_create(
-            "works", {
-                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
-                "author_id": a1["id"],
-            },
-            user=self.alice,
-        )["row"]
-        w2 = my_create(
-            "works", {
-                "language": "zh", "originalTitle": "B书", "Title_CN": "乙书",
-                "author_id": a1["id"],
-            },
-            user=self.alice,
-        )["row"]
-        my_create(
-            "edges", {
-                "source_work_id": w1["id"], "target_work_id": w2["id"],
-                "evidence": "x", "evidenceSource": "c1",
-            },
-            user=self.alice,
-        )
-        with db_sqlite._db() as conn:
-            conn.execute(
-                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
-                (self.admin["id"], self.bob["id"]),
-            )
-        visible_before = _space_graph(_FakeReq(), self.alice["id"])
-        echo_before = [e for e in visible_before["edges"] if e["type"] == "echo"]
-        self.assertEqual(len(echo_before), 1)
-        # 隐藏 w1 后:访客看不到它,相关的涟漪边也一并隐藏
-        my_update(
-            "works", w1["id"],
-            {
-                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
-                "author_id": a1["id"], "visibility": "private",
-            },
-            user=self.alice,
-        )
-        visible_after = _space_graph(_FakeReq(), self.alice["id"])
-        work_ids = {n["id"] for n in visible_after["nodes"]}
-        self.assertNotIn(w1["id"], work_ids)
-        self.assertEqual([e for e in visible_after["edges"] if e["type"] == "echo"], [])
 
     def test_work_recommendation_and_review(self) -> None:
         a1 = my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)["row"]
@@ -223,12 +154,24 @@ class SpaceIsolationTest(unittest.TestCase):
             "works", {
                 "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
                 "author_id": a1["id"],
+                "readingStatus": "reading",
                 "recommendation": "recommend", "review": "值得一读",
             },
             user=self.alice,
         )["row"]
+        self.assertEqual(w["readingStatus"], "reading")
         self.assertEqual(w["recommendation"], "recommend")
         self.assertEqual(w["review"], "值得一读")
+        # 非法阅读状态取值
+        with self.assertRaises(HTTPException) as ctx:
+            my_create(
+                "works", {
+                    "language": "zh", "originalTitle": "D", "Title_CN": "丁书",
+                    "author_id": a1["id"], "readingStatus": "finished",
+                },
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
         # 非法评分取值
         with self.assertRaises(HTTPException) as ctx:
             my_create(
@@ -253,10 +196,12 @@ class SpaceIsolationTest(unittest.TestCase):
         upd = my_update(
             "works", w["id"], {
                 "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
-                "author_id": a1["id"], "recommendation": "", "review": "",
+                "author_id": a1["id"],
+                "readingStatus": "", "recommendation": "", "review": "",
             },
             user=self.alice,
         )
+        self.assertIsNone(upd["row"]["readingStatus"])
         self.assertIsNone(upd["row"]["recommendation"])
         self.assertIsNone(upd["row"]["review"])
 

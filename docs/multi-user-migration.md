@@ -167,3 +167,7 @@
   用户展示名/行查询抽公共模块(`app/users.py`);读缓存键补 `reviewed_only`;
   `getJson` 统一 HTTP 状态检查;CSV 恢复先校验引导管理员再落盘;
   新增 `scripts/check_public_sync.py`(本地库公共数据 ↔ 仓库 CSV 一致性检查/合并追平)。
+- 2026-08-23:移除作者/作品的节点级可见性(schema v21)——`authors/works.visibility`
+  列删除,后端访客视图过滤(SqliteStore `include_private` / visibility SQL)与前端
+  「可见性」列/筛选/表单字段全部清理;星云级可见性(`users.space_visibility`,
+  星际跃迁 private 404)保留不变。公开星云内所有数据对访客一致可见。

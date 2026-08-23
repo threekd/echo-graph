@@ -2,8 +2,8 @@
 
 export type ReviewStatus = "draft" | "reviewed" | "rejected";
 export type ContributionStatus = "pending" | "approved" | "rejected";
-export type Visibility = "public" | "private";
 export type Recommendation = "recommend" | "not_recommend";
+export type ReadingStatus = "read" | "reading" | "unread";
 
 export interface AuthorRow {
   id: string;
@@ -14,7 +14,6 @@ export interface AuthorRow {
   birthYear?: number | null;
   deathYear?: number | null;
   note?: string | null;
-  visibility?: Visibility; // 仅用户空间语义;公共星云恒为 public
   reviewStatus: ReviewStatus;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -33,7 +32,7 @@ export interface WorkRow {
   publicationYear?: number | null;
   genre?: string | null;
   note?: string | null;
-  visibility?: Visibility;
+  readingStatus?: ReadingStatus | null; // 个人阅读状态(已读/在读/未读),仅用户空间语义,不进 CSV
   recommendation?: Recommendation | null; // 个人评分,仅用户空间语义,不进 CSV
   review?: string | null; // 个人评价(最多 2000 字),仅用户空间语义,不进 CSV
   reviewStatus: ReviewStatus;

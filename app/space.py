@@ -1,7 +1,8 @@
 """星际跃迁基础:只读访问其他用户的星云。
 
-可见性:users.space_visibility(默认 public)。private 空间对访客不可见(404);
+星云可见性:users.space_visibility(默认 public)。private 空间对访客不可见(404);
 本人通过 /api/me/* 访问;admin 可访问任意空间(审核/运营)。
+公开星云内的作者/作品不再有节点级可见性(schema v21 移除),访客与 owner 看到一致数据。
 读取返回与 /api/graph 同形状的数据,附 spaceId / displayName(星云账号,
 displayName 优先昵称,其次用户名,不再暴露邮箱)。
 
@@ -41,15 +42,9 @@ def _require_visible(user_id: str, viewer: dict | None) -> dict:
     raise HTTPException(status_code=404, detail="星云不存在或未公开")
 
 
-def _space_store(row: dict, viewer: dict | None = None) -> SqliteStore:
-    """目标星云只读视图:访客仅看 public 节点;owner 本人与 admin 看全部节点。
-
-    admin 需要能审核/运营隐藏数据(与模块 docstring「admin 可访问任意空间」一致);
-    owner 通过空间深链访问自己时也应看到 visibility=private 的节点。
-    """
-    if viewer and (viewer["id"] == row["id"] or viewer["role"] == "admin"):
-        return SqliteStore(owner_id=row["id"], include_private=True)
-    return SqliteStore(owner_id=row["id"], include_private=False)
+def _space_store(row: dict) -> SqliteStore:
+    """目标星云只读视图:公开星云内所有数据对访客一致可见(节点级可见性已移除)。"""
+    return SqliteStore(owner_id=row["id"])
 
 
 def _space_context(request: Request, user_id: str) -> tuple[dict, dict | None]:
@@ -64,8 +59,8 @@ def _space_context(request: Request, user_id: str) -> tuple[dict, dict | None]:
 
 
 def _space_store_factory(request: Request, user_id: str | None = None) -> SqliteStore:
-    row, viewer = _space_context(request, user_id or "")
-    return _space_store(row, viewer)
+    row, _ = _space_context(request, user_id or "")
+    return _space_store(row)
 
 
 def _space_owner_provider(request: Request, user_id: str | None = None) -> dict:
@@ -112,7 +107,7 @@ def random_space_graph(request: Request) -> dict:
             "nickname": row["nickname"],
             "bio": row["bio"],
         },
-        **_space_store(row, viewer).graph(),
+        **_space_store(row).graph(),
     }
 
 

@@ -188,17 +188,17 @@ BEGIN;
 
 INSERT OR IGNORE INTO authors
   (id, originalName, Name_CN, Name_EN, nationality, birthYear, deathYear,
-   note, reviewStatus, visibility, owner_id, createdAt, updatedAt, deletedAt)
+   note, reviewStatus, owner_id, createdAt, updatedAt, deletedAt)
 SELECT id, originalName, Name_CN, Name_EN, nationality, birthYear, deathYear,
-       note, reviewStatus, visibility, '<dst_user_id>', createdAt, updatedAt, deletedAt
+       note, reviewStatus, '<dst_user_id>', createdAt, updatedAt, deletedAt
 FROM bak.authors WHERE owner_id = '<src_user_id>';
 
 INSERT OR IGNORE INTO works
   (id, language, originalTitle, Title_CN, Title_EN, Title_Other, publicationYear,
-   genre, note, reviewStatus, visibility, recommendation, review,
+   genre, note, reviewStatus, recommendation, review,
    owner_id, createdAt, updatedAt, deletedAt)
 SELECT id, language, originalTitle, Title_CN, Title_EN, Title_Other, publicationYear,
-       genre, note, reviewStatus, visibility, recommendation, review,
+       genre, note, reviewStatus, recommendation, review,
        '<dst_user_id>', createdAt, updatedAt, deletedAt
 FROM bak.works WHERE owner_id = '<src_user_id>';
 

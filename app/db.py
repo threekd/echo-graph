@@ -93,6 +93,7 @@ def _work_payload(p: dict) -> dict:
         "publicationYear": p.get("publicationYear"),
         "language": p.get("language"),
         "genre": p.get("genre"),
+        "readingStatus": p.get("readingStatus"),  # 个人阅读状态(仅用户空间语义)
         "recommendation": p.get("recommendation"),  # 个人评分(仅用户空间语义)
         "review": p.get("review"),  # 个人评价(仅用户空间语义)
     }
@@ -133,6 +134,9 @@ class SqliteStore:
     reviewed_only(公开视图):为 True 时所有公开接口只返回 reviewStatus=reviewed
     的内容(草稿/驳回不可见)。默认读取环境变量 PUBLIC_REVIEWED_ONLY
     (取值 1 / true / yes / on 开启),部署时在 .env 中配置。
+
+    作者/作品的节点可见性(visibility)已于 schema v21 移除:公开星云内的数据
+    对所有访客一致可见,访客/owner 视图不再区分。
     """
 
     name = "sqlite"
@@ -141,7 +145,6 @@ class SqliteStore:
         self,
         reviewed_only: bool | None = None,
         owner_id: str | None = None,
-        include_private: bool = True,
     ) -> None:
         if reviewed_only is None:
             reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
@@ -152,8 +155,6 @@ class SqliteStore:
         # 空间过滤:None = 公共视图(admin 认领的数据 + 尚未认领的历史行);
         # 具体用户 id = 该用户私有空间(仅本人可见)。
         self.owner_id = owner_id
-        # 访客视图(星际跃迁)只显示 visibility=public 的节点及其边;owner 自己看全部
-        self.include_private = include_private
 
     def _effective_status(self, status: str | None) -> str | None:
         """公开视图强制 reviewed;内部/管理场景沿用显式 status。"""
@@ -179,11 +180,10 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        # 缓存键含空间、视图模式与审核过滤:owner/访客视图互不串缓存,
-        # 同一 DB 路径下不同 reviewed_only 的公共 store 也不串缓存
+        # 缓存键含空间与审核过滤:不同 owner/公共视图互不串缓存,
+        # 同一 DB 路径下不同 reviewed_only 的 store 也不串缓存
         key = _cache_key() + (
             self.owner_id or "public",
-            "owner" if self.include_private else "visitor",
             self.reviewed_only,
         )
         hit = _read_cache.get(key)
@@ -191,20 +191,18 @@ class SqliteStore:
             return hit[1]
         owner_sql, owner_params = self._owner_clause()
         wa_sql, wa_params = self._owner_clause("w.")
-        visibility_sql = " AND visibility = 'public'" if not self.include_private else ""
-        wa_visibility_sql = " AND w.visibility = 'public'" if not self.include_private else ""
         with db_sqlite._db() as conn:
             authors = [
                 dict(r) for r in conn.execute(
                     f"SELECT * FROM authors WHERE deletedAt IS NULL AND {owner_sql}"
-                    f"{visibility_sql} ORDER BY id",
+                    " ORDER BY id",
                     owner_params,
                 )
             ]
             works = [
                 dict(r) for r in conn.execute(
                     f"SELECT * FROM works WHERE deletedAt IS NULL AND {owner_sql}"
-                    f"{visibility_sql} ORDER BY id",
+                    " ORDER BY id",
                     owner_params,
                 )
             ]
@@ -214,17 +212,10 @@ class SqliteStore:
                     owner_params,
                 )
             ]
-            if not self.include_private:
-                visible_work_ids = {w["id"] for w in works}
-                edges = [
-                    e for e in edges
-                    if e["source_work_id"] in visible_work_ids
-                    and e["target_work_id"] in visible_work_ids
-                ]
             wa_rows = conn.execute(
                 "SELECT wa.work_id, wa.author_id FROM work_authors wa"
                 " JOIN works w ON w.id = wa.work_id"
-                f" WHERE w.deletedAt IS NULL AND {wa_sql}{wa_visibility_sql}"
+                f" WHERE w.deletedAt IS NULL AND {wa_sql}"
                 " ORDER BY wa.work_id, wa.author_id",
                 wa_params,
             ).fetchall()

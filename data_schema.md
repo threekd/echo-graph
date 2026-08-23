@@ -46,9 +46,9 @@
 | `genre` | String | 否 | 体裁，(`Fiction` / `Non-fiction`/ `Poetry` / `Drama`) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
 | `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；新增默认 `reviewed`——输入即确认，含管理员手动新增；CSV 引导的存量策展数据保持 `draft` 待审核） |
-| `visibility` | String | 否 | 可见性（`public` 公开 / `private` 隐藏，默认 `public`）；仅对访客视图生效，owner 自己始终可见；公共星云恒为公开 |
 | `recommendation` | String | 否 | 个人评分（`recommend` 推荐 / `not_recommend` 不推荐，默认空）；仅用户空间语义，不进 CSV |
 | `review` | String | 否 | 个人评价（长文本，最多 2000 字，默认空）；仅用户空间语义，不进 CSV |
+| `readingStatus` | String | 否 | 个人阅读状态（`read` 已读 / `reading` 在读 / `unread` 未读，默认空）；仅用户空间语义，不进 CSV |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |
@@ -66,7 +66,6 @@
 | `deathYear` | Integer | 否 | 去世年份(取值 -9999 ~ 9999) |
 | `note` | String | 否 | 备注（内部说明文字，不参与图谱展示） |
 | `reviewStatus` | String | 否 | 审核状态（`draft` / `reviewed` / `rejected`；新增默认 `reviewed`——输入即确认，含管理员手动新增；CSV 引导的存量策展数据保持 `draft` 待审核） |
-| `visibility` | String | 否 | 可见性（`public` / `private`，默认 `public`，仅作者/作品节点） |
 | `createdAt` | DateTime | 是 | 创建时间 |
 | `updatedAt` | DateTime | 是 | 更新时间 |
 | `deletedAt` | DateTime | 否 | 软删除时间(可选,默认不设置) |

@@ -41,7 +41,6 @@ function defaultSortFor(k: AdminTab): { key: string; dir: 1 | -1 } | null {
 
 function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: string }[]> {
   const reviewCol = (label: string) => ({ key: "reviewStatus", label });
-  const visibilityCol = { key: "visibility", label: "可见性" };
   return {
     authors: isAdmin
       ? [
@@ -54,7 +53,6 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "Name_CN", label: "中文名" },
           { key: "originalName", label: "原文名" },
           { key: "nationality", label: "国家" },
-          visibilityCol,
         ],
     works: isAdmin
       ? [
@@ -70,7 +68,6 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "author_id", label: "作者" },
           { key: "publicationYear", label: "年份" },
           { key: "recommendation", label: "评分" },
-          visibilityCol,
         ],
     edges: isAdmin
       ? [
@@ -234,13 +231,11 @@ export default function Admin() {
       }
     : {
         authors: [
-          { key: "visibility", type: "select" as const },
           { key: "nationality", type: "select" as const },
           { key: "Name_CN", type: "text" as const },
           { key: "originalName", type: "text" as const },
         ],
         works: [
-          { key: "visibility", type: "select" as const },
           { key: "recommendation", type: "select" as const },
           { key: "genre", type: "select" as const },
           { key: "language", type: "select" as const },
@@ -386,9 +381,6 @@ export default function Admin() {
     }
     if (kind === "works" && key === "author_id") {
       return authorDisplayNames(r as WorkRow, authorsById, authorLabelOf);
-    }
-    if (key === "visibility") {
-      return rec[key] === "private" ? "隐藏" : "公开";
     }
     if (key === "recommendation") {
       return rec[key] === "recommend" ? "推荐" : rec[key] === "not_recommend" ? "不推荐" : "";

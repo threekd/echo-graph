@@ -522,6 +522,33 @@ def _migration_v19(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id)")
 
 
+def _migration_v20(conn: sqlite3.Connection) -> None:
+    """作品增加个人阅读状态字段:readingStatus(read/reading/unread,默认空)。
+
+    属于用户空间的个人语义字段,不进 CSV(与 recommendation / review 同策略);
+    admin 公共星云行保持 NULL(策展视图不展示)。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(works)")}
+    if "readingStatus" not in cols:
+        conn.execute(
+            "ALTER TABLE works ADD COLUMN readingStatus TEXT"
+            " CHECK (readingStatus IN ('read','reading','unread'))"
+        )
+
+
+def _migration_v21(conn: sqlite3.Connection) -> None:
+    """移除作者/作品的节点级可见性(visibility 列)。
+
+    星云可见性保留在 users.space_visibility;节点级 visibility(public/private)
+    自 v11 引入后仅用于访客视图过滤,产品确认不需要,直接删除列
+    (SQLite 3.35+ 支持 ALTER TABLE DROP COLUMN)。
+    """
+    for table in ("authors", "works"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "visibility" in cols:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN visibility")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -542,6 +569,8 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (17, _migration_v17),
     (18, _migration_v18),
     (19, _migration_v19),
+    (20, _migration_v20),
+    (21, _migration_v21),
 ]
 
 

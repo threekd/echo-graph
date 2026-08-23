@@ -25,11 +25,11 @@ KIND_TABLE = sqlite_store.KIND_TABLE  # 表名映射单一来源:sqlite_store
 AUDIT_FIELDS: dict[Kind, list[str]] = {
     "authors": [
         "originalName", "Name_CN", "Name_EN", "nationality",
-        "birthYear", "deathYear", "note", "reviewStatus", "visibility",
+        "birthYear", "deathYear", "note", "reviewStatus",
     ],
     "works": [
         "language", "originalTitle", "Title_CN", "Title_EN", "Title_Other",
-        "publicationYear", "genre", "note", "reviewStatus", "visibility",
+        "publicationYear", "genre", "note", "reviewStatus",
         "recommendation", "review",
     ],
     "edges": [
@@ -187,27 +187,24 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
-    is_admin_space = owner_id == admin_user_id()
     # 输入即确认:新增(含管理员手动新增)默认 reviewed;显式传 draft 仍可保留草稿
     if not row.get("reviewStatus"):
         row["reviewStatus"] = "reviewed"
-    visibility: str | None = None
-    if kind in ("authors", "works"):
-        visibility = "public" if is_admin_space else (row.get("visibility") or "public")
-        if visibility not in ("public", "private"):
-            raise HTTPException(status_code=400, detail="可见性取值仅支持 public / private")
-        row["visibility"] = visibility
     extra: dict | None = None
     if kind == "works":
+        reading_status = row.get("readingStatus")
+        if reading_status is not None and reading_status not in ("read", "reading", "unread"):
+            raise HTTPException(status_code=400, detail="阅读状态取值仅支持 read / reading / unread")
         recommendation = row.get("recommendation")
         if recommendation is not None and recommendation not in ("recommend", "not_recommend"):
             raise HTTPException(status_code=400, detail="评分取值仅支持 recommend / not_recommend")
         review = row.get("review")
         if review is not None and len(str(review)) > 2000:
             raise HTTPException(status_code=400, detail="评价过长(最多 2000 字)")
+        row["readingStatus"] = reading_status
         row["recommendation"] = recommendation
         row["review"] = review
-        extra = {"recommendation": recommendation, "review": review}
+        extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
     now = _now()
     row.setdefault("createdAt", now)
     row["updatedAt"] = now
@@ -221,7 +218,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
                 and not sqlite_store.row_exists(conn, kind, row["id"], owner_id):
             raise HTTPException(status_code=400, detail=f"校验失败:\n- id 已被占用:{row['id']}")
         sqlite_store.insert_row(
-            conn, kind, row, owner_id=owner_id, visibility=visibility, extra=extra,
+            conn, kind, row, owner_id=owner_id, extra=extra,
         )
         if kind == "works":
             sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
@@ -241,31 +238,26 @@ def update_row(
     is_admin_space = owner_id == admin_user_id()
     extra: dict | None = None
     if kind == "works":
+        reading_status = row.get("readingStatus")
+        if reading_status is not None and reading_status not in ("read", "reading", "unread"):
+            raise HTTPException(status_code=400, detail="阅读状态取值仅支持 read / reading / unread")
         recommendation = row.get("recommendation")
         if recommendation is not None and recommendation not in ("recommend", "not_recommend"):
             raise HTTPException(status_code=400, detail="评分取值仅支持 recommend / not_recommend")
         review = row.get("review")
         if review is not None and len(str(review)) > 2000:
             raise HTTPException(status_code=400, detail="评价过长(最多 2000 字)")
+        row["readingStatus"] = reading_status
         row["recommendation"] = recommendation
         row["review"] = review
         # 用户表单总会携带这两个字段:空值代表清除(显式写 NULL)
-        extra = {"recommendation": recommendation, "review": review}
+        extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         existing = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if not is_admin_space:
             row["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
-        visibility: str | None = None
-        if kind in ("authors", "works"):
-            if is_admin_space:
-                visibility = "public"  # 公共星云恒为公开
-            else:
-                visibility = row.get("visibility") or existing.get("visibility") or "public"
-                if visibility not in ("public", "private"):
-                    raise HTTPException(status_code=400, detail="可见性取值仅支持 public / private")
-            row["visibility"] = visibility
         expected_ts = row.get("updatedAt") or existing.get("updatedAt")
         row["id"] = item_id
         row["createdAt"] = row.get("createdAt") or existing.get("createdAt") or now
@@ -275,7 +267,7 @@ def update_row(
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
         status = sqlite_store.update_row(
             conn, kind, item_id, row, expected_updated_at=expected_ts,
-            owner_id=owner_id, visibility=visibility, extra=extra,
+            owner_id=owner_id, extra=extra,
         )
         if status == -1:
             raise HTTPException(status_code=409, detail="数据已被其他人修改,请刷新后重试")

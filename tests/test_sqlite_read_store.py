@@ -180,7 +180,7 @@ class SqliteStoreTest(unittest.TestCase):
         db._read_cache.clear()
         self.store.graph()
         self.assertIn(
-            (str(db_sqlite.DB_PATH), "public", "owner", self.store.reviewed_only),
+            (str(db_sqlite.DB_PATH), "public", self.store.reviewed_only),
             db._read_cache,
         )
         sqlite_store.rewrite_all(*_fixture())

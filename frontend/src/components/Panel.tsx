@@ -120,6 +120,16 @@ function BookmarkPanel({ work }: { work: any }) {
     <div className="panel-content-inner">
       <h2>书签</h2>
       <div className="meta">{work.title}</div>
+      <h3>阅读状态</h3>
+      <p className={work.readingStatus ? "meta" : "no-path"}>
+        {work.readingStatus === "read"
+          ? "已读"
+          : work.readingStatus === "reading"
+            ? "在读"
+            : work.readingStatus === "unread"
+              ? "未读"
+              : "未标记"}
+      </p>
       <h3>评分</h3>
       <p className={rec === "recommend" || rec === "not_recommend" ? "meta" : "no-path"}>
         {rec === "recommend" ? "推荐" : rec === "not_recommend" ? "不推荐" : "未评分"}

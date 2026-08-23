@@ -47,6 +47,7 @@ class AuthorRow(BaseModel):
     deathYear: int | None = Field(default=None, ge=-9999, le=9999)
     note: str | None = None
     reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"
+    readingStatus: Literal["read", "reading", "unread"] | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
     deletedAt: str | None = None

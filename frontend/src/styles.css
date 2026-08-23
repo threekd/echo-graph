@@ -1254,6 +1254,23 @@ th.sortable.active .sort-icon {
 }
 #admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 14px; }
 #admin-form .full { grid-column: 1 / -1; }
+#admin-form .form-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+#admin-form .form-divider::before,
+#admin-form .form-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 163, 255, 0.16);
+}
 #admin-form label {
   display: flex;
   flex-direction: column;

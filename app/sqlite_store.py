@@ -76,7 +76,6 @@ def insert_row(
     kind: str,
     row: dict,
     owner_id: str | None = None,
-    visibility: str | None = None,
     extra: dict | None = None,
 ) -> None:
     row = _norm_row(row)
@@ -90,9 +89,6 @@ def insert_row(
     if owner_id:
         sets.append("owner_id = ?")
         params.append(owner_id)
-    if visibility is not None:
-        sets.append("visibility = ?")
-        params.append(visibility)
     for key, value in (extra or {}).items():
         if value is not None:
             sets.append(f"{key} = ?")
@@ -111,7 +107,6 @@ def update_row(
     row: dict,
     expected_updated_at: str | None = None,
     owner_id: str | None = None,
-    visibility: str | None = None,
     extra: dict | None = None,
 ) -> int:
     """更新一行。返回 1=成功, 0=行不存在, -1=乐观锁冲突(updatedAt 已变化)。"""
@@ -121,9 +116,6 @@ def update_row(
     scope_params = [owner_id] if owner_id else []
     extra_parts: list[str] = []
     extra_params: list = []
-    if visibility is not None:
-        extra_parts.append("visibility = ?")
-        extra_params.append(visibility)
     for key, value in (extra or {}).items():
         extra_parts.append(f"{key} = ?")
         extra_params.append(value)

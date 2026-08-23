@@ -92,7 +92,8 @@ interface FieldDef {
     | "authorPicker"
     | "languagePicker"
     | "countryPicker"
-    | "visibility"
+    | "divider"
+    | "readingStatus"
     | "recommendation";
   options?: string[];
   min?: number;
@@ -182,10 +183,10 @@ export default function NodeFormModal({
   const fields = FIELDS[kind].filter(
     (f) => !(!isAdmin && (f.key === "reviewStatus" || f.key === "note"))
   );
-  if (!isAdmin && kind !== "edges") {
-    fields.push({ key: "visibility", label: "可见性", type: "visibility" });
-  }
   if (!isAdmin && kind === "works") {
+    // 客观信息(标题/语言/作者/年份/体裁)之后,用细分隔线划出「个人笔记」分组
+    fields.push({ key: "__divider", label: "个人笔记", type: "divider" });
+    fields.push({ key: "readingStatus", label: "阅读状态", type: "readingStatus" });
     fields.push({ key: "recommendation", label: "评分", type: "recommendation" });
     fields.push({ key: "review", label: "评价", type: "textarea", maxLength: 2000 });
   }
@@ -429,6 +430,29 @@ export default function NodeFormModal({
                 </label>
               );
             }
+            if (f.type === "divider") {
+              return (
+                <div key={f.key} className="form-divider" role="separator">
+                  <span>{f.label}</span>
+                </div>
+              );
+            }
+            if (f.type === "readingStatus") {
+              return (
+                <label key={f.key}>
+                  <span>{f.label}</span>
+                  <select
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  >
+                    <option value="">请选择…</option>
+                    <option value="read">已读</option>
+                    <option value="reading">在读</option>
+                    <option value="unread">未读</option>
+                  </select>
+                </label>
+              );
+            }
             if (f.type === "select") {
               return (
                 <label key={f.key}>
@@ -439,20 +463,6 @@ export default function NodeFormModal({
                   >
                     <option value="">请选择…</option>
                     {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </label>
-              );
-            }
-            if (f.type === "visibility") {
-              return (
-                <label key={f.key}>
-                  <span>{f.label}</span>
-                  <select
-                    value={form[f.key] || "public"}
-                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                  >
-                    <option value="public">公开(他人可见)</option>
-                    <option value="private">隐藏(仅自己可见)</option>
                   </select>
                 </label>
               );

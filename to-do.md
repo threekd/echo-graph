@@ -200,3 +200,10 @@
       三套并行端点);用户展示名/行查询抽公共模块;读缓存键补 `reviewed_only`;
       新增 `scripts/check_public_sync.py` 检查本地库公共数据与仓库 CSV 一致性并支持
       备份后合并追平(用户空间保留);README/to-do/data_schema/multi-user-migration 文档同步
+- [x] 作品新增个人阅读状态字段(schema v20):`works.readingStatus`(read/reading/unread,
+      默认空,仅用户空间语义、不进 CSV,与评分/评价同策略);新增/编辑作品表单提供
+      「阅读状态」下拉(已读/在读/未读),右侧「书签」Tab 同步展示
+- [x] 移除作者/作品的节点级可见性(schema v21):`authors/works.visibility` 列删除,
+      后端访客视图过滤(SqliteStore include_private/visibility_sql)、前端「可见性」
+      列/筛选/表单字段全部清理;星云可见性(`users.space_visibility` 与星际跃迁 404)
+      保留不变

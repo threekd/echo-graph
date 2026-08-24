@@ -1,7 +1,7 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.4`(2026-08-24 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 23`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.5`(2026-08-25 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 24`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
@@ -33,7 +33,7 @@
   (引用 `users.id`;空值 = 尚未认领的历史数据,启动时认领给引导管理员);公共星云 =
   引导管理员空间,个人空间(`/api/me/*`)仅本人可见。
 - **溯源列**:`authors` / `works` / `edges` 含 `created_by`(默认 `curated`);
-  取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,预留)。
+  取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,经 admin 审核发布)。
   显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
   创建后不可修改,不进 CSV(与个人字段同策略)。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);
@@ -95,6 +95,7 @@
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:system_llm 空间草稿批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进 CSV |
 
 约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
 `CHECK (created_by IN ('curated','user','llm'))`。
@@ -120,6 +121,7 @@
 | `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义,不进 CSV |
 | `review` | TEXT | 否 | 个人评价(应用层校验最多 2000 字);仅用户空间语义,不进 CSV |
 | `readingStatus` | TEXT | 否 | 个人阅读状态 `read` / `reading` / `unread`;仅用户空间语义,不进 CSV |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进 CSV |
 
 **注意:`works` 表没有 `author_id` 列。** 作品-作者关联存于 `work_authors`;
 CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `work_authors`
@@ -159,6 +161,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进 CSV |
 
 约束:`UNIQUE(source_work_id, target_work_id)`(同空间内边对唯一,应用层叠加 owner 判定)、
 `CHECK (source_work_id <> target_work_id)`、`CHECK (length(evidence) <= 2000)`、
@@ -189,7 +192,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `id` | INTEGER | 是(PK) | 自增主键 |
 | `ts` | TEXT | 是 | 操作时间(UTC) |
 | `actor` | TEXT | 是 | 操作者(邮箱),默认 `admin` |
-| `action` | TEXT | 是 | `create` / `update` / `delete` / `restore` / `approve` / `reject` |
+| `action` | TEXT | 是 | `create` / `update` / `delete` / `restore` / `approve` / `reject` / `llm_ingest` / `llm_publish` / `llm_reuse` / `llm_reject` / `llm_reopen` |
 | `kind` | TEXT | 是 | `authors` / `works` / `edges`(历史行可能含 `contributions`,仅作记录) |
 | `row_id` | TEXT | 否 | 操作对象 id |
 | `detail` | TEXT | 否 | 人读摘要(对象名称与变更字段) |
@@ -202,7 +205,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `key` | TEXT | 是(PK) | 键,如 `schema_version` |
-| `value` | TEXT | 否 | 值,当前 `schema_version = 22` |
+| `value` | TEXT | 否 | 值,当前 `schema_version = 24` |
 
 ## 约束与索引汇总
 
@@ -249,8 +252,19 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 23);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 24);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.4 → 1.5` 变更(2026-08-25):
+
+- AI 草稿审核管道(schema v24 迁移):作者/作品/涟漪三表新增 `published_to_id`,
+  记录 system_llm 草稿批准后映射到的公共行 id(复用场景为被复用行 id),防重复发布;
+- 草稿区 = `system_llm` 账号私有空间(role=`user`、space_visibility=`private`,
+  随机密码不可登录,由 `app/llm_account.py` 按需创建);AI 提取行 `created_by='llm'`
+  `reviewStatus='draft'` 进入草稿区,admin 在管理端「AI 草稿」批准后复制进公共星云
+  (`created_by='llm'`、`reviewStatus='reviewed'`)或按去重提示复用现有公共记录;
+- 审计新增动作:`llm_ingest`(批次入库草稿)/ `llm_publish`(批准发布)/
+  `llm_reuse`(批准复用)/ `llm_reject`(驳回)/ `llm_reopen`(重开)。
 
 `1.3 → 1.4` 变更(2026-08-24):
 

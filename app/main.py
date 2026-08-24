@@ -15,6 +15,7 @@ from app.auth import admin_profile, bootstrap_admin
 from app.auth import router as auth_router
 from app.db import get_store
 from app.follows import router as follows_router
+from app.llm_review import router as llm_review_router
 from app.me import router as me_router
 from app.read_routes import register_read_routes
 from app.security import is_state_changing, same_origin_allowed
@@ -121,6 +122,7 @@ def health() -> dict:
 
 
 app.include_router(admin_router)
+app.include_router(llm_review_router)
 app.include_router(auth_router)
 app.include_router(follows_router)
 app.include_router(me_router)
@@ -139,3 +141,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+

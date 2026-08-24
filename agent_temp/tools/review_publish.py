@@ -42,9 +42,10 @@ for _path in (_TOOLS_DIR, _AGENT_TEMP_DIR, _REPO_ROOT):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from app import db_sqlite  # noqa: E402
+from app import db_sqlite, sqlite_store  # noqa: E402
 from app.auth import admin_user_id  # noqa: E402
-from app.space_crud import create_row  # noqa: E402
+from app.data_store import clean_row  # noqa: E402
+from app.space_crud import create_row, validate_row  # noqa: E402
 
 from agent_temp.tools import dedupe_check, llm_space  # noqa: E402
 
@@ -989,6 +990,114 @@ def cmd_make_batch(args: argparse.Namespace) -> None:
     print("  下一步：python agent_temp/tools/review_publish.py review " + batch["batch_id"])
 
 
+
+# ======================================================================
+# ingest：批次草稿 → system_llm 私有空间（reviewStatus=draft）
+# ======================================================================
+def _author_id_list(value) -> list[str]:
+    return [x.strip() for x in str(value or "").split(",") if x.strip()]
+
+
+def _stage_row(conn, kind: str, payload: dict, owner: str) -> str:
+    """在 system_llm 空间创建一条草稿行,返回新行 id。
+
+    校验与落盘对齐 space_crud.create_row(created_by='llm', reviewStatus='draft'),
+    与批内其他草稿在同一事务内完成,保证作品↔作者、涟漪↔作品引用完整。
+    """
+    row = clean_row({k: v for k, v in payload.items() if v is not None})
+    now = db_sqlite.now_iso()
+    row.setdefault("id", db_sqlite.new_uuid())
+    row["reviewStatus"] = "draft"
+    row["createdAt"] = now
+    row["updatedAt"] = now
+    errors = validate_row(conn, kind, row, owner_id=owner)
+    if errors:
+        raise ValueError("；".join(errors))
+    sqlite_store.insert_row(conn, kind, row, owner_id=owner, extra={"created_by": "llm"})
+    if kind == "works":
+        sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
+    db_sqlite.audit(
+        conn, "llm_ingest", kind, row["id"],
+        f"AI 提取草稿入库「{row.get('Name_CN') or row.get('Title_CN') or row['id']}」",
+        after=row,
+        actor="system_llm",
+    )
+    return row["id"]
+
+
+def stage_batch(batch: dict[str, Any], owner: str) -> dict[str, int]:
+    """把批次内全部条目作为草稿写入指定空间(默认 system_llm),返回计数。
+
+    单事务落盘,作品↔作者、涟漪↔作品引用在批内解析;已发布/已入库条目跳过。
+    """
+    by_id = {it["item_id"]: it for it in batch["items"]}
+    order = {"author": 0, "work": 1, "edge": 2}
+    items = sorted(
+        batch["items"],
+        key=lambda it: (order.get(it.get("kind"), 9), str(it.get("item_id"))),
+    )
+    counts = {"staged": 0, "already": 0, "failed": 0}
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        for item in items:
+            if item.get("status") in DONE:
+                counts["already"] += 1
+                continue
+            if item.get("status") == "staged" and item.get("resolved_id"):
+                counts["already"] += 1
+                continue
+            try:
+                if item["kind"] == "author":
+                    rid = _stage_row(conn, "authors", item["payload"], owner)
+                elif item["kind"] == "work":
+                    payload = {k: v for k, v in item["payload"].items() if k != "author"}
+                    author_ids = []
+                    for ref in item.get("author_refs") or []:
+                        dep = by_id.get(ref)
+                        rid_dep = dep.get("resolved_id") if dep else None
+                        if not rid_dep:
+                            raise ValueError(f"作者依赖 {ref} 未入库")
+                        author_ids.append(rid_dep)
+                    payload["author_id"] = ",".join(author_ids)
+                    rid = _stage_row(conn, "works", payload, owner)
+                else:
+                    payload = dict(item["payload"])
+                    src = by_id.get(item.get("source_ref"))
+                    tgt = by_id.get(item.get("target_ref"))
+                    payload["source_work_id"] = src.get("resolved_id") if src else None
+                    payload["target_work_id"] = tgt.get("resolved_id") if tgt else None
+                    if not payload["source_work_id"] or not payload["target_work_id"]:
+                        raise ValueError("涟漪端点作品未入库")
+                    rid = _stage_row(conn, "edges", payload, owner)
+                item["resolved_id"] = rid
+                item["status"] = "staged"
+                counts["staged"] += 1
+            except Exception as exc:  # noqa: BLE001 - 单条失败不中断整批
+                item["status"] = "failed"
+                item["error"] = f"{type(exc).__name__}: {exc}"
+                counts["failed"] += 1
+        batch["updated_at"] = now_iso()
+    return counts
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """把批次内全部条目作为草稿写入 system_llm 空间(公共星云不可见)。
+
+    之后的审核/批准在 admin 管理端「AI 草稿」页完成
+    (GET/POST /api/admin/llm/drafts/*,见 app/llm_review.py)。
+    """
+    if args.db:
+        db_sqlite.DB_PATH = Path(args.db).resolve()
+    owner = llm_space.ensure_system_llm()
+    batch = llm_space.load_batch(args.batch_id)
+    counts = stage_batch(batch, owner)
+    llm_space.save_batch(batch)
+    log(
+        f"ingest 完成:入库 {counts['staged']} · 跳过(已处理) {counts['already']}"
+        f" · 失败 {counts['failed']}"
+    )
+    if counts["failed"]:
+        log("失败条目保留 error,修复批次后重跑 ingest 即可重试")
+    log("下一步:admin 登录后在管理端「AI 草稿」页审核/批准(发布到公共星云)")
 # ======================================================================
 # CLI 入口
 # ======================================================================
@@ -1023,6 +1132,11 @@ def main() -> None:
     p.add_argument("batch_id")
     p.set_defaults(func=cmd_review)
 
+    p = sub.add_parser("ingest", help="把批次全部条目作为草稿写入 system_llm 空间(admin 管理端审核)")
+    p.add_argument("batch_id")
+    p.add_argument("--db", default=None, help="SQLite 数据库路径（默认 data/echo-graph.db）")
+    p.set_defaults(func=cmd_ingest)
+
     p = sub.add_parser("publish", help="把已批准条目发布到公共星云")
     p.add_argument("batch_id")
     p.add_argument("--dry-run", action="store_true", help="只预演，不写数据库")
@@ -1035,11 +1149,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-

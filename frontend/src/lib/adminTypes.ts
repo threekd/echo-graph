@@ -14,6 +14,7 @@ export interface AuthorRow {
   deathYear?: number | null;
   note?: string | null;
   reviewStatus: ReviewStatus;
+  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;
@@ -35,6 +36,7 @@ export interface WorkRow {
   recommendation?: Recommendation | null; // 个人评分,仅用户空间语义,不进 CSV
   review?: string | null; // 个人评价(最多 2000 字),仅用户空间语义,不进 CSV
   reviewStatus: ReviewStatus;
+  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;
@@ -48,6 +50,7 @@ export interface EdgeRow {
   evidenceSource?: string | null;
   note?: string | null;
   reviewStatus: ReviewStatus;
+  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;
@@ -86,4 +89,23 @@ export interface AdminData {
 }
 
 export type AdminKind = "authors" | "works" | "edges";
-export type AdminTab = AdminKind | "audit" | "snapshots";
+export type AdminTab = AdminKind | "audit" | "snapshots" | "llm";
+
+// AI 草稿审核页:/api/admin/llm/drafts 响应形状
+export interface DedupeHint {
+  level: string;
+  score: number;
+  existing_id: string;
+  existing_label: string;
+}
+
+export interface LlmDraftsData {
+  staging: AdminData;
+  hints: {
+    authors: Record<string, DedupeHint | null>;
+    works: Record<string, DedupeHint | null>;
+    edges: Record<string, DedupeHint | null>;
+  };
+  public_counts: { authors: number; works: number };
+}
+

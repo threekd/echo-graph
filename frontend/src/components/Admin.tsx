@@ -5,6 +5,7 @@ import type {
 } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
+import LlmDraftsPanel from "./admin/LlmDraftsPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
 import { refreshSpaceGraph } from "../lib/graph";
@@ -30,6 +31,7 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "edges", label: "涟漪" },
   { key: "audit", label: "日志" },
   { key: "snapshots", label: "快照" },
+  { key: "llm", label: "AI草稿" },
 ];
 
 // 作者/作品/涟漪表默认按修改时间从新到旧排序(updatedAt 为 UTC ISO 字符串,字典序即时间序);其余 Tab 不默认排序
@@ -81,6 +83,7 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
         ],
     audit: [],
     snapshots: [],
+    llm: [],
   };
 }
 
@@ -90,7 +93,7 @@ export default function Admin() {
   // admin 管理公共星云(/api/admin,即其名下数据);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
-  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["audit", "snapshots"].includes(k.key));
+  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["audit", "snapshots", "llm"].includes(k.key));
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,7 +165,7 @@ export default function Admin() {
 
   // Tab 角标计数:日志/快照为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
-    if (k === "audit" || k === "snapshots") return "";
+    if (k === "audit" || k === "snapshots" || k === "llm") return "";
     const n = counts ? (counts as Record<AdminKind, number>)[k as AdminKind] : undefined;
     if (n != null) return String(n);
     return data ? String((data[k as AdminKind] || []).length) : "";
@@ -192,6 +195,9 @@ export default function Admin() {
           { key: "target_work_id", type: "text" as const },
           { key: "evidenceSource", type: "text" as const },
         ],
+        llm: [],
+        audit: [],
+        snapshots: [],
       }
     : {
         authors: [
@@ -213,6 +219,9 @@ export default function Admin() {
           { key: "target_work_id", type: "text" as const },
           { key: "evidenceSource", type: "text" as const },
         ],
+        llm: [],
+        audit: [],
+        snapshots: [],
       }) as Record<AdminTab, { key: string; type: "select" | "text" }[]>;
   const uniqueValues = (key: string): string[] =>
     Array.from(
@@ -373,7 +382,7 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "audit" && kind !== "snapshots" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "audit" && kind !== "snapshots" && kind !== "llm" && <button onClick={openAdd}>＋ 新增</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -408,7 +417,9 @@ export default function Admin() {
           </div>
         )}
         <div className="admin-body">
-          {kind === "audit" ? (
+          {kind === "llm" ? (
+            <LlmDraftsPanel authFetch={authFetch} onStatus={setStatus} onPublicChanged={load} />
+          ) : kind === "audit" ? (
             <AuditPanel
               authFetch={authFetch}
               sort={sort}
@@ -486,3 +497,5 @@ export default function Admin() {
     </div>
   );
 }
+
+

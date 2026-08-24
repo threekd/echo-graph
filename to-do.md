@@ -231,3 +231,15 @@
       后端访客视图过滤(SqliteStore include_private/visibility_sql)、前端「可见性」
       列/筛选/表单字段全部清理;星云可见性(`users.space_visibility` 与星际跃迁 404)
       保留不变
+
+## 最近变更(2026-08-25)
+
+- [x] AI 草稿审核管道(schema v24):`system_llm` 机器账号私有空间承载 AI 提取草稿
+      (`created_by='llm'`、`reviewStatus='draft'`、随机密码不可登录,不可人工登录);
+      admin 管理端新增「AI 草稿」Tab,作者/作品/涟漪分页浏览(附与公共星云的基础
+      去重提示),支持编辑/驳回/重开/批准(复制进公共星云)/复用(去重命中现有记录);
+      批准后草稿行回写 `published_to_id` 防重复发布;依赖守卫保证作品依赖作者、
+      涟漪依赖两端作品均已先批准;新增审计动作 `llm_ingest` / `llm_publish` /
+      `llm_reuse` / `llm_reject` / `llm_reopen`
+- [x] 审核管道 CLI:`agent_temp/tools/review_publish.py` 新增 `ingest` 子命令,
+      批次条目单事务写入 system_llm 草稿区,增量跳过已处理条目

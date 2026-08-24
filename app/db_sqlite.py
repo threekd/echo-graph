@@ -577,6 +577,20 @@ def _migration_v23(conn: sqlite3.Connection) -> None:
             )
 
 
+def _migration_v24(conn: sqlite3.Connection) -> None:
+    """AI 草稿审核:作者/作品/涟漪增加 published_to_id,记录草稿发布到公共星云后的映射。
+
+    system_llm 私有空间存放 AI 提取草稿(reviewStatus='draft', created_by='llm'),
+    admin 审核批准后复制进公共星云(created_by='llm', reviewStatus='reviewed'),
+    并在草稿行上回写 published_to_id(公共行 id),防止同一草稿重复发布;
+    审核复用现有公共记录时,published_to_id 记被复用的公共行 id。
+    仅草稿区行有值,公共行恒为 NULL;不进 CSV(导出表头显式枚举)。
+    """
+    for table in ("authors", "works", "edges"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "published_to_id" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN published_to_id TEXT")
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -601,6 +615,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (21, _migration_v21),
     (22, _migration_v22),
     (23, _migration_v23),
+    (24, _migration_v24),
 ]
 
 
@@ -645,3 +660,4 @@ def _migrate(conn: sqlite3.Connection) -> None:
     bad = conn.execute("PRAGMA foreign_key_check").fetchall()
     if bad:
         raise RuntimeError(f"迁移后外键校验失败:{bad}")
+

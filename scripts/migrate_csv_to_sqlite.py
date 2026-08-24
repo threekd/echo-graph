@@ -2,7 +2,7 @@
 
 用途:CI 导出新鲜度门禁、全新 VPS 初始化引导。
 ⚠ 仅限全新环境:本脚本会整库重建策展表,已有用户数据时执行会清空用户星云
-(日常部署不再从 CSV 重建,见 deploy/deploy.sh;contributions / audit_log 不受影响)。
+(日常部署不再从 CSV 重建,见 deploy/deploy.sh;audit_log 不受影响)。
 
 用法:
   uv run python scripts/migrate_csv_to_sqlite.py                # 默认 data/echo-graph.db

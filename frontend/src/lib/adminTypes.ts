@@ -1,7 +1,6 @@
 /* 数据管理页的类型定义(与后端 /api/admin/* 响应对齐)。 */
 
 export type ReviewStatus = "draft" | "reviewed" | "rejected";
-export type ContributionStatus = "pending" | "approved" | "rejected";
 export type Recommendation = "recommend" | "not_recommend";
 export type ReadingStatus = "read" | "reading" | "unread";
 
@@ -54,21 +53,6 @@ export interface EdgeRow {
   deletedAt?: string | null;
 }
 
-export interface ContributionRow {
-  id: string;
-  source_work: string;
-  target_work: string;
-  source_author: string;
-  target_author: string;
-  evidence: string;
-  evidence_source: string;
-  note?: string | null;
-  contact?: string | null;
-  status: ContributionStatus;
-  created_at: string;
-  reviewed_at?: string | null;
-}
-
 export interface AuditEntry {
   id: number;
   ts: string;
@@ -102,4 +86,4 @@ export interface AdminData {
 }
 
 export type AdminKind = "authors" | "works" | "edges";
-export type AdminTab = AdminKind | "contributions" | "audit" | "snapshots";
+export type AdminTab = AdminKind | "audit" | "snapshots";

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
 import type {
-  AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, ContributionRow, EdgeRow, WorkRow,
+  AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, EdgeRow, WorkRow,
 } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
 import AuditPanel from "./admin/AuditPanel";
-import ContributionsPanel from "./admin/ContributionsPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
 import { refreshSpaceGraph } from "../lib/graph";
@@ -29,7 +28,6 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
-  { key: "contributions", label: "贡献" },
   { key: "audit", label: "日志" },
   { key: "snapshots", label: "快照" },
 ];
@@ -81,31 +79,22 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "target_work_id", label: "目标作品" },
           { key: "evidenceSource", label: "出处" },
         ],
-    contributions: [],
     audit: [],
     snapshots: [],
   };
 }
 
-function contributionStatusLabel(s: string): string {
-  return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
-}
-
 export default function Admin() {
   const { state, dispatch } = useApp();
   // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
-  // admin 管理公共星云(/api/admin,即其名下数据);贡献/日志/快照仅 admin。
+  // admin 管理公共星云(/api/admin,即其名下数据);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
-  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["contributions", "audit", "snapshots"].includes(k.key));
+  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["audit", "snapshots"].includes(k.key));
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [contribs, setContribs] = useState<ContributionRow[]>([]);
-  const [contribsLoading, setContribsLoading] = useState(false);
-  const [contribCount, setContribCount] = useState(0);
-  const [viewContrib, setViewContrib] = useState<ContributionRow | null>(null);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message: string;
@@ -165,39 +154,14 @@ export default function Admin() {
 
   useEffect(() => { load(); }, [load]);
 
-  // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
-  const loadContribs = useCallback(() => {
-    setContribsLoading(true);
-    authFetch("/api/admin/contributions?limit=500")
-      .then((r) => r.json())
-      .then((d) => {
-        const items = d.items || [];
-        setContribs(items);
-        // Tab 角标保持"待审核"数(筛选/排序由表格内完成)
-        setContribCount(items.filter((c: ContributionRow) => c.status === "pending").length);
-        setContribsLoading(false);
-      })
-      .catch((e) => { setStatus("加载贡献失败: " + e.message); setContribsLoading(false); });
-  }, [authFetch]);
-
-  useEffect(() => {
-    if (isAdmin && kind === "contributions") loadContribs();
-  }, [isAdmin, kind, loadContribs]);
-
-  // 打开管理页即加载待审核数,让"贡献"Tab 角标未切换过去时也显示正确数字
-  useEffect(() => {
-    if (isAdmin) loadContribs();
-  }, [isAdmin, loadContribs]);
-
   if (!state.adminOpen) return null;
 
   const allRows: AdminRow[] = data ? (data[kind as AdminKind] || []) : [];
   const cols = colsFor(isAdmin)[kind];
   const counts = data ? data.counts : undefined;
 
-  // Tab 角标计数:贡献/日志为特殊 Tab,避免对不存在的 data[k] 取值
+  // Tab 角标计数:日志/快照为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
-    if (k === "contributions") return String(contribCount);
     if (k === "audit" || k === "snapshots") return "";
     const n = counts ? (counts as Record<AdminKind, number>)[k as AdminKind] : undefined;
     if (n != null) return String(n);
@@ -409,7 +373,7 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "contributions" && kind !== "audit" && kind !== "snapshots" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "audit" && kind !== "snapshots" && <button onClick={openAdd}>＋ 新增</button>}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -444,19 +408,7 @@ export default function Admin() {
           </div>
         )}
         <div className="admin-body">
-          {kind === "contributions" ? (
-            <ContributionsPanel
-              items={contribs}
-              loading={contribsLoading}
-              sort={sort}
-              filters={filters}
-              textFilters={textFilters}
-              onSort={toggleSort}
-              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
-              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
-              onView={setViewContrib}
-            />
-          ) : kind === "audit" ? (
+          {kind === "audit" ? (
             <AuditPanel
               authFetch={authFetch}
               sort={sort}
@@ -490,58 +442,6 @@ export default function Admin() {
             />
           )}
         </div>
-        {viewContrib && (
-          <div id="admin-modal" style={{ display: "flex" }}>
-            <div className="admin-modal-card">
-              <h3>贡献详情</h3>
-              <div id="admin-form">
-                <label>
-                  <span>源作品(提及方)</span>
-                  <input readOnly value={viewContrib.source_work || ""} />
-                </label>
-                <label>
-                  <span>源作品作者</span>
-                  <input readOnly value={viewContrib.source_author || ""} />
-                </label>
-                <label>
-                  <span>目标作品(被提及方)</span>
-                  <input readOnly value={viewContrib.target_work || ""} />
-                </label>
-                <label>
-                  <span>目标作品作者</span>
-                  <input readOnly value={viewContrib.target_author || ""} />
-                </label>
-                <label className="full">
-                  <span>原文片段</span>
-                  <textarea readOnly value={viewContrib.evidence || ""} />
-                </label>
-                <label>
-                  <span>出处(章节/页码/译本)</span>
-                  <input readOnly value={viewContrib.evidence_source || ""} />
-                </label>
-                <label className="full">
-                  <span>备注</span>
-                  <textarea readOnly value={viewContrib.note || ""} />
-                </label>
-                <label>
-                  <span>联系方式</span>
-                  <input readOnly value={viewContrib.contact || ""} />
-                </label>
-                <label>
-                  <span>提交时间</span>
-                  <input readOnly value={viewContrib.created_at || ""} />
-                </label>
-                <label>
-                  <span>审核状态</span>
-                  <input readOnly value={contributionStatusLabel(viewContrib.status || "")} />
-                </label>
-              </div>
-              <div className="admin-modal-actions">
-                <button onClick={() => setViewContrib(null)}>关闭</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {modal && (

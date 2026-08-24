@@ -67,11 +67,6 @@ install -m 644 "$APP_DIR/deploy/echo-graph.service" /etc/systemd/system/echo-gra
 systemctl daemon-reload
 systemctl enable echo-graph
 
-# 贡献接口限流 zone(http 层共享内存,粗粒度防洪;细粒度策略在应用层)
-cat > /etc/nginx/conf.d/echo-graph-ratelimit.conf <<'EOF'
-limit_req_zone $binary_remote_addr zone=echo_contribute:10m rate=10r/m;
-EOF
-
 tee /etc/nginx/sites-available/echo-graph >/dev/null <<EOF
 # 由 setup-vps.sh 自动生成
 server {
@@ -88,17 +83,6 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 60s;
-    }
-
-    # 贡献提交限流:粗粒度防洪;细粒度策略(每 IP 每小时 20 条)在应用层
-    location = /api/contribute/echo {
-        limit_req zone=echo_contribute burst=20 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location /assets/ {

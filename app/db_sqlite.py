@@ -549,6 +549,17 @@ def _migration_v21(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} DROP COLUMN visibility")
 
 
+def _migration_v22(conn: sqlite3.Connection) -> None:
+    """删除贡献收件箱表(contributions)。
+
+    前端「点亮星空」已改道直写个人空间(/api/me/edges),公共提交入口
+    /api/contribute/echo 与 admin「贡献」审核面板同步移除;后续书籍解析
+    管线将直接以专用用户空间承载,不再需要自由文本收件箱。
+    历史审计行(kind='contributions')仅作记录保留,不再产生新行。
+    """
+    conn.execute("DROP TABLE IF EXISTS contributions")
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -571,6 +582,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (19, _migration_v19),
     (20, _migration_v20),
     (21, _migration_v21),
+    (22, _migration_v22),
 ]
 
 

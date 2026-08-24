@@ -130,7 +130,7 @@ uv run python scripts/migrate_csv_to_sqlite.py
 
 从仓库 CSV **整库重建**策展三表。注意:
 
-- **会清空所有用户星云**(用户星云就存在这三张表里);`contributions` / `audit_log` 不受影响;
+- **会清空所有用户星云**(用户星云就存在这三张表里);`audit_log` 不受影响;
 - 仅限全新环境初始化与 CI 导出新鲜度门禁;日常部署与恢复**禁止执行**;
 - 有用户数据的环境误执行后,只能从 `backups/*.db` 整库恢复。
 

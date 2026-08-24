@@ -141,21 +141,17 @@ journalctl -u echo-graph -e            # 实时日志
 curl https://<你的域名>/api/health     # 期望 {"status":"ok","store":"sqlite"}
 ```
 
-## 8. 限流策略(贡献提交)
+## 8. 限流策略
 
-公开接口 `POST /api/contribute/echo` 采用三层防护:
+写接口限流在应用层完成(`app/ratelimit.py` 的进程内滑动窗口,单 worker 部署下计数精确;
+若改为多 worker,进程间不共享计数,需换共享存储如 Redis):
 
-1. **应用层策略(细粒度)**:进程内滑动窗口,默认每 IP 每小时最多 20 条
-   (`app/contributions.py` 的 `SUBMIT_LIMIT`)。单 worker 部署下计数精确;
-   若改为多 worker,进程间不共享计数,需依赖 nginx 层或换共享存储(如 Redis)。
-2. **信任边界**:仅当对端属于 `TRUSTED_PROXIES`(默认 `127.0.0.1,::1`,可在
-   `.env` 用逗号分隔的 IP/CIDR 覆盖)时,应用才解析 `X-Forwarded-For` 取最左
-   客户端 IP;直连 uvicorn 或伪造请求头时一律使用对端地址。该解析在应用内完成,
-   不依赖 uvicorn 的 `--proxy-headers` 设置。
-3. **nginx 防洪(粗粒度)**:`setup-vps.sh` 自动生成
-   `/etc/nginx/conf.d/echo-graph-ratelimit.conf`(`rate=10r/m burst=20 nodelay`,
-   约 630 条/小时上限),只挡洪峰流量,不替代应用层策略;手动部署见
-   `deploy/nginx.conf` 文件头注释。
+- 注册 / 登录按客户端 IP 限流(见 `app/auth.py`);
+- 关注 / 取关按用户每小时限流(见 `app/follows.py`)。
 
-调整方式:改 `.env` 的 `TRUSTED_PROXIES`(多级代理时逐级加入);
-改 nginx zone 的 `rate`/`burst` 值后 `systemctl reload nginx`。
+信任边界:`TRUSTED_PROXIES`(默认 `127.0.0.1,::1`,可在 `.env` 用逗号分隔的 IP/CIDR
+覆盖)决定是否解析 `X-Forwarded-For` 取最左客户端 IP;直连 uvicorn 或伪造请求头时
+一律使用对端地址,不依赖 uvicorn 的 `--proxy-headers` 设置。
+
+> 早期贡献收件箱的 `/api/contribute/echo` 与对应 nginx `limit_req` zone 已随
+> contributions 移除(2026-08-24),部署模板不再包含该限流块。

@@ -1,17 +1,17 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.2`(2026-08-24 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 21`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.3`(2026-08-24 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 22`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
   JSON 兜底已退役
 - 时间戳:所有时间字段(`createdAt` / `updatedAt` / `deletedAt` / `created_at` /
-  `reviewed_at` / `expires_at` / `ts`)均为 UTC 秒级 ISO-8601 字符串(统一 `+00:00`)
+  `expires_at` / `ts`)均为 UTC 秒级 ISO-8601 字符串(统一 `+00:00`)
 
 ## 表总览
 
-当前库共 10 张业务表:
+当前库共 9 张业务表:
 
 | 表 | 用途 | 归属 / 隔离 |
 |---|---|---|
@@ -21,7 +21,6 @@
 | `works` | 作品节点(公共星云 + 用户空间) | `owner_id` |
 | `work_authors` | 作品-作者关联(合著 N:N) | 经 `works.owner_id` 派生 |
 | `edges` | 回声关系 `(Work)-[:ECHO]->(Work)` | `owner_id` |
-| `contributions` | 用户贡献收件箱(提交不直接入正式数据) | `user_id` |
 | `friendships` | 单向关注(模型好友) | `user_id` / `friend_id` |
 | `audit_log` | 管理写操作审计 | — |
 | `meta` | 元信息(`schema_version` 等) | — |
@@ -32,8 +31,7 @@
   标识;新增作者/作品/涟漪/用户/会话/关注时由后端自动生成。
 - **空间归属(多用户)**:`authors` / `works` / `edges` 各含 `owner_id`
   (引用 `users.id`;空值 = 尚未认领的历史数据,启动时认领给引导管理员);公共星云 =
-  引导管理员空间,个人空间(`/api/me/*`)仅本人可见;`contributions` 含 `user_id`
-  (登录用户提交归属)。
+  引导管理员空间,个人空间(`/api/me/*`)仅本人可见。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);
   中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),
   作为对外展示字段。
@@ -158,24 +156,6 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 索引:`idx_edges_source(source_work_id)`、`idx_edges_target(target_work_id)`、
 `idx_edges_owner(owner_id)`。
 
-### contributions 贡献收件箱
-
-| 列 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | TEXT(UUID) | 是(PK) | 主键 |
-| `source_work` / `target_work` | TEXT | 是 | 源/目标作品名称(自由填写,不要求已收录) |
-| `source_author` / `target_author` | TEXT | 是 | 源/目标作品作者(自由填写) |
-| `evidence` | TEXT | 是 | 原文片段 |
-| `evidence_source` | TEXT | 是 | 出处 |
-| `note` / `contact` | TEXT | 否 | 备注 / 联系方式 |
-| `status` | TEXT | 是 | `pending` / `approved` / `rejected`,默认 `pending` |
-| `created_at` / `reviewed_at` | TEXT | 是/否 | 提交时间 / 审核时间 |
-| `user_id` | TEXT | 否 | 登录用户提交归属(引用 `users.id`;匿名提交为 NULL) |
-
-索引:`idx_contributions_status_created(status, created_at)`、
-`idx_contributions_user(user_id)`。
-说明:提交只进入收件箱,审核通过仅改状态;正式并入策展表由后续人工/AI 流程完成。
-
 ### friendships 关注关系(模型好友)
 
 | 列 | 类型 | 必填 | 说明 |
@@ -200,7 +180,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `ts` | TEXT | 是 | 操作时间(UTC) |
 | `actor` | TEXT | 是 | 操作者(邮箱),默认 `admin` |
 | `action` | TEXT | 是 | `create` / `update` / `delete` / `restore` / `approve` / `reject` |
-| `kind` | TEXT | 是 | `authors` / `works` / `edges` / `contributions` |
+| `kind` | TEXT | 是 | `authors` / `works` / `edges`(历史行可能含 `contributions`,仅作记录) |
 | `row_id` | TEXT | 否 | 操作对象 id |
 | `detail` | TEXT | 否 | 人读摘要(对象名称与变更字段) |
 | `before` / `after` | TEXT | 否 | 改动前后的行 JSON(审计页展开对比用) |
@@ -212,7 +192,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `key` | TEXT | 是(PK) | 键,如 `schema_version` |
-| `value` | TEXT | 否 | 值,当前 `schema_version = 21` |
+| `value` | TEXT | 否 | 值,当前 `schema_version = 22` |
 
 ## 约束与索引汇总
 
@@ -220,7 +200,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 - `users.id`、`users.email`、`users.username`(`COLLATE NOCASE` 唯一索引)
 - `sessions.id`、`sessions.token_hash`
-- `authors.id`、`works.id`、`edges.id`、`contributions.id`、`friendships.id`
+- `authors.id`、`works.id`、`edges.id`、`friendships.id`
 - `edges(source_work_id, target_work_id)`、`friendships(user_id, friend_id)`、
   `work_authors(work_id, author_id)`、`meta.key`
 
@@ -230,7 +210,6 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 - `idx_edges_source`、`idx_edges_target`(路径/扩散)
 - `idx_work_authors_author`(作者反查作品)
 - `idx_sessions_user`、`idx_sessions_expires`
-- `idx_contributions_status_created`、`idx_contributions_user`
 - `idx_friendships_user`、`idx_friendships_friend`
 - `idx_users_space_visibility`(随机跃迁)
 - `idx_audit_ts`(审计裁剪)
@@ -249,7 +228,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 - `works.csv` 在 `Title_Other` 之后插入 `author_id` 派生列(work_authors 按
   `works.id` 聚合为逗号分隔串),其余列与表列一致;
 - CSV 只含**公共星云**(admin 认领的行 + 尚未认领的历史行),用户私有空间、
-  sessions、contributions、audit_log 均不进 CSV;
+  sessions、audit_log 均不进 CSV;
 - API 的 `Work.author_id` / `author_ids` 同样为 work_authors 的派生展示字段。
 
 ## 演进方向(未实现)
@@ -260,8 +239,17 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 21);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 22);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.2 → 1.3` 变更(2026-08-24):
+
+- 删除 `contributions` 贡献收件箱表(schema v22 迁移 `DROP TABLE`);
+  同步移除 `app/contributions.py`、`POST /api/contribute/echo`、
+  admin「贡献」审核接口与前端「贡献」Tab;
+- 「点亮星空」早已直写个人空间(`/api/me/edges`),书籍解析管线后续将直接以
+  专用用户空间承载,不再需要自由文本收件箱;
+- 审计 `kind` 枚举去掉 `contributions`(历史审计行保留,仅不再产生新行)。
 
 `1.1 → 1.2` 变更(2026-08-24,按实际数据库结构修订):
 

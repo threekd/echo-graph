@@ -1,4 +1,4 @@
-"""数据管理 API(admin 角色):公共星云三张表的增删改查、软删除、审计、贡献审核、快照。
+"""数据管理 API(admin 角色):公共星云三张表的增删改查、软删除、审计、快照。
 
 鉴权:admin 角色登录态(httpOnly Cookie),不再使用 ADMIN_TOKEN。
 写路径复用 app/space_crud(owner=引导管理员);每次公共星云写入自动导出 CSV(git 审计)。
@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app import db_sqlite, sqlite_store
+from app import sqlite_store
 from app.auth import admin_user_id, bootstrap_admin, bootstrap_email, require_admin
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
-from app.contributions import get_contribution, list_contributions, set_status
 from app.data_store import export_csv_files
 from app.db import invalidate_cache
 from app.space_crud import (
@@ -38,24 +37,6 @@ def _admin_context(user) -> dict:
     if admin is None:
         raise HTTPException(status_code=401, detail="未登录")
     return {"id": admin, "email": bootstrap_email(), "role": "admin"}
-
-
-def _review_contribution(item_id: str, status: str, actor: str) -> bool:
-    """审核贡献并写审计(通过/驳回)。"""
-    contrib = get_contribution(item_id)
-    if contrib is None or not set_status(item_id, status):
-        return False
-    action = "approve" if status == "approved" else "reject"
-    label = f"{contrib.get('source_work')} → {contrib.get('target_work')}"
-    detail = f"审核「{label}」: {contrib.get('status')} → {status}"
-    with db_sqlite._write_lock, db_sqlite._db() as conn:
-        db_sqlite.audit(
-            conn, action, "contributions", item_id, detail,
-            before={"status": contrib.get("status")},
-            after={"status": status},
-            actor=actor,
-        )
-    return True
 
 
 @router.get("/data")
@@ -126,38 +107,12 @@ def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)
     return restore_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
 
 
-@router.get("/contributions")
-def admin_contributions(
-    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
-    limit: int = Query(200, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-) -> dict:
-    """贡献收件箱列表(按审核状态过滤)。"""
-    return list_contributions(status, limit, offset)
-
-
-@router.post("/contributions/{item_id}/approve")
-def approve_contribution(item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    if not _review_contribution(item_id, "approved", admin["email"]):
-        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-    return {"ok": True}
-
-
-@router.post("/contributions/{item_id}/reject")
-def reject_contribution(item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    if not _review_contribution(item_id, "rejected", admin["email"]):
-        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-    return {"ok": True}
-
-
 @router.get("/audit")
 def admin_audit(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     action: str | None = Query(None, pattern="^(create|update|delete|restore|approve|reject)$"),
-    kind: str | None = Query(None, pattern="^(authors|works|edges|contributions)$"),
+    kind: str | None = Query(None, pattern="^(authors|works|edges)$"),
 ) -> dict:
     """管理写操作审计记录。"""
     return sqlite_store.list_audit(limit, offset, action, kind)

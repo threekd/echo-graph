@@ -48,7 +48,7 @@
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.2)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.3)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
@@ -126,7 +126,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > 数据管理视图对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
 > (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
-> admin 角色,其「自己的星云」就是公共星云,并可额外使用「贡献审核 / 日志 / 快照」
+> admin 角色,其「自己的星云」就是公共星云,并可额外使用「日志 / 快照」
 > 三个平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
 > 公共星云写入自动导出 CSV;用户私有数据不进 git 审计产物。
 
@@ -142,7 +142,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`。
   注册报「人机验证失败」多为浏览器无法加载 challenges.cloudflare.com(部分地区网络受限)或验证超时——
   前端会提示组件加载失败并可重试;服务端 siteverify 仅对公网 IP 传 `remoteip`,避免本地回环地址导致校验失败
-- 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录按 IP 滑动窗口限流(与贡献接口共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`、`/api/contribute`)做同源校验——带 Origin 头的跨站请求一律 403
+- 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录与关注写接口按 IP 滑动窗口限流(共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`)做同源校验——带 Origin 头的跨站请求一律 403
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
   「公共星云 / 我的星云」切换。公共星云 = 引导管理员认领的数据,未登录游客可浏览。
 - 左侧功能栏采用 **Tab 列**(类 VS Code 侧边栏):展开后左侧窄条为「星云 / 我的 / 消息 /
@@ -156,10 +156,10 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 右侧详情栏同样采用 **Tab 列**:「涟漪」(当前视图内容)/「书签」(所选作品的评分与评价)/
   「个人资料」(当前星云所有者的昵称与简介,owner 资料随图谱接口返回,不含邮箱)。
 - 数据管理:侧边栏「数据管理」对所有登录用户显示,管理自己的作者/作品/涟漪;
-  admin 额外拥有贡献审核、审计日志与快照恢复能力。
+  admin 额外拥有审计日志与快照恢复能力。
 - 点亮星空(添加到我的星云):登录后打开,直接向自己的星云写入作者/作品/涟漪
   (作品/作者下拉列表来自你自己的星云数据,与数据管理页一致;
-  搜不到时下拉框第一行可打开标准新增弹窗),不再进入贡献收件箱。
+  搜不到时下拉框第一行可打开标准新增弹窗),数据直接进入本人星云。
 - 星际跃迁:左侧栏「公共星云 / 我的星云」下方「✦ 星际跃迁」按钮,随机访问一个
   公开星云(排除自己与公共星云所有者);数据源标签显示所在星云账号,公共星云显示 public。
   接口:`GET /api/space/random/graph`(随机)、`GET /api/space/{user_id}/graph`(定向);
@@ -182,9 +182,9 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 **发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照(`data/versions/` 历史 CSV 目录仅在旧机器残留时可用)——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
 
-> **遗留说明**:早期「贡献数据」收件箱(`POST /api/contribute/echo` 与 admin「贡献」Tab)已不再被前端使用——
-> 「点亮星空」已改为向自己的星云添加数据。收件箱接口保留兼容;用户数据进入公共星云将走后续的
-> 后台发布管线(AI 预审 + 人工确认,见 `docs/multi-user-migration.md`,暂缓)。
+> **遗留说明**:早期「贡献数据」收件箱(`POST /api/contribute/echo` 与 admin「贡献」Tab)
+> 已于 2026-08-24 移除(schema v22 删除 `contributions` 表);「点亮星空」直接写入本人星云。
+> 后续书籍解析管线将直接以专用用户空间承载,不再恢复收件箱。
 
 策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
 

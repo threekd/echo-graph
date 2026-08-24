@@ -47,11 +47,12 @@
 - [x] 贡献数据收件箱:SQLite 存储(并入主库 `data/echo-graph.db` 的 `contributions` 表);公开接口 `POST /api/contribute/echo`(无需令牌,基础 IP 限流,长度/清洗校验);管理接口 `/api/admin/contributions` 列表 + 通过/驳回
 - [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
 - [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
-- ⬜ 贡献数据后续:AI 校正、审核通过后自动录入策展 CSV、验证码/持久化限流、按联系方式跟进用户
+- [x] 贡献数据后续:AI 校正 / 自动录入策展 CSV 等由「书籍解析管线直写专用用户空间」方案取代
+      (2026-08-24 收件箱移除后待落地);验证码/持久化限流与联系方式跟进随收件箱一并取消
 - [x] 账号体系(多用户第一步):users/sessions 表(Argon2 密码哈希 + httpOnly Cookie 会话,
       DB 只存 token 的 SHA-256 哈希);`/api/auth/register|login|logout|me|config`;
       注册 Cloudflare Turnstile 人机验证;注册/登录 IP 滑动窗口限流
-      (限流抽为 app/ratelimit.py,与贡献接口共用);带 Origin 头的跨站状态请求拒绝
+       (限流抽为 app/ratelimit.py,与关注等写接口共用);带 Origin 头的跨站状态请求拒绝
 - ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、
       admin 用户管理(用户列表 / 禁用 `users.status` / 角色调整 / 星云可见性管理)
 - [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
@@ -67,7 +68,7 @@
       AI 预审(查重/纠错) → 人工确认 → 复制进公共星云(owner=admin,内部留溯源);
       公共行只取客观字段,不含用户隐私;不拆表、用户无需手动提交
 - [x] 数据管理视图开放给所有登录用户:非 admin 用 `/api/me/*` 管理自己的
-      作者/作品/涟漪(贡献/日志/快照仅 admin 可见),新增 `/api/me/data`
+      作者/作品/涟漪(日志/快照仅 admin 可见),新增 `/api/me/data`
 - [x] 点亮星空改为「添加到我的星云」:登录后直接写入本人空间(/api/me),
       不再进贡献收件箱;下拉框搜不到时第一行提供「添加新作品 / 新作者」,
       弹出与数据管理共用的标准新增弹窗(NodeFormModal 抽取复用)
@@ -79,6 +80,10 @@
 - [x] SQLite 迁移后优化(P3a-e):级联删除/恢复纯 SQL;行级校验(目标行+SQL 交叉引用);乐观并发(updatedAt 守卫 409);快照降频+分层清理(load_rows 迁入 sqlite_store,移除 save_rows,删除更新 updatedAt);`GET /api/admin/audit` 日志查询
 - [x] 前端优化(A/B):数据行类型化(`lib/adminTypes.ts`)+ Admin 拆分(AdminTable/ContributionsPanel/AuditPanel)+ jsdom 组件测试;Admin/Contribute 懒加载(首屏减约 30KB);乐观更新+409 版本冲突弹窗;日志 Tab;导出 JSON/CSV 按钮已移除(自动 CSV 导出 + git 备份足够);`author_ids` 数组化;`/api/admin/data?include_deleted=` 按需拉取
 - [x] Neo4j 查询层退役(Phase 4,P1-P3 清理):公开读取全部由 SQLite 提供(`app/db.py` → `SqliteStore`);删除 importer / export_seed / `/api/admin/sync` / `/api/admin/import` 与管理页「上传↑」;部署收敛为单 worker + SQLite `.backup` 备份 + CSV 重建;依赖清理(neo4j/openpyxl 移除、pydantic 显式声明);清理死代码(snapshot / migrate_contributions / merge_legacy_db)与过期文档;版本 0.5.0
+- [x] 移除贡献收件箱(2026-08-24,schema v22):删除 `contributions` 表、`app/contributions.py`、
+      `POST /api/contribute/echo`、admin「贡献」审核接口与前端「贡献」Tab/面板;
+      「点亮星空」早已直写个人空间,不再需要自由文本收件箱;书籍解析管线后续以
+      专用用户空间承载(见 agent_temp 评估,暂缓实现)
 
 ## 3. 可视化效果
 

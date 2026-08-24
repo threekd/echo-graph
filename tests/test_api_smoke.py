@@ -59,11 +59,9 @@ class ApiSmokeTest(unittest.TestCase):
         ):
             self.assertIn(expected, paths)
 
-    def test_contribute_and_admin_routes_registered(self) -> None:
-        """贡献与管理的路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
+    def test_admin_and_auth_routes_registered(self) -> None:
+        """管理/账号路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
         paths = main.app.openapi()["paths"]
-        self.assertIn("/api/contribute/echo", paths)
-        self.assertIn("/api/admin/contributions", paths)
         self.assertIn("/api/admin/data", paths)
         self.assertIn("/api/admin/backups", paths)
         self.assertIn("/api/admin/audit", paths)
@@ -381,25 +379,6 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(audit["items"][0]["kind"], "authors")
         self.assertIn("新增", audit["items"][0]["detail"])
         self.assertIsNotNone(audit["items"][0]["after"])
-
-    def test_admin_approve_contribution_writes_audit(self) -> None:
-        import app.admin as admin
-        from app.contributions import submit_contribution
-
-        row = submit_contribution({
-            "source_work": "甲书",
-            "target_work": "乙书",
-            "source_author": "甲",
-            "target_author": "乙",
-            "evidence": "x",
-            "evidence_source": "c1",
-        })
-        self.assertTrue(admin.approve_contribution(row["id"])["ok"])
-        audit = sqlite_store.list_audit()
-        self.assertEqual(audit["items"][0]["action"], "approve")
-        self.assertEqual(audit["items"][0]["kind"], "contributions")
-        self.assertIn("甲书 → 乙书", audit["items"][0]["detail"])
-        self.assertEqual(audit["items"][0]["after"], '{"status": "approved"}')
 
 if __name__ == "__main__":
     unittest.main()

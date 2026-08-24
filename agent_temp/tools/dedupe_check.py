@@ -8,6 +8,8 @@
     - 精确匹配 / 包含匹配 / 字符二元组 Jaccard 相似
 第二步:向量语义校验(阿里云百炼 Embedding,需网络与 ALIYUN_* 配置)
     - 候选与库内现有条目的标题文本做余弦相似度
+    - 库内条目向量落库缓存(embeddings 表):model + VECTOR_VERSION + 文本
+      hash 命中即复用;仅新行/文本变更/换模型/--rebuild-vectors 时调接口
     - 高分提示疑似重复,供人工确认后决定是复用已有记录还是新增
 
 输入:
@@ -20,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -38,6 +41,7 @@ from app import db_sqlite  # noqa: E402
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "output" / "dedupe_report.json"
 EMBED_BATCH = 16  # 阿里云百炼 embedding 单批上限为 20,留余量取 16
+VECTOR_VERSION = 1  # embeddings 缓存版本;嵌入文本格式或模型语义变化时 +1(配合 --rebuild-vectors)
 # 阈值按 qwen3.7-text-embedding 实测标定(2026-08-24,"原文名|中文名|作者"
 # 三字段嵌入格式):
 #   真重复(圣经,production 三字段文本)≈ 0.735
@@ -127,9 +131,23 @@ def load_existing(db_path: str | None = None) -> dict[str, list[dict[str, Any]]]
                 " GROUP BY w.id"
             )
         ]
+        edges = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT e.id, e.source_work_id, e.target_work_id, e.evidenceSource,"
+                " ws.Title_CN AS src_Title_CN, ws.originalTitle AS src_originalTitle,"
+                " ws.Title_EN AS src_Title_EN, ws.Title_Other AS src_Title_Other,"
+                " wt.Title_CN AS tgt_Title_CN, wt.originalTitle AS tgt_originalTitle,"
+                " wt.Title_EN AS tgt_Title_EN, wt.Title_Other AS tgt_Title_Other"
+                " FROM edges e"
+                " JOIN works ws ON ws.id = e.source_work_id AND ws.deletedAt IS NULL"
+                " JOIN works wt ON wt.id = e.target_work_id AND wt.deletedAt IS NULL"
+                " WHERE e.deletedAt IS NULL"
+            )
+        ]
     finally:
         conn.close()
-    return {"authors": authors, "works": works}
+    return {"authors": authors, "works": works, "edges": edges}
 
 
 def _summarize_work(row: dict[str, Any]) -> dict[str, Any]:
@@ -267,6 +285,102 @@ def basic_match_author(
     return best
 
 
+def _variant_similarity(
+    c_variants: list[str], e_variants: list[str]
+) -> tuple[str, float]:
+    """两组标题变体的最佳匹配级别:(exact|contained|token|none, score)。"""
+    best_level, best_score = "none", 0.0
+    for cv in c_variants:
+        if not cv:
+            continue
+        for ev in e_variants:
+            if not ev:
+                continue
+            if cv == ev:
+                level, score = "exact", 1.0
+            elif len(cv) >= 2 and len(ev) >= 2 and (cv in ev or ev in cv):
+                level, score = "contained", 0.7
+            else:
+                sim = jaccard(char_bigrams(cv), char_bigrams(ev))
+                if sim < TOKEN_JACCARD:
+                    continue
+                level, score = "token", round(sim, 3)
+            if score > best_score or (score == best_score and level == "exact"):
+                best_level, best_score = level, score
+    return best_level, best_score
+
+
+def _combine_edge_level(
+    s_level: str, t_level: str, s_score: float, t_score: float
+) -> tuple[str, float]:
+    """涟漪两端匹配级别合成:整体取较低一侧;两侧都精确命中才是 exact。"""
+    score = round(min(s_score, t_score), 3)
+    if s_level == "exact" and t_level == "exact":
+        return "exact", score
+    if s_level in ("exact", "contained") and t_level in ("exact", "contained"):
+        return "contained", score
+    return "token", score
+
+
+def basic_match_edge(
+    cand: dict[str, Any], existing: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """涟漪基础去重:候选的 源作品 与 目标作品 标题同时命中同一条现有涟漪。"""
+    best: dict[str, Any] = {
+        "level": "none",
+        "score": 0.0,
+        "existing": None,
+        "matched": [],
+    }
+    c_src_variants = [v for v in _title_variants(cand.get("source") or {}) if v]
+    c_tgt_variants = [v for v in _title_variants(cand.get("target") or {}) if v]
+    if not c_src_variants or not c_tgt_variants:
+        return best
+    for row in existing:
+        e_src = {
+            "Title_CN": row.get("src_Title_CN"),
+            "Title_EN": row.get("src_Title_EN"),
+            "originalTitle": row.get("src_originalTitle"),
+            "Title_Other": row.get("src_Title_Other"),
+        }
+        e_tgt = {
+            "Title_CN": row.get("tgt_Title_CN"),
+            "Title_EN": row.get("tgt_Title_EN"),
+            "originalTitle": row.get("tgt_originalTitle"),
+            "Title_Other": row.get("tgt_Title_Other"),
+        }
+        s_level, s_score = _variant_similarity(c_src_variants, _title_variants(e_src))
+        t_level, t_score = _variant_similarity(c_tgt_variants, _title_variants(e_tgt))
+        if s_level == "none" or t_level == "none":
+            continue
+        level, score = _combine_edge_level(s_level, t_level, s_score, t_score)
+        if score > best["score"]:
+            best = {
+                "level": level,
+                "score": score,
+                "existing": {
+                    "id": row.get("id"),
+                    "source_work_id": row.get("source_work_id"),
+                    "target_work_id": row.get("target_work_id"),
+                    "evidenceSource": row.get("evidenceSource"),
+                    "src_label": e_src.get("Title_CN") or e_src.get("originalTitle"),
+                    "tgt_label": e_tgt.get("Title_CN") or e_tgt.get("originalTitle"),
+                },
+                "matched": [s_level, t_level],
+            }
+    return best
+
+
+def _decide_edge(basic: dict[str, Any]) -> tuple[str, str]:
+    """涟漪去重结论:两端都精确命中才算 likely_duplicate。"""
+    level = basic.get("level")
+    if level == "exact":
+        return "likely_duplicate", "涟漪两端标题与现有涟漪完全相同"
+    if level in ("contained", "token"):
+        return "possible", f"涟漪两端与现有涟漪存在相似匹配({level} {basic.get('score')})"
+    return "new", "无匹配"
+
+
 # ======================================================================
 # 第二步:向量语义校验(阿里云百炼 Embedding)
 # ======================================================================
@@ -293,20 +407,105 @@ def _embed(client: OpenAI, model: str, texts: list[str]) -> list[list[float]]:
     return vectors
 
 
-def _embed_rows(
+def _text_hash(text: str) -> str:
+    """嵌入文本的 SHA-256,用于感知标题/作者字段变更。"""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _open_vector_conn(db_path: str | None) -> sqlite3.Connection:
+    """打开 SQLite 连接并确保 embeddings 缓存表存在(幂等迁移)。"""
+    path = Path(db_path) if db_path else db_sqlite.DB_PATH
+    conn = sqlite3.connect(path, timeout=5)
+    conn.row_factory = sqlite3.Row
+    db_sqlite._migrate(conn)
+    return conn
+
+
+def _load_vector_cache(
+    conn: sqlite3.Connection, entity_type: str, model: str
+) -> dict[str, tuple[str, list[float]]]:
+    """读取当前版本/模型的全部缓存:{entity_id: (text_hash, vector)}。"""
+    out: dict[str, tuple[str, list[float]]] = {}
+    rows = conn.execute(
+        "SELECT entity_id, text_hash, vector FROM embeddings"
+        " WHERE entity_type = ? AND model = ? AND version = ?",
+        (entity_type, model, VECTOR_VERSION),
+    ).fetchall()
+    for r in rows:
+        try:
+            out[r["entity_id"]] = (r["text_hash"], json.loads(r["vector"]))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _save_vector_cache(
+    conn: sqlite3.Connection,
+    entity_type: str,
+    model: str,
+    entity_id: str,
+    text: str,
+    vector: list[float],
+) -> None:
+    """写入/覆盖一条向量缓存;键含 model + VECTOR_VERSION。"""
+    conn.execute(
+        "INSERT OR REPLACE INTO embeddings"
+        " (entity_type, entity_id, model, version, text_hash, vector, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            entity_type,
+            entity_id,
+            model,
+            VECTOR_VERSION,
+            _text_hash(text),
+            json.dumps(vector),
+            now_iso(),
+        ),
+    )
+
+
+def _load_vectors_cached(
     client: OpenAI,
     model: str,
+    conn: sqlite3.Connection,
+    entity_type: str,
     rows: list[dict[str, Any]],
     text_fn: Any,
+    *,
+    rebuild: bool = False,
 ) -> tuple[list[str], list[list[float] | None]]:
-    """为库内行批量生成嵌入;空文本对应的向量为 None。"""
+    """库内行向量:缓存命中复用,未命中(新行/文本变更/换模型/rebuild)才调 embedding。
+
+    缓存键 = entity_type + entity_id + model + VECTOR_VERSION,命中还要求
+    text_hash 与当前嵌入文本一致。返回与 rows 对齐的 (texts, vectors);
+    空文本行向量为 None 且不入缓存。
+    """
     texts = [text_fn(r) for r in rows]
     vectors: list[list[float] | None] = [None] * len(texts)
-    indices = [i for i, t in enumerate(texts) if t]
-    if indices:
-        embedded = _embed(client, model, [texts[i] for i in indices])
-        for i, vec in zip(indices, embedded, strict=False):
+    cache: dict[str, tuple[str, list[float]]] = (
+        {} if rebuild else _load_vector_cache(conn, entity_type, model)
+    )
+    missing: list[tuple[int, str]] = []
+    for i, (row, text) in enumerate(zip(rows, texts, strict=False)):
+        if not text:
+            continue
+        entity_id = row.get("id")
+        cached = cache.get(entity_id) if entity_id else None
+        if cached is not None and cached[0] == _text_hash(text):
+            vectors[i] = cached[1]
+        else:
+            missing.append((i, text))
+    if not missing:
+        log(f"{entity_type} 向量:全部命中缓存({len(rows)} 条)")
+        return texts, vectors
+    embedded = _embed(client, model, [t for _, t in missing])
+    with conn:
+        for (i, text), vec in zip(missing, embedded, strict=False):
             vectors[i] = vec
+            if rows[i].get("id"):
+                _save_vector_cache(conn, entity_type, model, rows[i]["id"], text, vec)
+    mode = "重建" if rebuild else "增量"
+    log(f"{entity_type} 向量:{mode}嵌入 {len(missing)} 条,缓存命中 {len(rows) - len(missing)} 条")
     return texts, vectors
 
 
@@ -427,6 +626,20 @@ def _print_summary(report: dict[str, Any]) -> None:
         line("作者", item)
     for item in report.get("works", []):
         line("作品", item)
+    for item in report.get("edges", []):
+        c = item.get("candidate") or {}
+        src = c.get("source") or {}
+        tgt = c.get("target") or {}
+        src_label = src.get("Title_CN") or src.get("originalTitle") or "?"
+        tgt_label = tgt.get("Title_CN") or tgt.get("originalTitle") or "?"
+        print(f"[涟漪] {src_label} → {tgt_label} → {item.get('decision')}({item.get('reason')})")
+        basic = item.get("basic") or {}
+        if basic.get("level") != "none" and basic.get("existing"):
+            ex = basic["existing"]
+            print(
+                f"    基础匹配: {basic['level']} ({basic['score']})"
+                f" → {ex.get('src_label')} → {ex.get('tgt_label')} (#{ex.get('id')})"
+            )
 
 
 # ======================================================================
@@ -473,13 +686,35 @@ def collect_candidates_from_extract(
     return work_cands, author_cands
 
 
+def collect_edge_candidates_from_extract(
+    data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """从 extract 输出收集涟漪候选:source = 源书作品, target = 提及作品。"""
+    src = data.get("work") or {}
+    if not (src.get("Title_CN") or src.get("originalTitle")):
+        return []
+    edge_cands: list[dict[str, Any]] = []
+    for r in data.get("ripples") or []:
+        w = r.get("work") or {}
+        if not (w.get("Title_CN") or w.get("originalTitle")):
+            continue
+        edge_cands.append(
+            {
+                "source": _work_candidate_from_result(src),
+                "target": _work_candidate_from_result(w, [w.get("author")]),
+            }
+        )
+    return edge_cands
+
+
 def _collect_candidates(
     args: argparse.Namespace,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """从 --input JSON 或命令行参数收集待检查的作者/作品候选。"""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """从 --input JSON 或命令行参数收集待检查的作者/作品/涟漪候选。"""
     if args.input:
         data = json.loads(Path(args.input).read_text(encoding="utf-8"))
-        return collect_candidates_from_extract(data)
+        work_cands, author_cands = collect_candidates_from_extract(data)
+        return work_cands, author_cands, collect_edge_candidates_from_extract(data)
     work_cands: list[dict[str, Any]] = []
     author_cands: list[dict[str, Any]] = []
     if args.title_cn or args.title_en or args.original_title:
@@ -498,7 +733,7 @@ def _collect_candidates(
         author_cands.append({"Name_CN": args.author})
     if not work_cands and not author_cands:
         raise SystemExit("请提供 --input,或 --title-cn/--title-en/--original-title/--author 等参数")
-    return work_cands, author_cands
+    return work_cands, author_cands, []
 
 
 # ======================================================================
@@ -508,17 +743,22 @@ def run_dedupe(
     work_cands: list[dict[str, Any]],
     author_cands: list[dict[str, Any]],
     *,
+    edge_cands: list[dict[str, Any]] | None = None,
     db_path: str | None = None,
     basic_only: bool = False,
     force_semantic: bool = False,
+    rebuild_vectors: bool = False,
     top: int = 5,
     strong: float = SEMANTIC_STRONG,
     possible: float = SEMANTIC_POSSIBLE,
 ) -> dict[str, Any]:
-    """执行两步去重并返回报告 dict(CLI 与 pipeline_ingest 共用)。"""
+    """执行两步去重并返回报告 dict(CLI 与 pipeline_ingest 共用)。
+
+    rebuild_vectors=True 时忽略 embeddings 缓存全量重嵌(换模型/阈值调整后重建)。
+    """
     existing = load_existing(db_path)
     log(f"库内活跃数据:作品 {len(existing['works'])},作者 {len(existing['authors'])}")
-    log(f"待检查:作品 {len(work_cands)},作者 {len(author_cands)}")
+    log(f"待检查:作品 {len(work_cands)},作者 {len(author_cands)},涟漪 {len(edge_cands or [])}")
 
     client: OpenAI | None = None
     model = ""
@@ -532,11 +772,19 @@ def run_dedupe(
 
     work_texts, work_vectors, author_texts, author_vectors = [], [], [], []
     if client is not None:
-        log("生成库内标题向量...")
-        work_texts, work_vectors = _embed_rows(client, model, existing["works"], _work_embed_text)
-        author_texts, author_vectors = _embed_rows(
-            client, model, existing["authors"], _author_embed_text
-        )
+        log("生成库内标题向量(复用 embeddings 缓存)...")
+        conn = _open_vector_conn(db_path)
+        try:
+            work_texts, work_vectors = _load_vectors_cached(
+                client, model, conn, "work", existing["works"], _work_embed_text,
+                rebuild=rebuild_vectors,
+            )
+            author_texts, author_vectors = _load_vectors_cached(
+                client, model, conn, "author", existing["authors"], _author_embed_text,
+                rebuild=rebuild_vectors,
+            )
+        finally:
+            conn.close()
 
     report: dict[str, Any] = {
         "checked_at": now_iso(),
@@ -544,10 +792,17 @@ def run_dedupe(
         "existing_counts": {
             "works": len(existing["works"]),
             "authors": len(existing["authors"]),
+            "edges": len(existing["edges"]),
         },
-        "semantic": {"enabled": client is not None, "model": model},
+        "semantic": {
+            "enabled": client is not None,
+            "model": model,
+            "vector_version": VECTOR_VERSION,
+            "rebuild": rebuild_vectors,
+        },
         "authors": [],
         "works": [],
+        "edges": [],
     }
 
     for cand in author_cands:
@@ -599,6 +854,19 @@ def run_dedupe(
                 "reason": reason,
             }
         )
+
+    for cand in edge_cands or []:
+        basic = basic_match_edge(cand, existing["edges"])
+        decision, reason = _decide_edge(basic)
+        report["edges"].append(
+            {
+                "candidate": cand,
+                "basic": basic,
+                "semantic": None,
+                "decision": decision,
+                "reason": reason,
+            }
+        )
     return report
 
 
@@ -625,6 +893,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="即使基础精确命中也执行语义校验(默认精确命中后跳过)",
     )
+    parser.add_argument(
+        "--rebuild-vectors",
+        action="store_true",
+        help="忽略 embeddings 缓存,全量重新嵌入库内作品/作者(换模型或阈值调整后重建)",
+    )
     parser.add_argument("--top", type=int, default=5, help="语义最高匹配展示条数(默认 5)")
     parser.add_argument("--threshold-strong", type=float, default=SEMANTIC_STRONG)
     parser.add_argument("--threshold-possible", type=float, default=SEMANTIC_POSSIBLE)
@@ -637,13 +910,15 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     utf8_stdout()
     args = _parse_args()
-    work_cands, author_cands = _collect_candidates(args)
+    work_cands, author_cands, edge_cands = _collect_candidates(args)
     report = run_dedupe(
         work_cands,
         author_cands,
+        edge_cands=edge_cands,
         db_path=args.db,
         basic_only=args.basic_only,
         force_semantic=args.force_semantic,
+        rebuild_vectors=args.rebuild_vectors,
         top=args.top,
         strong=args.threshold_strong,
         possible=args.threshold_possible,

@@ -591,6 +591,29 @@ def _migration_v24(conn: sqlite3.Connection) -> None:
         if "published_to_id" not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN published_to_id TEXT")
 
+
+def _migration_v25(conn: sqlite3.Connection) -> None:
+    """语义去重向量缓存:embeddings 表。
+
+    dedupe_check 语义校验把库内作品/作者标题向量落库,避免每次管线运行
+    对全库重复调用阿里云百炼 embedding。缓存键 = entity_type + entity_id
+    + model + version;text_hash 感知标题/作者字段变更,变化即失效重嵌。
+    vector 存 JSON 文本(1024 维约 8KB/行;当前量级下线性余弦扫描足够)。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS embeddings (
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            text_hash TEXT NOT NULL,
+            vector TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (entity_type, entity_id, model, version)
+        )
+        """
+    )
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -616,6 +639,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (22, _migration_v22),
     (23, _migration_v23),
     (24, _migration_v24),
+    (25, _migration_v25),
 ]
 
 

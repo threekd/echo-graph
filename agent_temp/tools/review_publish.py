@@ -210,6 +210,35 @@ def _match_report_work(report: dict[str, Any], cand: dict[str, Any]) -> dict[str
     return None
 
 
+def _match_report_edge(
+    report: dict[str, Any], src_payload: dict[str, Any], tgt_payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """在去重报告的涟漪列表里找两端标题都命中的条目(用于未命中端点级检查时的提示)。"""
+    if not report:
+        return None
+    src_wanted = {
+        x for x in (_norm(src_payload.get("Title_CN")), _norm(src_payload.get("originalTitle"))) if x
+    }
+    tgt_wanted = {
+        x for x in (_norm(tgt_payload.get("Title_CN")), _norm(tgt_payload.get("originalTitle"))) if x
+    }
+    if not src_wanted or not tgt_wanted:
+        return None
+    for entry in report.get("edges") or []:
+        cand = entry.get("candidate") or {}
+        src = cand.get("source") or {}
+        tgt = cand.get("target") or {}
+        src_have = {
+            x for x in (_norm(src.get("Title_CN")), _norm(src.get("originalTitle"))) if x
+        }
+        tgt_have = {
+            x for x in (_norm(tgt.get("Title_CN")), _norm(tgt.get("originalTitle"))) if x
+        }
+        if src_wanted & src_have and tgt_wanted & tgt_have:
+            return entry
+    return None
+
+
 def _semantic_match_from_report(
     report_entry: dict[str, Any] | None, public_ids: set[str]
 ) -> dict[str, Any] | None:
@@ -393,15 +422,73 @@ def _add_edge_item(
     target_ref: str,
     evidence: dict[str, Any],
     public: dict[str, list[dict[str, Any]]],
-) -> None:
-    """新增涟漪条目（源 → 目标）。端点在批内已确定（可能对应现有记录）。"""
+    report: dict[str, Any] | None = None,
+) -> str | None:
+    """新增涟漪条目（源 → 目标）。端点在批内已确定（可能对应现有记录）。
+
+    涟漪去重：
+    - 批内同源同目标 → 合并证据出处并复用条目（避免撞 DB UNIQUE(source,target)）；
+    - 源 == 目标（自我提及）→ 标记 SKIPPED，不进入默认发布；
+    - 两端都复用现有作品 → 检查公共空间是否已有同源同目标涟漪；
+    - 否则回退到去重报告的涟漪命中作为人工核对提示。
+    """
+    # 批内去重:与已有涟漪同源同目标 → 合并证据
+    for it in items:
+        if it["kind"] != "edge":
+            continue
+        if it.get("source_ref") == source_ref and it.get("target_ref") == target_ref:
+            p = it["payload"]
+            cur_parts = [x for x in (p.get("evidenceSource") or "").split("；") if x]
+            add = (evidence.get("evidenceSource") or "").strip()
+            if add and add not in cur_parts:
+                p["evidenceSource"] = "；".join([*cur_parts, add])
+            if not p.get("evidence") and evidence.get("evidence"):
+                p["evidence"] = evidence.get("evidence")
+            return it["item_id"]
+
     item_id = f"e{len([i for i in items if i['kind'] == 'edge']) + 1}"
     payload = {
         "evidence": evidence.get("evidence"),
         "evidenceSource": evidence.get("evidenceSource"),
         "note": None,
     }
-    # 端点在批内都判定为复用现有作品时，提前查一次公共空间是否已有该涟漪
+    work_items = {it["item_id"]: it for it in items if it["kind"] == "work"}
+    src = work_items.get(source_ref)
+    tgt = work_items.get(target_ref)
+    label = f"{_label(src) if src else source_ref} → {_label(tgt) if tgt else target_ref}"
+
+    # 自我提及:目标作品 == 源书作品 → DB 约束禁止自环,默认跳过(可复核后改判)
+    if source_ref == target_ref:
+        items.append(
+            {
+                "item_id": item_id,
+                "kind": "edge",
+                "label": label,
+                "payload": payload,
+                "author_refs": [],
+                "source_ref": source_ref,
+                "target_ref": target_ref,
+                "dedupe": {
+                    "decision": "possible",
+                    "existing_id": None,
+                    "existing_label": None,
+                    "default_action": "create",
+                    "reason": "涟漪目标与源书为同一作品（自我提及），无法建边",
+                    "basic": None,
+                    "semantic": None,
+                },
+                "meta": {"mention_type": evidence.get("mention_type")},
+                "status": SKIPPED,
+                "action": None,
+                "resolved_id": None,
+                "reviewed_at": None,
+                "review_note": "自动跳过:目标作品 == 源书作品",
+                "error": "涟漪目标与源书为同一作品，DB 约束禁止自环",
+            }
+        )
+        return item_id
+
+    # 两端都判定为复用现有作品 → 查公共空间是否已有该涟漪
     dedupe: dict[str, Any] = {
         "decision": "new",
         "existing_id": None,
@@ -411,9 +498,6 @@ def _add_edge_item(
         "basic": None,
         "semantic": None,
     }
-    work_items = {it["item_id"]: it for it in items if it["kind"] == "work"}
-    src = work_items.get(source_ref)
-    tgt = work_items.get(target_ref)
     if src and tgt and src["dedupe"].get("existing_id") and tgt["dedupe"].get("existing_id"):
         sid = src["dedupe"]["existing_id"]
         tid = tgt["dedupe"]["existing_id"]
@@ -431,11 +515,25 @@ def _add_edge_item(
                 "basic": None,
                 "semantic": None,
             }
+    # 未命中端点级检查时,回退到去重报告的涟漪命中作为提示
+    if dedupe["decision"] == "new" and src and tgt:
+        report_entry = _match_report_edge(report, src.get("payload") or {}, tgt.get("payload") or {})
+        if report_entry and report_entry.get("decision") != "new":
+            ex = (report_entry.get("basic") or {}).get("existing")
+            dedupe = {
+                "decision": "possible",
+                "existing_id": ex.get("id") if ex else None,
+                "existing_label": f"{ex.get('src_label')} → {ex.get('tgt_label')}" if ex else None,
+                "default_action": "create",
+                "reason": f"去重报告:公共空间已有相似涟漪({report_entry.get('reason')}),请确认端点后再决定复用",
+                "basic": report_entry.get("basic"),
+                "semantic": None,
+            }
     items.append(
         {
             "item_id": item_id,
             "kind": "edge",
-            "label": f"{_label(src) if src else source_ref} → {_label(tgt) if tgt else target_ref}",
+            "label": label,
             "payload": payload,
             "author_refs": [],
             "source_ref": source_ref,
@@ -450,6 +548,7 @@ def _add_edge_item(
             "error": None,
         }
     )
+    return item_id
 
 
 def build_batch(
@@ -464,7 +563,7 @@ def build_batch(
     由 CLI 命令层（cmd_make_batch）负责，便于纯只读地生成/预览批次。
     """
     public = load_public_rows(db_path)
-    report = report or {"authors": [], "works": []}
+    report = report or {"authors": [], "works": [], "edges": []}
 
     items: list[dict[str, Any]] = []
 
@@ -523,7 +622,7 @@ def build_batch(
         if not (w.get("Title_CN") or w.get("originalTitle")):
             continue
         target = ripple_work_ids[idx]
-        _add_edge_item(items, source_work_id, target, r.get("evidence") or {}, public)
+        _add_edge_item(items, source_work_id, target, r.get("evidence") or {}, public, report)
 
     batch_id = f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
     return {
@@ -831,6 +930,15 @@ def _publish_edge(
         raise RuntimeError(f"源作品 {item.get('source_ref')} 未就绪（{src_dep.get('status') if src_dep else '未知'}）")
     if not tgt:
         raise RuntimeError(f"目标作品 {item.get('target_ref')} 未就绪（{tgt_dep.get('status') if tgt_dep else '未知'}）")
+    # 安全网:批准为新建,但公共空间已有相同源→目标涟漪 → 拒绝并提示改为复用
+    with db_sqlite._db() as conn:
+        dup = conn.execute(
+            "SELECT id FROM edges WHERE source_work_id = ? AND target_work_id = ?"
+            " AND deletedAt IS NULL",
+            (src, tgt),
+        ).fetchone()
+    if dup:
+        raise RuntimeError(f"发布时公共空间已存在相同涟漪（#{dup['id']}），请在 review 中改为复用")
     row = {k: v for k, v in item["payload"].items() if v is not None}
     row["source_work_id"] = src
     row["target_work_id"] = tgt

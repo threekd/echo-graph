@@ -82,6 +82,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="即使基础精确命中也执行语义校验(默认精确命中后跳过)",
     )
+    parser.add_argument(
+        "--rebuild-vectors",
+        action="store_true",
+        help="忽略 embeddings 缓存,全量重新嵌入库内作品/作者(换模型或阈值调整后重建)",
+    )
     parser.add_argument("--top", type=int, default=5, help="语义最高匹配展示条数(默认 5)")
     parser.add_argument("--model", default=None, help="覆盖解析用的 DeepSeek 模型名")
     parser.add_argument(
@@ -152,12 +157,15 @@ def main() -> None:
     # 2) 去重校验:基础匹配 + 语义辅助
     log("2/4 去重校验")
     work_cands, author_cands = dedupe_check.collect_candidates_from_extract(result)
+    edge_cands = dedupe_check.collect_edge_candidates_from_extract(result)
     report = dedupe_check.run_dedupe(
         work_cands,
         author_cands,
+        edge_cands=edge_cands,
         db_path=db_path,
         basic_only=args.basic_only,
         force_semantic=args.force_semantic,
+        rebuild_vectors=args.rebuild_vectors,
         top=args.top,
     )
     write_json(dedupe_out, report)

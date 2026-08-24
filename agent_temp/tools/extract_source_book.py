@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,107 @@ DEFAULT_BOOK = _AGENT_TEMP_DIR / "books" / "三体.epub"
 DEFAULT_OUTPUT = _AGENT_TEMP_DIR / "output" / "source_book_result.json"
 DEFAULT_CONTENT_CHARS = 1500  # 送入模型的正文样本字符数
 DEFAULT_CONTEXT_CHARS = 300  # 书内提及的上下文前后截取字符数
+# 非拉丁文字系统检测:用于核对「原文名/原著标题」是否使用了对应国籍/语言的文字。
+# 命中其中一个字符即视为「已使用非拉丁文字」,可覆盖日文假名、CJK、谚文、
+# 西里尔、希腊、希伯来、阿拉伯、天城文、泰文等常见原著语言。
+_NON_LATIN_SCRIPT_RE = re.compile(
+    "["
+    "\u3040-\u30ff"  # 日文假名
+    "\u3400-\u4dbf\u4e00-\u9fff"  # CJK 统一表意文字
+    "\uac00-\ud7af\u1100-\u11ff"  # 韩文谚文
+    "\u0400-\u04ff"  # 西里尔字母
+    "\u0370-\u03ff"  # 希腊字母
+    "\u0590-\u05ff"  # 希伯来字母
+    "\u0600-\u06ff"  # 阿拉伯字母
+    "\u0900-\u097f"  # 天城文
+    "\u0e00-\u0e7f"  # 泰文
+    "\u10a0-\u10ff"  # 格鲁吉亚字母
+    "\u0530-\u058f"  # 亚美尼亚字母
+    "\u1200-\u137f"  # 埃塞俄比亚音节文字
+    "\u1780-\u17ff"  # 高棉文
+    "\u0e80-\u0eff"  # 老挝文
+    "]"
+)
 
+# 应使用非拉丁文字系统的语言码(ISO 639,原始小写)与国籍码(ISO 3166,大写)。
+# 俄语/乌克兰语等同时作为语言码与国籍码存在,统一转大写后并入同一集合。
+_NON_LATIN_LANG_CODES = {
+    "zh", "ja", "ko", "ru", "uk", "bg", "sr", "mk", "be",
+    "el", "he", "yi", "ar", "fa", "ur", "hi", "mr", "ne",
+    "th", "ka", "hy", "am", "my", "km", "lo", "mn", "bo",
+    "dv", "ps", "sd", "si", "ta", "te", "kn", "ml", "bn",
+    "gu", "pa",
+}
+_NON_LATIN_NATION_CODES = {
+    "CN", "TW", "HK", "MO", "JP", "KR", "KP", "RU", "UA", "BY",
+    "BG", "RS", "MK", "BA", "ME", "GR", "CY", "IL", "SA", "AE",
+    "EG", "IQ", "SY", "JO", "LB", "KW", "QA", "BH", "OM", "YE",
+    "IR", "AF", "PK", "IN", "NP", "BD", "LK", "MM", "TH", "KH",
+    "LA", "MN", "GE", "AM", "ET", "BT",
+}
+_NON_LATIN_CODES = {c.upper() for c in _NON_LATIN_LANG_CODES} | _NON_LATIN_NATION_CODES
+
+
+def _warn_if_latin_only(
+    warnings: list[str],
+    text: Any,
+    code: str | None,
+    field_label: str,
+    scope_label: str,
+) -> None:
+    """若字段只有拉丁字符、而该国籍/语言本应使用非拉丁文字,追加一条告警。"""
+    if not text or not code:
+        return
+    code = str(code).strip().upper()
+    if code not in _NON_LATIN_CODES:
+        return
+    value = str(text).strip()
+    if not value:
+        return
+    if _NON_LATIN_SCRIPT_RE.search(value):
+        return
+    if re.fullmatch(r"[A-Za-z0-9]{1,5}", value):
+        return  # 短拉丁词/符号(如 1Q84)可能是原著真名,不告警
+    warnings.append(
+        f"{field_label}「{value}」仅有拉丁字符,疑似未使用对应{scope_label}"
+        f"({code})的原文字(如西里尔/日文/中文),请人工核对"
+    )
+
+
+def check_native_script(result: dict[str, Any]) -> list[str]:
+    """核对 LLM 提取结果:作者原文名应随国籍、作品原著标题应随原文语言使用对应文字。
+
+    仅告警不阻断,返回告警文案列表并打印,供人工复核。
+    """
+    warnings: list[str] = []
+    for author in result.get("authors") or []:
+        _warn_if_latin_only(
+            warnings,
+            author.get("originalName"),
+            author.get("nationality"),
+            "作者原文名",
+            "国籍",
+        )
+    work = result.get("work") or {}
+    _warn_if_latin_only(
+        warnings,
+        work.get("originalTitle"),
+        work.get("language"),
+        "作品原著标题",
+        "语言",
+    )
+    for ripple in result.get("ripples") or []:
+        ripple_work = (ripple or {}).get("work") or {}
+        _warn_if_latin_only(
+            warnings,
+            ripple_work.get("originalTitle"),
+            ripple_work.get("language"),
+            "涟漪作品原著标题",
+            "语言",
+        )
+    for warning in warnings:
+        log(warning)
+    return warnings
 
 def _parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
@@ -239,6 +340,7 @@ def run_extract(
         )
         result["ripples"] = ripple_result.get("ripples", [])
         result["ripple_skipped"] = ripple_result.get("skipped", {})
+    check_native_script(result)
     return result
 
 

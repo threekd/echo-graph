@@ -85,7 +85,7 @@
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `id` | TEXT(UUID) | 是(PK) | 唯一标识,主键 |
-| `originalName` | TEXT | 是 | 全名/原文名 |
+| `originalName` | TEXT | 是 | 原文名:以作者所属国籍语言文字书写的全名(如俄语作者用西里尔「Лев Толстой」、日语作者用日文「村上春樹」) |
 | `Name_CN` | TEXT | 是 | 中文名 |
 | `Name_EN` | TEXT | 否 | 英文名 |
 | `nationality` | TEXT | 否 | 国家(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
@@ -107,7 +107,7 @@
 |---|---|---|---|
 | `id` | TEXT(UUID) | 是(PK) | 唯一标识,主键 |
 | `language` | TEXT | 是 | 语言代码,ISO 639-1 优先、639-3 兜底(DB 层 CHECK 长度 2-3) |
-| `originalTitle` | TEXT | 是 | 原著标题 |
+| `originalTitle` | TEXT | 是 | 原著标题:与 `language` 一致,以作品原文语言文字书写的标题(如日语「ノルウェイの森」);非拉丁语言不使用拉丁转写 |
 | `Title_CN` | TEXT | 是 | 中文版标题 |
 | `Title_EN` | TEXT | 否 | 英文版标题 |
 | `Title_Other` | TEXT | 否 | 其他可能的标题 |

@@ -64,7 +64,14 @@ invent specific facts: if you are not reasonably sure, leave the field null.
 
 ================ AUTHORS ================
 One object per distinct author (usually one). Fields:
-- "originalName": full name in its original language/script (required).
+- "originalName": full name written in the author's OWN national script —
+  the script of their nationality/language (required). Examples: Russian →
+  Cyrillic 「Лев Толстой」; Japanese → Japanese 「村上春樹」; Chinese →
+  Chinese 「莫言」; Korean → Hangul 「한강」; Greek → Greek 「Νίκος Καζαντζάκης」;
+  Arabic → Arabic 「نجيب محفوظ」. For Latin-script nationalities keep the
+  standard Latin spelling. Never put a Latin transliteration here for
+  non-Latin-script nationalities — that belongs in "Name_EN" (e.g.
+  originalName = "Лев Толстой", Name_EN = "Leo Tolstoy").
 - "Name_CN": common Chinese name (required; for Chinese authors this equals
   originalName, for others the standard Chinese translation).
 - "Name_EN": English or Latin-alphabet rendering, or null (e.g. Haruki Murakami).
@@ -78,7 +85,12 @@ One object per distinct author (usually one). Fields:
 A single object describing the source book as a publication. Fields:
 - "language": ISO 639-1 (or 639-3) code of the work's ORIGINAL language
   (zh/ja/en/...), not the edition's language (required).
-- "originalTitle": the title in the original language (required).
+- "originalTitle": the title written in the work's ORIGINAL language script,
+  consistent with the "language" field (required). Examples: Japanese →
+  「ノルウェイの森」; Russian → 「Война и мир」; Chinese → 「红楼梦」; Greek →
+  「Οδύσσεια」; Arabic → 「ألف ليلة وليلة」. Do NOT give an English translation
+  or a Latin transliteration here — those belong in "Title_EN" (e.g.
+  originalTitle = "ノルウェイの森", Title_EN = "Norwegian Wood").
 - "Title_CN": canonical Chinese title (required).
 - "Title_EN": widely used English title, or null.
 - "Title_Other": other notable titles (alternate translations, series or
@@ -89,6 +101,10 @@ A single object describing the source book as a publication. Fields:
   notes), or null.
 
 ================ RULES ================
+- originalName must follow the author's nationality and originalTitle must
+  follow the work's original "language" — both in the corresponding script
+  (Cyrillic / Japanese / Chinese / Hangul / Greek / Arabic / ...), never a
+  Latin transliteration of a non-Latin-script name or title.
 - If the source book is an omnibus or collection (e.g. 《三体全集（共3册）》),
   keep its overall title as Title_CN and explain the composition in "note";
   do NOT split it into sub-works.
@@ -140,6 +156,15 @@ Input source_book: {"title": "且听风吟（村上春树成名作，连续畅�
   "Title_EN": "Hear the Wind Sing", "Title_Other": "且聽風吟",
   "publicationYear": 1979, "genre": "Fiction",
   "note": "村上春树的处女作；metadata 的 zh 指中文版语言，原著为日语。"}
+
+Input source_book: {"title": "战争与和平", "authors": ["列夫·托尔斯泰"],
+  "language": "zh", "identifier": null}
+→ authors: [{"originalName": "Лев Николаевич Толстой", "Name_CN": "列夫·托尔斯泰",
+  "Name_EN": "Leo Tolstoy", "nationality": "RU", "birthYear": 1828,
+  "deathYear": 1910, "note": "俄国批判现实主义作家。"}]
+→ work: {"language": "ru", "originalTitle": "Война и мир", "Title_CN": "战争与和平",
+  "Title_EN": "War and Peace", "Title_Other": null, "publicationYear": 1869,
+  "genre": "Fiction", "note": "metadata 的 zh 指中文版语言，原著为俄语。"}
 """
 
 # 涟漪（书内提及 → 真实作品 + 证据）提取提示词：extract_source_book.py 使用。
@@ -190,7 +215,10 @@ the single work as its own ripple.
 WORK (aligned with Echo Graph "works" table):
 - "language": ISO 639-1 (or 639-3) code of the work's ORIGINAL language
   (required)
-- "originalTitle": title in the original language (required)
+- "originalTitle": title in the original language, written in that language's
+  own script — e.g. Russian 「Братья Карамазовы」, Japanese 「吾輩は猫である」,
+  Chinese 「红楼梦」. Do NOT give an English translation or a Latin
+  transliteration here — those belong in "Title_EN" (required)
 - "Title_CN": canonical Chinese title (required)
 - "Title_EN": widely used English title, or null
 - "Title_Other": other notable titles (alternate translations), or null

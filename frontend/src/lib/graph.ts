@@ -7,7 +7,6 @@ import {
   filterIslands,
   filterAuthorIslands,
   filterAuthorsWith,
-  buildWorkLookups as buildWorkLookupsPure,
   workAuthorIds,
   maxEchoHops,
 } from "./graphData";
@@ -20,16 +19,6 @@ import {
   type GraphData,
   type GraphNode,
 } from "../store";
-
-// 纯函数统一来自 graphData.ts,这里仅做转发,保证既有调用方兼容
-export {
-  isAnonymousAuthor,
-  filterSingleWorkAuthors,
-  filterIslands,
-  filterAuthorsWith,
-  buildWorkLookupsPure as buildWorkLookups,
-  workAuthorIds,
-};
 
 interface StateRef {
   current: { state: AppState; dispatch: (a: AppAction) => void } | null;

@@ -29,8 +29,8 @@ def _viewer(request: Request) -> dict | None:
 
 
 def _require_visible(user_id: str, viewer: dict | None) -> dict:
-    """返回可见用户行;不存在/未公开一律 404,不暴露存在性。"""
-    row = user_row(user_id)
+    """返回可见用户行;不存在/已禁用/未公开一律 404,不暴露存在性。"""
+    row = user_row(user_id, active_only=True)
     if row is None:
         raise HTTPException(status_code=404, detail="星云不存在或未公开")
     if row["space_visibility"] == "public":
@@ -83,7 +83,7 @@ def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
     viewer = _viewer(request)
     admin = admin_user_id()
-    where = "space_visibility = 'public'"
+    where = "space_visibility = 'public' AND status = 'active'"
     params: tuple = ()
     # 排除公共星云所有者(与「公共星云」重复)与浏览者本人(避免跃迁到自己的星云)
     excludes = [x for x in (admin, viewer["id"] if viewer else None) if x]

@@ -1,0 +1,353 @@
+/* 隐藏原生上下箭头,统一用自定义 ± 按钮 */
+#expand-input::-webkit-outer-spin-button,
+#expand-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.expand-step {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: #cfe4ff;
+  background: rgba(148, 163, 255, 0.12);
+  border: 1px solid rgba(148, 163, 255, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.expand-step:hover:not(:disabled) {
+  background: rgba(103, 232, 249, 0.22);
+  border-color: #67e8f9;
+  color: #fff;
+}
+.expand-step:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#stars {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  animation: twinkle var(--d, 4s) ease-in-out var(--delay, 0s) infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.12; transform: scale(0.75); }
+  50% { opacity: 0.95; transform: scale(1.2); }
+}
+
+.nodelabel {
+  color: #dbe9ff;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 12px rgba(138, 184, 255, 0.55);
+  opacity: 0.82;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.nodelabel.active {
+  opacity: 1;
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(138, 184, 255, 0.95), 0 0 18px rgba(138, 184, 255, 0.5);
+}
+
+#panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 330px;
+  min-width: 330px;
+  border-left: 1px solid var(--glass-border);
+  background: rgba(9, 12, 30, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: row;
+  z-index: 8;
+  transform: translateX(102%);
+  transition: transform 0.28s ease;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
+}
+/* 跃迁后右上角常驻的「书友」悬浮卡片(星云所有者资料 + 关注按钮) */
+.space-profile-card {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 42px; /* 避开右侧 30px 边缘感应条(见 #sidebar-zone-right) */
+  z-index: 40;
+  width: min(270px, calc(100vw - 84px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  background: linear-gradient(160deg, rgba(38, 52, 110, 0.32), rgba(16, 22, 50, 0.34));
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  padding: 14px 16px;
+  animation: space-card-in 0.4s ease-out;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+}
+/* 卡片从上方向下滑入出现(每次跃迁换 space 时通过 key 重新播放) */
+@keyframes space-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.space-owner-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #e6eeff;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-owner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.follow-badge {
+  flex-shrink: 0;
+  margin-top: 1px; /* 与用户名顶部对齐(角标位) */
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(138, 184, 255, 0.45);
+  background: rgba(30, 44, 90, 0.5);
+  color: #a9c8ff;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.follow-badge:hover {
+  background: rgba(138, 184, 255, 0.25);
+  color: #fff;
+}
+.follow-badge.following {
+  border-color: rgba(110, 231, 183, 0.4);
+  color: #8be3c0;
+}
+.follow-badge.following:hover {
+  background: rgba(110, 231, 183, 0.16);
+  color: #d1fae5;
+}
+.follow-badge.self {
+  border-color: rgba(148, 163, 255, 0.25);
+  background: rgba(30, 44, 90, 0.35);
+  color: var(--muted);
+  cursor: default;
+}
+.follow-badge.self:hover {
+  background: rgba(30, 44, 90, 0.35);
+  color: var(--muted);
+}
+.space-card-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: linear-gradient(90deg, rgba(148, 163, 255, 0.4), rgba(148, 163, 255, 0.08));
+}
+.space-profile-card .panel-content-inner {
+  padding: 0; /* 卡片自带内边距,去掉面板内容区默认内边距 */
+}
+/* 右侧详情栏出现时收起个人资料卡片(淡出上移),面板收起后恢复 */
+#panel.show ~ .space-profile-card {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-12px);
+  pointer-events: none;
+}
+#panel.show {
+  transform: translateX(0);
+}
+
+#sidebar-zone-left {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 100%;
+  z-index: 6;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(270deg, transparent, rgba(148, 163, 255, 0.10));
+  border-right: 1px solid rgba(148, 163, 255, 0.14);
+}
+#sidebar-zone-right {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 30px;
+  height: 100%;
+  z-index: 6;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 255, 0.10));
+  border-left: 1px solid rgba(148, 163, 255, 0.14);
+}
+.zone-icon {
+  font-size: 12px;
+  color: rgba(180, 200, 255, 0.55);
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.6));
+}
+
+#sidebar-left {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 330px;
+  min-width: 330px;
+  max-width: 85vw;
+  border-right: 1px solid var(--glass-border);
+  background: rgba(9, 12, 30, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: row;
+  z-index: 8;
+  transform: translateX(-102%);
+  transition: transform 0.28s ease;
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.45);
+  padding: 0;
+  overflow: hidden;
+}
+#sidebar-left.show {
+  transform: translateX(0);
+}
+/* Tab 列(类 VS Code Activity Bar):窄条 + 图标,内容区在其右侧 */
+.sidebar-tabs {
+  width: 56px;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px 6px;
+  border-right: 1px solid rgba(148, 163, 255, 0.14);
+  background: rgba(6, 9, 24, 0.55);
+}
+.sidebar-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 2px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.sidebar-tab:hover {
+  color: #fff;
+  background: rgba(30, 44, 90, 0.35);
+}
+.sidebar-tab.active {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.55);
+  background: rgba(30, 44, 90, 0.55);
+  box-shadow: 0 0 14px rgba(138, 184, 255, 0.25);
+}
+/* 「设置」Tab 钉在 Tab 列底部(类 VS Code Activity Bar 底部的设置入口) */
+.sidebar-tab.tab-bottom {
+  margin-top: auto;
+}
+.sidebar-tab-icon {
+  font-size: 17px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.5));
+}
+.sidebar-tab-svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(138, 184, 255, 0.5));
+}
+/* 右侧详情栏:Tab 列置于最右(内容在左),钉住按钮让位到内容区右上角 */
+#panel .sidebar-tabs {
+  order: 2;
+  border-right: none;
+  border-left: 1px solid rgba(148, 163, 255, 0.14);
+}
+#btn-pin-right {
+  right: 64px;
+}
+.sidebar-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  overflow-y: auto;
+}
+/* 钉住按钮:两栏右上角;钉住后不再自动隐藏 */
+.pin-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 255, 0.25);
+  background: rgba(10, 14, 34, 0.65);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.pin-btn:hover {
+  color: #fff;
+  border-color: rgba(138, 184, 255, 0.7);
+}
+.pin-btn.pinned {
+  color: #67e8f9;
+  border-color: rgba(103, 232, 249, 0.7);
+  background: rgba(34, 211, 238, 0.14);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
+}
+/* 图钉图标:未钉住斜置 +45°(针尖朝向左下方),钉住后转正(竖直) */
+.pin-btn-icon {
+  display: block;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+.pin-btn.pinned .pin-btn-icon {
+  transform: rotate(0deg);
+}

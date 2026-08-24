@@ -270,6 +270,33 @@ class SpaceIsolationTest(unittest.TestCase):
         r = space.random_space_graph(_FakeReq())
         self.assertEqual(r["spaceId"], self.alice["id"])
 
+    def test_disabled_user_space_not_accessible(self) -> None:
+        """禁用用户(status='disabled')的星云对游客/本人/admin 一律 404,随机跃迁排除。"""
+        my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
+                (self.admin["id"], self.bob["id"]),
+            )
+            conn.execute("UPDATE users SET status = 'disabled' WHERE id = ?", (self.alice["id"],))
+        # 游客访问已禁用用户的公开星云:404(与关注语义一致,不暴露存在性)
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq(), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 本人(会话已失效)与 admin 同样 404,空间访问统一按 active 用户判定
+        alice_token = auth.create_session(self.alice["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq({auth.SESSION_COOKIE: alice_token}), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        admin_token = auth.create_session(self.admin["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq({auth.SESSION_COOKIE: admin_token}), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 随机跃迁排除禁用用户:无可用星云时 404
+        with self.assertRaises(HTTPException) as ctx:
+            space.random_space_graph(_FakeReq())
+        self.assertEqual(ctx.exception.status_code, 404)
+
     def test_space_read_endpoints_for_visitors(self) -> None:
         """星际跃迁后的完整交互:搜索/详情/扩散/路径全部路由到目标星云。"""
         a1 = my_create("authors", {"originalName": "甲", "Name_CN": "甲"}, user=self.alice)["row"]

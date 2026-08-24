@@ -10,12 +10,14 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
 from typing import Any
 
-from app.llm_account import (  # noqa: F401  - 复用账号逻辑,CLI 旧调用不破坏
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from agent_temp.tools.common import AGENT_TEMP_DIR, read_json, write_json  # noqa: E402
+from app.llm_account import (  # noqa: E402, F401 - 复用账号逻辑,CLI 旧调用不破坏
     SYSTEM_LLM_BIO,
     SYSTEM_LLM_EMAIL,
     SYSTEM_LLM_NICKNAME,
@@ -24,13 +26,7 @@ from app.llm_account import (  # noqa: F401  - 复用账号逻辑,CLI 旧调用�
     get_system_llm_id,
 )
 
-_AGENT_TEMP_DIR = Path(__file__).resolve().parent.parent
-BATCH_DIR = _AGENT_TEMP_DIR / "output" / "batches"
-
-
-def now_iso() -> str:
-    """UTC 秒级 ISO-8601 时间戳。"""
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+BATCH_DIR = AGENT_TEMP_DIR / "output" / "batches"
 
 
 # ----------------------------------------------------------------------
@@ -41,23 +37,17 @@ def batch_path(batch_id: str) -> Path:
 
 
 def save_batch(registry: dict[str, Any]) -> Path:
-    BATCH_DIR.mkdir(parents=True, exist_ok=True)
-    path = batch_path(registry["batch_id"])
-    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
+    return write_json(batch_path(registry["batch_id"]), registry)
 
 
 def load_batch(batch_id: str) -> dict[str, Any]:
     path = batch_path(batch_id)
     if not path.exists():
-        raise FileNotFoundError(f"批次不存在：{batch_id}（{path}）")
-    return json.loads(path.read_text(encoding="utf-8"))
+        raise FileNotFoundError(f"批次不存在:{batch_id}({path})")
+    return read_json(path)
 
 
 def list_batches() -> list[dict[str, Any]]:
     if not BATCH_DIR.exists():
         return []
-    return [
-        json.loads(p.read_text(encoding="utf-8"))
-        for p in sorted(BATCH_DIR.glob("*.json"))
-    ]
+    return [read_json(p) for p in sorted(BATCH_DIR.glob("*.json"))]

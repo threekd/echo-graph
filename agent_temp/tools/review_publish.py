@@ -25,29 +25,22 @@ publish 幂等，已 published / reused 的条目不会重复写入。
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import secrets
 import sqlite3
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# 保证同目录模块、agent_temp 根目录与项目根目录都能被导入
-_TOOLS_DIR = Path(__file__).resolve().parent
-_AGENT_TEMP_DIR = _TOOLS_DIR.parent
-_REPO_ROOT = _AGENT_TEMP_DIR.parent
-for _path in (_TOOLS_DIR, _AGENT_TEMP_DIR, _REPO_ROOT):
-    if str(_path) not in sys.path:
-        sys.path.insert(0, str(_path))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from agent_temp.tools import dedupe_check, llm_space  # noqa: E402
+from agent_temp.tools.common import log, now_iso, read_json, utf8_stdout  # noqa: E402
 from app import db_sqlite, sqlite_store  # noqa: E402
 from app.auth import admin_user_id  # noqa: E402
 from app.data_store import clean_row  # noqa: E402
 from app.space_crud import create_row, validate_row  # noqa: E402
-
-from agent_temp.tools import dedupe_check, llm_space  # noqa: E402
 
 BATCH_DIR = llm_space.BATCH_DIR
 SCHEMA_VERSION = 1
@@ -66,19 +59,9 @@ REVIEWABLE = (PENDING, REJECTED, SKIPPED, FAILED)
 DONE = (PUBLISHED, REUSED)
 
 
-def now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-def log(msg: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
-
-
 # ======================================================================
 # 基础工具
 # ======================================================================
-def _read_json(path: Path | str) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _label(item: dict[str, Any]) -> str:
@@ -481,7 +464,6 @@ def build_batch(
     由 CLI 命令层（cmd_make_batch）负责，便于纯只读地生成/预览批次。
     """
     public = load_public_rows(db_path)
-    public_ids = _public_id_set(public["authors"]) | _public_id_set(public["works"])
     report = report or {"authors": [], "works": []}
 
     items: list[dict[str, Any]] = []
@@ -959,13 +941,13 @@ def cmd_make_batch(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     if not input_path.exists():
         raise SystemExit(f"提取结果不存在：{input_path}")
-    extract = _read_json(input_path)
+    extract = read_json(input_path)
     report = None
     if args.dedupe:
         report_path = Path(args.dedupe)
         if not report_path.exists():
             raise SystemExit(f"去重报告不存在：{report_path}")
-        report = _read_json(report_path)
+        report = read_json(report_path)
 
     owner_id = llm_space.ensure_system_llm()  # 批次归属 system_llm 专用账号（缺失则创建）
     batch = build_batch(extract, report, db_path=args.db, owner_id=owner_id)
@@ -1102,6 +1084,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 # CLI 入口
 # ======================================================================
 def main() -> None:
+    utf8_stdout()
     parser = argparse.ArgumentParser(
         description="书籍解析数据审核 / 发布 CLI（system_llm 管线）",
         epilog="示例：\n"

@@ -86,7 +86,7 @@
 | `originalName` | TEXT | 是 | 全名/原文名 |
 | `Name_CN` | TEXT | 是 | 中文名 |
 | `Name_EN` | TEXT | 否 | 英文名 |
-| `nationality` | TEXT | 否 | 国籍(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
+| `nationality` | TEXT | 否 | 国家(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` / `deathYear` | INTEGER | 否 | 出生/去世年份(应用层校验 -9999 ~ 9999 且出生早于去世) |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
 | `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增(输入即确认)默认 `reviewed`,CSV 引导的存量数据保持 `draft` 待审核 |

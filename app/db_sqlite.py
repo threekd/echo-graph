@@ -560,6 +560,23 @@ def _migration_v22(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS contributions")
 
 
+def _migration_v23(conn: sqlite3.Connection) -> None:
+    """作者/作品/涟漪增加溯源列 created_by(curated/user/llm)。
+
+    created_by 记录数据生成来源:curated = 人工策展(admin 维护/历史 CSV)、
+    user = 用户空间直接写入(点亮星空/个人数据管理)、llm = 书籍解析管线
+    AI 提取(预留)。默认由写入方按 owner 推导(space_crud.create_row);
+    存量行回填 curated。不进 CSV(与 recommendation/review/readingStatus 同策略)。
+    """
+    for table in ("authors", "works", "edges"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "created_by" not in cols:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'curated'"
+                " CHECK (created_by IN ('curated','user','llm'))"
+            )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -583,6 +600,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (20, _migration_v20),
     (21, _migration_v21),
     (22, _migration_v22),
+    (23, _migration_v23),
 ]
 
 

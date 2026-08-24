@@ -43,6 +43,19 @@ _now = db_sqlite.now_iso
 _new_uuid = db_sqlite.new_uuid
 
 
+CREATED_BY_VALUES = ("curated", "user", "llm")
+
+
+def _created_by_for(row: dict, owner_id: str) -> str:
+    """溯源值:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)。"""
+    value = str(row.get("created_by") or "").strip()
+    if value:
+        if value not in CREATED_BY_VALUES:
+            raise HTTPException(status_code=400, detail="created_by 取值仅支持 curated / user / llm")
+        return value
+    return "curated" if owner_id == admin_user_id() else "user"
+
+
 def _author_id_list(value) -> list[str]:
     """把 works.author_id(逗号分隔,可能带空格)拆成去空后的 id 列表。"""
     return [x.strip() for x in str(value or "").split(",") if x.strip()]
@@ -190,7 +203,9 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
     # 输入即确认:新增(含管理员手动新增)默认 reviewed;显式传 draft 仍可保留草稿
     if not row.get("reviewStatus"):
         row["reviewStatus"] = "reviewed"
-    extra: dict | None = None
+    # 溯源列:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)
+    row["created_by"] = _created_by_for(row, owner_id)
+    extra: dict = {"created_by": row["created_by"]}
     if kind == "works":
         reading_status = row.get("readingStatus")
         if reading_status is not None and reading_status not in ("read", "reading", "unread"):
@@ -204,7 +219,11 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
         row["readingStatus"] = reading_status
         row["recommendation"] = recommendation
         row["review"] = review
-        extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
+        extra.update({
+            "readingStatus": reading_status,
+            "recommendation": recommendation,
+            "review": review,
+        })
     now = _now()
     row.setdefault("createdAt", now)
     row["updatedAt"] = now
@@ -234,6 +253,7 @@ def update_row(
     kind: Kind, item_id: str, row: dict, owner_id: str, actor: str, adopt_unowned: bool = False
 ) -> dict:
     row = clean_row(row)
+    row.pop("created_by", None)  # 溯源列创建后不可修改(与 createdAt 同策略)
     now = _now()
     is_admin_space = owner_id == admin_user_id()
     extra: dict | None = None
@@ -256,6 +276,7 @@ def update_row(
         existing = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        row["created_by"] = existing.get("created_by")  # 返回行携带库内真实溯源值
         if not is_admin_space:
             row["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
         expected_ts = row.get("updatedAt") or existing.get("updatedAt")

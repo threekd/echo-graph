@@ -1,7 +1,7 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.3`(2026-08-24 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 22`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.4`(2026-08-24 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 23`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
@@ -32,6 +32,10 @@
 - **空间归属(多用户)**:`authors` / `works` / `edges` 各含 `owner_id`
   (引用 `users.id`;空值 = 尚未认领的历史数据,启动时认领给引导管理员);公共星云 =
   引导管理员空间,个人空间(`/api/me/*`)仅本人可见。
+- **溯源列**:`authors` / `works` / `edges` 含 `created_by`(默认 `curated`);
+  取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,预留)。
+  显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
+  创建后不可修改,不进 CSV(与个人字段同策略)。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);
   中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),
   作为对外展示字段。
@@ -88,10 +92,12 @@
 | `birthYear` / `deathYear` | INTEGER | 否 | 出生/去世年份(应用层校验 -9999 ~ 9999 且出生早于去世) |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
 | `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增(输入即确认)默认 `reviewed`,CSV 引导的存量数据保持 `draft` 待审核 |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
 
-约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`。
+约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
+`CHECK (created_by IN ('curated','user','llm'))`。
 索引:`idx_authors_owner(owner_id)`。
 
 ### works 作品节点
@@ -108,6 +114,7 @@
 | `genre` | TEXT | 否 | `Fiction` / `Non-fiction` / `Poetry` / `Drama` |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
 | `reviewStatus` | TEXT | 是 | 同 authors 的审核状态语义 |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
 | `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义,不进 CSV |
@@ -121,6 +128,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 约束:`CHECK (length(language) BETWEEN 2 AND 3)`、
 `CHECK (genre IN ('Fiction','Non-fiction','Poetry','Drama') OR genre IS NULL)`、
 `CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
+`CHECK (created_by IN ('curated','user','llm'))`、
 `CHECK (recommendation IN ('recommend','not_recommend'))`、
 `CHECK (readingStatus IN ('read','reading','unread'))`。
 索引:`idx_works_owner(owner_id)`。
@@ -148,11 +156,13 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `evidenceSource` | TEXT | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | TEXT | 否 | 备注或补充说明 |
 | `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增默认 `reviewed`,CSV 引导存量保持 `draft` |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
 
 约束:`UNIQUE(source_work_id, target_work_id)`(同空间内边对唯一,应用层叠加 owner 判定)、
-`CHECK (source_work_id <> target_work_id)`、`CHECK (length(evidence) <= 2000)`。
+`CHECK (source_work_id <> target_work_id)`、`CHECK (length(evidence) <= 2000)`、
+`CHECK (created_by IN ('curated','user','llm'))`。
 索引:`idx_edges_source(source_work_id)`、`idx_edges_target(target_work_id)`、
 `idx_edges_owner(owner_id)`。
 
@@ -239,8 +249,16 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 22);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 23);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.3 → 1.4` 变更(2026-08-24):
+
+- 作者/作品/涟漪三表新增溯源列 `created_by`(schema v23 迁移),取值
+  `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,预留);
+- 显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
+  创建后不可修改(与 `createdAt` 同策略),不进 CSV(与个人字段同策略);
+- 存量行经迁移默认回填 `curated`,无需逐行处理。
 
 `1.2 → 1.3` 变更(2026-08-24):
 

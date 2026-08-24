@@ -84,6 +84,10 @@
       `POST /api/contribute/echo`、admin「贡献」审核接口与前端「贡献」Tab/面板;
       「点亮星空」早已直写个人空间,不再需要自由文本收件箱;书籍解析管线后续以
       专用用户空间承载(见 agent_temp 评估,暂缓实现)
+- [x] 溯源列 `created_by`(2026-08-24,schema v23):作者/作品/涟漪三表新增
+      `created_by`(curated 人工策展 / user 用户空间写入 / llm AI 提取预留);
+      显式传值优先、缺省按 owner 推导(admin=curated,其他=user),创建后不可修改、
+      不进 CSV;为后续书籍解析管线直写专用用户空间提供来源追溯
 
 ## 3. 可视化效果
 

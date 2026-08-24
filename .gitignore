@@ -24,5 +24,7 @@ backups/
 .DS_Store
 Thumbs.db
 
-other
-agent_temp
+# other
+agent_temp/__pycache__
+agent_temp/output
+agent_temp/books

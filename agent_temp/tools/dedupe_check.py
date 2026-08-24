@@ -42,9 +42,14 @@ from openai import OpenAI  # noqa: E402
 from app import db_sqlite  # noqa: E402
 
 DEFAULT_OUTPUT = _AGENT_TEMP_DIR / "output" / "dedupe_report.json"
-EMBED_BATCH = 32
-SEMANTIC_STRONG = 0.82  # 语义余弦相似度 >= 此值视为疑似重复
-SEMANTIC_POSSIBLE = 0.68  # 语义余弦相似度 >= 此值视为可能重复
+EMBED_BATCH = 16  # 阿里云百炼 embedding 单批上限为 20，留余量取 16
+# 阈值按 qwen3.7-text-embedding 实测标定（2026-08-24，“原文名|中文名|作者”
+# 三字段嵌入格式）：
+#   真重复（圣经，production 三字段文本）≈ 0.735
+#   非重复最高分 ≈ 0.537
+# 故 strong=0.70、possible=0.60，两侧各留约 0.06 余量。
+SEMANTIC_STRONG = 0.70  # 语义余弦相似度 >= 此值视为疑似重复
+SEMANTIC_POSSIBLE = 0.60  # 语义余弦相似度 >= 此值视为可能重复
 TOKEN_JACCARD = 0.45  # 基础层字符二元组相似阈值
 
 
@@ -348,11 +353,13 @@ def semantic_match(
 
 
 def _work_embed_text(c: dict[str, Any]) -> str:
+    """作品嵌入文本：按“原文名 | 中文名 | 作者”三字段拼接，与库内文本同构。
+
+    仅用于语义匹配；Title_EN / Title_Other 仍参与基础去重（_title_variants）。
+    """
     parts = [
-        c.get("Title_CN"),
-        c.get("Title_EN"),
         c.get("originalTitle"),
-        c.get("Title_Other"),
+        c.get("Title_CN"),
         c.get("author"),
         c.get("_author_names"),
         c.get("author_names"),

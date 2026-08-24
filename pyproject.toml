@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "argon2-cffi>=23.1.0",
+    "bs4>=0.0.2",
+    "ebooklib>=0.20",
     "fastapi>=0.141.1",
+    "openai>=3.3.1",
     "pydantic>=2.11",
     "python-dotenv>=1.2.3",
     "uvicorn[standard]>=0.52.3",

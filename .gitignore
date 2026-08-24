@@ -23,3 +23,6 @@ backups/
 *.log
 .DS_Store
 Thumbs.db
+
+other
+agent_temp

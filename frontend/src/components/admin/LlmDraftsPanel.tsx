@@ -106,6 +106,10 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
 
   const cellValue = (row: AdminRow, key: string): string => {
     const rec = row as unknown as Record<string, unknown>;
+    if (key === "evidence") {
+      const t = String(rec.evidence || "");
+      return t.length > 60 ? t.slice(0, 60) + "…" : t;
+    }
     if (key === "author_id") return authorDisplayNames(rec.author_id as string | undefined, authorsById, authorLabelOf);
     if (key === "source_work_id") {
       const w = worksById[String(rec.source_work_id || "")];
@@ -140,7 +144,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         : [
             { key: "source_work_id", label: "源作品" },
             { key: "target_work_id", label: "目标作品" },
-            { key: "evidenceSource", label: "出处" },
+            { key: "evidence", label: "原文片段" },
+            { key: "evidenceSource", label: "章节/出处" },
             { key: "reviewStatus", label: "状态" },
             { key: "hint", label: "提示" },
           ];
@@ -209,6 +214,9 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
           textFilters={textFilters}
           sort={sort}
           cellValue={cellValue}
+          cellTitle={(row, key) =>
+            key === "evidence" ? String((row as unknown as Record<string, unknown>).evidence || "") : undefined
+          }
           uniqueValues={uniqueValues}
           onSort={toggleSort}
           onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}

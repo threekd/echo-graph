@@ -208,7 +208,10 @@ export default function NodeFormModal({
   };
   const edgePairHasDup = (s: string, t: string): boolean => {
     if (!s || !t) return false;
-    return edgesList.some((r) => r.source_work_id === s && r.target_work_id === t);
+    // 编辑模式排除自身:同一对关系不能与「其他」涟漪重复
+    return edgesList.some(
+      (r) => r.id !== selfId && r.source_work_id === s && r.target_work_id === t
+    );
   };
 
   const clearDupHint = (key: string) => {

@@ -61,7 +61,7 @@
 | 部署 | `deploy/*` | 与当前架构一致（单 worker、SQLite 备份、CSV 重建、nginx 托管静态） |
 | CI | `.github/workflows/ci.yml` | 后端测试/lint、前端 lint/typecheck/test/build、版本一致性、CSV 新鲜度门禁齐全 |
 
-**正面亮点**：迁移纪律很好——`docs/sqlite-migration.md` 完整记录了演进过程；删除的文件（importer、import_data、export_seed、generate_seed_data、static/、旧 JS 模块、data/real、data/snapshots、seed.json）没有留下任何运行时代码引用；Git 历史中从未跟踪 `.env`，无敏感信息泄露。
+**正面亮点**：迁移纪律很好——`../migration/sqlite-migration.md` 完整记录了演进过程；删除的文件（importer、import_data、export_seed、generate_seed_data、static/、旧 JS 模块、data/real、data/snapshots、seed.json）没有留下任何运行时代码引用；Git 历史中从未跟踪 `.env`，无敏感信息泄露。
 
 ## 四、验证结果
 
@@ -86,7 +86,7 @@
 
 1. **`PUBLIC_REVIEWED_ONLY` 默认值前后矛盾**
    README 写「默认关闭以便开发时看到全部数据」，`.env.example` 却已改为 `PUBLIC_REVIEWED_ONLY=1`，且 `deploy/setup-vps.sh` 会直接把 `.env.example` 复制为生产 `.env`。当前 83/106 部作品仍是 draft，一旦部署，公开视图只剩 23 部作品、18 位作者、18 条边，几乎空图。
-   建议：`.env.example` 改回 `# PUBLIC_REVIEWED_ONLY=0`（默认注释/关闭），并把「上线前逐条审核并开启」写进 `deploy/DEPLOY.md` 的启动检查清单；或者反过来，先完成数据审核再默认开启。
+   建议：`.env.example` 改回 `# PUBLIC_REVIEWED_ONLY=0`（默认注释/关闭），并把「上线前逐条审核并开启」写进 `../../deploy/DEPLOY.md` 的启动检查清单；或者反过来，先完成数据审核再默认开启。
 
 2. **本地依赖环境残留旧包**
    `.venv/Lib/site-packages/` 中仍存在 `neo4j/`、`openpyxl/`（uv.lock 已无这些依赖），说明 venv 在依赖清理后未重新同步。执行一次 `uv sync --frozen` 即可清除。
@@ -109,10 +109,10 @@
    `frontend/.npmrc` 的 `dangerouslyAllowAllBuilds=true` 全局放行所有构建脚本，与 `pnpm-workspace.yaml` 的 `allowBuilds: esbuild: true` 重复且前者更宽。建议只保留 workspace 内的 `allowBuilds`（精确许可），删除全局开关。
 
 8. **文档/注释过期点**
-   - `README.md`「策展数据主存」与「存储与读取」两个要点内容重复；
-   - `to-do.md` 中仍有 `graphData.js`、`v=12` 静态资源版本号、Neo4j 时代条目等旧引用（作为历史日志可接受，建议在文件头注明「历史记录，部分条目已过时」）；
+   - `../../README.md`「策展数据主存」与「存储与读取」两个要点内容重复；
+   - `../to-do.md` 中仍有 `graphData.js`、`v=12` 静态资源版本号、Neo4j 时代条目等旧引用（作为历史日志可接受，建议在文件头注明「历史记录，部分条目已过时」）；
    - `frontend/src/lib/graph.ts` 注释写「纯函数统一来自 graphData.js」，实际已是 `.ts`；
-   - `docs/sqlite-migration.md` 第 1-10 节描述已退役架构，建议整体归档为 `docs/archive/sqlite-migration.md`（或保留但加醒目标记），正文只留第 11 节现状说明。
+   - `../migration/sqlite-migration.md` 第 1-10 节描述已退役架构，建议整体归档为 `docs/archive/sqlite-migration.md`（或保留但加醒目标记），正文只留第 11 节现状说明。
 
 9. **两个同主题提交**
    `34d1e3b` 与 `1a1de2f` 提交信息相同（「公开视图按 reviewStatus 过滤草稿、快照恢复入口」），内容互补但难以从日志区分。属仓库卫生小项，可忽略。
@@ -195,7 +195,7 @@
 - **P2-5 列定义单一来源**：`data_store.py` 表头由 `sqlite_store.py` 列定义派生（works 在 Title_Other 后插入 author_id），CSV 导出字节级一致。
 - **P2-6 rewrite_all 职责标注**：docstring 明确「测试/恢复工具」，说明与 `replace_all` 的分工。
 - **P2-7 pnpm 许可收敛**：删除 `frontend/.npmrc` 的全局 `dangerouslyAllowAllBuilds`，仅保留 `pnpm-workspace.yaml` 的 `allowBuilds: esbuild: true`；install/build/test 均验证通过。
-- **P2-8 文档/注释过期点**：README 合并重复段落；to-do.md 顶部加历史说明；`docs/sqlite-migration.md` 加历史档案横幅；`graph.ts` 注释修正为 `.ts`；`data_schema.md` 索引说明更新。
+- **P2-8 文档/注释过期点**：README 合并重复段落；to-do.md 顶部加历史说明；`../migration/sqlite-migration.md` 加历史档案横幅；`graph.ts` 注释修正为 `.ts`；`../data_schema.md` 索引说明更新。
 - **P3-10 快照与审计保留**：应用侧 `create_snapshot` 后保留最近 30 份（`SNAPSHOT_RETENTION`，含 pre-restore 安全备份）；新增 `scripts/prune_audit.py --days N [--dry-run]` 裁剪审计日志（默认 90 天），配套 schema 迁移 v6（`idx_audit_ts`）。
 - **P3-11 deploy.sh 备份健壮性**：只打包实际存在的目录（data/export / data/versions / data/snapshots），失败显式告警且不中断部署。
 - **P3-12 恢复并发窗口**：db 恢复改用 SQLite backup API 覆盖（不再文件替换 + 删除 -wal/-shm）；恢复持有 `db_sqlite._write_lock`，与 admin 写事务、贡献提交互斥；快照面板与 DEPLOY.md 增加「恢复期间请勿编辑数据」提示。

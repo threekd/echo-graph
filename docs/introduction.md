@@ -1,3 +1,6 @@
+> 本文为项目产品与技术总览(根目录 README.md 的详细版):架构、运行方式、部署、
+> 账号体系与接口说明。数据结构见 data_schema.md,运维见 ops-manual.md,
+> 需求进度见 to-do.md。
 
 
 > 产品名 **Litnebula**;代码/仓库/部署标识沿用 `echo-graph`(工程标识与产品名分离,
@@ -10,7 +13,7 @@
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.5)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.6)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`agent_temp/tools/extract_source_book.py`)→ 去重
@@ -54,8 +57,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 ### 部署到自己的 VPS(Ubuntu)
 
 架构:`nginx(80/443) → uvicorn(127.0.0.1:8000) → SQLite(本地文件)`,前端构建产物由 nginx 直接托管。
-上线前清单、运维手册与常见问题见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
-日常运维(备份/恢复/用户数据迁移)另见 [`docs/ops-manual.md`](docs/ops-manual.md)。
+上线前清单、运维手册与常见问题见 [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md)。
+日常运维(备份/恢复/用户数据迁移)另见 [`ops-manual.md`](ops-manual.md)。
 
 `deploy/` 目录提供开箱模板:
 
@@ -117,7 +120,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   设置」四个 Tab:
   - **星云**:图谱操作(搜索/路径/扩散/过滤/点亮星空/数据管理);
   - **我的**:个人资料编辑(昵称/简介)+ 关注/粉丝列表(可点击跳转到对方星云);
-  - **消息**:占位(第二阶段通知,暂未实现,见 `docs/multi-user-migration.md`);
+  - **消息**:占位(第二阶段通知,暂未实现,见 `migration/multi-user-migration.md`);
   - **设置**:星云可见性(公开/仅自己可见)、退出登录(未登录时提供登录/注册)。
 - 左右两侧栏右上角各有「📌 钉住」按钮:钉住后不再随移出/计时自动隐藏,
   状态记忆在 localStorage(桌面加载时自动恢复);移动端栏外点击收起同样尊重钉住。
@@ -151,7 +154,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 **发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照(`data/versions/` 历史 CSV 目录仅在旧机器残留时可用)——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
 
 
-策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
+策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `../data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
 
 **软删除设计**:`deletedAt` 仅在 SQLite/CSV 数据层表达——被删除的行保留在库中与 CSV 存档(`deletedAt` 非空),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
 

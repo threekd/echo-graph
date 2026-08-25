@@ -26,4 +26,4 @@ uv run python scripts/migrate_csv_to_sqlite.py
 
 `deletedAt` 非空的行保留在库与 CSV 存档,但读取层一律过滤。校验失败(引用不存在、重复 id、作者 id 未匹配、genre 越界等)会整批拒绝并打印原因。
 
-列名与 `data_schema.md` 一致:`id` 使用 UUID,新增作者/作品/涟漪时后端自动生成 UUID v7;`works.csv` 的 `author_id` 存作者 UUID(多人用逗号分隔),展示名由作者表提供;`reviewStatus` 留空默认 `draft`。
+列名与 `../../docs/data_schema.md` 一致:`id` 使用 UUID,新增作者/作品/涟漪时后端自动生成 UUID v7;`works.csv` 的 `author_id` 存作者 UUID(多人用逗号分隔),展示名由作者表提供;`reviewStatus` 留空默认 `draft`。

@@ -3,7 +3,7 @@
 > 整理自项目启动以来的全部需求,按模块分类。
 > 状态:✅ 已完成 · 🟡 部分完成 · ⬜ 待办
 >
-> 本文为历史需求与进度日志;早期条目(Neo4j 查询层、原生 JS、CSV 事实源时代)已过时,仅作记录,当前架构以 README.md 与 docs/sqlite-migration.md 第 11 节为准。
+> 本文为需求与进度清单:保留当前架构下仍有效的已完成项、未完成项与最近变更;已退役功能(Neo4j 查询层、原生 JS、CSV 事实源、ADMIN_TOKEN、贡献收件箱等)的演进记录见 docs/migration/ 与 docs/audit/。
 
 ## 1. 数据与模型
 
@@ -16,9 +16,6 @@
 - [x] 涟漪关系(边)增加 `id`(UUID v7):`edges.csv` 新增 `id` 列并回填存量 3 条;管理页新增/编辑/删除按 `id` 定位,与作者/作品一致
 - [x] 作者/作品增加 `reviewStatus` 审核状态(默认 `draft`),管理页作者/作品表格列由「删除时间」改为「审核状态」,编辑表单同步支持
 - [x] 图谱隐藏佚名(Anonymous)作者节点:每部佚名作品独立显示,不再经共享的"佚名"星连成中枢(数据层不变,搜索/详情保留)
-- [x] 真实数据接入:`authors.csv` / `works.csv` / `edges.csv` 三份 CSV 为数据源,已全量导入 Neo4j;
-- [x] 提供新增/修改数据的标准流程(CSV → `import_data.py` 或数据管理页)
-- [x] 修复导入缺陷:`SET = $props` 覆盖 `id` 导致节点重复,改为 `SET += $props`;采用显式事务
 - ⬜ 扩充数据量与出处精确性(需人工策展)
 
 ## 2. 后端 / API
@@ -30,25 +27,14 @@
   - `GET /api/path?from=&to=` 有向最短提及链
   - `GET /api/expansion/{workId}?hops=N` N 级扩散子图
   - `GET /api/stats` 数据统计
-- [x] Neo4j Aura 数据导入与约束(index)
-- [x] 导入管线重构:`data/export/*.csv`(原 `data/real`)为数据源;Pydantic 校验(类型/枚举/交叉引用/作者匹配/重复 id),校验失败不导入;UNWIND 批量幂等 MERGE + SET +=,默认不删数据;软删除(`deletedAt`);`--wipe` / `--version` 参数;导入后导出 JSON 快照
 - [x] 数据管理页(长期方案):左侧栏「数据管理」入口;作者/作品/提及三 Tab 表格 + 搜索筛选;表单弹窗(枚举下拉、作者/作品选择器);保存前全量校验、失败不落盘;软删除与恢复;导入 Neo4j 已随查询层退役(Phase 4);导出 JSON/CSV 已移除(备份由自动 CSV 导出 + git 承担);保存快照已在 P3d 移除(`data/versions/` 为历史遗留)
 - [x] React 版数据管理页补齐:搜索筛选、新增/编辑表单(作品选择器/枚举下拉/必填校验)、软删除与恢复(「上传↑」导入与保存快照已随 Phase 4/P3d 移除)
-- [x] 软删除同步 Neo4j:导入时从图谱物理移除 `deletedAt` 非空的行;`deletedAt` 仅在 CSV 层表达,Neo4j 节点/关系不写入该属性,查询层无需(也不应)按它过滤(避免触发"property key does not exist"通知)
-- [x] 真实数据接入:`data/export/*.csv`(原 `data/real`)已全量导入 Neo4j;对齐 schema 1.1(Work 含 `Title_Other`、genre 枚举);id 为 UUID(新增自动生成 UUID v7,URL 直接用 UUID,slug 已移除);Echo 默认 draft
-- [x] Neo4j 连接失败/空闲断开时自动回退 JSON 数据(`ResilientStore`;未内置数据集时为空图)
 - [x] 扩散子图:沿 ECHO 无向扩展 N 级,返回节点/边/中心作品
 - [x] 涟漪视图:未勾选「隐藏孤岛星」时,展示视图中已出现作者名下的全部作品,额外作品围绕作者形成隐约星云(更小更暗、悬停显示标签);勾选后仅保留涟漪节点(即时重渲染,保持相机)
 - [x] 安全修复:静态资源接口拒绝路径穿越(`..` / 绝对路径 / 越界解析),含回归测试
 - [x] lint 门禁恢复通过:ruff 0 errors(import 排序、`X | None` 风格、B904/B008 处理、未用变量清理)
 - [x] 审核状态落地:模型默认 `draft`;`GET /api/graph?status=` 按审核状态过滤;`/api/stats` 输出 `reviewStatus` 分布
 - [x] 时间戳语义:管理 API 新增/编辑维护 `createdAt`/`updatedAt`;导入不再全量刷新 `updatedAt`(仅新增时写入)
-- [x] 数据一致性:涟漪边对唯一性校验下沉到 `parse_rows`;Neo4j 详情页提及列表改用 OPTIONAL MATCH,与 JSON 兜底输出对齐;快照保留最近 20 份
-- [x] 贡献数据收件箱:SQLite 存储(并入主库 `data/echo-graph.db` 的 `contributions` 表);公开接口 `POST /api/contribute/echo`(无需令牌,基础 IP 限流,长度/清洗校验);管理接口 `/api/admin/contributions` 列表 + 通过/驳回
-- [x] 前端「贡献数据」入口(左侧栏底部,「数据管理」上方):源/目标作品与作者为组合框(可选已有数据或自由填写,均必填)+ 原文片段/出处(必填)+ 备注/联系方式(选填),提交进待审核队列,不进入正式数据
-- [x] 管理页「贡献」Tab:按状态列出提交,支持通过/驳回
-- [x] 贡献数据后续:AI 校正 / 自动录入策展 CSV 等由「书籍解析管线直写专用用户空间」方案取代
-      (2026-08-24 收件箱移除后待落地);验证码/持久化限流与联系方式跟进随收件箱一并取消
 - [x] 账号体系(多用户第一步):users/sessions 表(Argon2 密码哈希 + httpOnly Cookie 会话,
       DB 只存 token 的 SHA-256 哈希);`/api/auth/register|login|logout|me|config`;
       注册 Cloudflare Turnstile 人机验证;注册/登录 IP 滑动窗口限流
@@ -75,7 +61,7 @@
 - [x] 星际跃迁:左侧栏「公共星云 / 我的星云」下方新增跃迁按钮(随机访问公开星云);
       数据源标签显示所在星云账号(公共星云显示 public);`/api/space/*` 附 displayName
 - [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
-- [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `docs/sqlite-migration.md`)
+- [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `migration/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 日志表;同步计数预检
 - [x] SQLite 迁移后优化(P3a-e):级联删除/恢复纯 SQL;行级校验(目标行+SQL 交叉引用);乐观并发(updatedAt 守卫 409);快照降频+分层清理(load_rows 迁入 sqlite_store,移除 save_rows,删除更新 updatedAt);`GET /api/admin/audit` 日志查询
 - [x] 前端优化(A/B):数据行类型化(`lib/adminTypes.ts`)+ Admin 拆分(AdminTable/ContributionsPanel/AuditPanel)+ jsdom 组件测试;Admin/Contribute 懒加载(首屏减约 30KB);乐观更新+409 版本冲突弹窗;日志 Tab;导出 JSON/CSV 按钮已移除(自动 CSV 导出 + git 备份足够);`author_ids` 数组化;`/api/admin/data?include_deleted=` 按需拉取
@@ -129,7 +115,6 @@
 
 ## 6. 工程与体验
 
-- [x] 验证 npm 修复(npm 12.0.2,registry 可达,Node v24)
 - [x] ~~前端拆分为原生 ES module(util / state / renderer / panels / actions / main,无构建)~~(已被 React + Vite 架构取代)
 - [x] 主图谱力导向布局分帧计算,避免大数据量卡顿(含视图令牌防止异步覆盖)
 - [x] 静态资源版本号防缓存(v=12)
@@ -137,8 +122,6 @@
 - [x] URL 状态化 + 分享/导出:视图类型、扩散级数、孤岛过滤写入 URL(`#v=ripple:workId:hops&islands=1`),相机位置不再由新链接携带(兼容解析旧 `cam=`);浏览器前进/后退可导航;侧边栏「分享链接 / 导出图片」按钮已移除
 - [x] 移除"导出数据"按钮与"示例"按钮;"数据管理"入口移至侧边栏底部;路径输入区改为上下等宽下拉框 + 切换按钮 + 右侧"寻找路径"
 - [x] React + Vite 迁移:前端重构为 React 18 + Vite 5(`frontend/`),FastAPI 托管构建产物;核心功能(图谱渲染/搜索/路径/涟漪/作者视图/深链/管理页)已验证
-- [x] 数据管理功能的权限设置:管理接口统一 Bearer Token 鉴权(`ADMIN_TOKEN`,前端管理页输入令牌后可用)
-- [x] 管理员入口:数据管理按钮默认隐藏;`#v=admin` / `?admin` 深链弹出令牌授权,有效令牌驱动按钮显示,支持「退出授权」
 - [x] 恢复 URL 状态化:视图/扩散级数/孤岛过滤/作者开关自动写入 hash,浏览器前进/后退可导航;支持 `cam=` / `islands=` / `authors=` 参数与首载深链(兼容旧版分享链接);路径输入恢复作品联想下拉
 - [x] 清理旧版 `static/` 页面与前端死代码(`lib/actions.js` / `admin.js` / `panels.js`、重复 vendor 副本),前端单一维护源
 - [x] React 迁移复盘·清理:移除 `viewData` 死状态;`viewLabel` 去重;纯函数抽取到 `lib/graphData.js` 并接入 Vitest 单测(7 个用例)
@@ -186,7 +169,7 @@
 - [x] 星云可见性自服务:`PATCH /api/auth/me`(侧边栏「星云:公开/仅自己可见」开关)
 - [x] 资料与数据模型卫生:schema v14 删除 `sessions.last_seen_at`;`now_iso`/`new_uuid`/`KIND_TABLE`
       统一单一来源;`adminTypes.ts` 补全 `visibility` / `recommendation` / `review` 字段
-- [x] 文档同步:`data_schema.md` 字段错位修正(评分/评价归入作品)、`sqlite-migration.md` 与
+- [x] 文档同步:`data_schema.md` 字段错位修正(评分/评价归入作品)、`migration/sqlite-migration.md` 与
       `migrate_csv_to_sqlite.py` 过期表述更新、README 补充 Windows 账户变更环境处理
 - [x] 用户资料字段:users 新增 `username`(唯一)与 `nickname`(可选);注册/资料编辑支持,
       `displayName` 改用「昵称 > 用户名」,星际跃迁与界面不再暴露邮箱

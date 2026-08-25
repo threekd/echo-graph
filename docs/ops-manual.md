@@ -1,6 +1,6 @@
 # Litnebula 运维手册
 
-> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套。
+> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与 [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套。
 > 部署上线流程见 DEPLOY.md;本文覆盖日常运维、备份恢复、用户数据迁移与故障排查。
 
 ## 1. 架构与数据全景

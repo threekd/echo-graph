@@ -1,6 +1,6 @@
 # Litnebula 部署到 VPS 手册
 
-目标架构(1核2G VPS 即可,与 `README.md` 一致):
+目标架构(1核2G VPS 即可,与 `../README.md` 一致):
 
 ```
 用户浏览器 → nginx(80/443, HTTPS) → uvicorn(127.0.0.1:8000, 单 worker)

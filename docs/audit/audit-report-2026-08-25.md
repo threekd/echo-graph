@@ -1,7 +1,7 @@
 # Litnebula（echo-graph）全局审查报告
 
 > 审查日期：2026-08-25　审查对象：`E:\Code\echo-graph` 全仓库（后端 / 前端 / 数据 / 部署 / CI / 文档 / Git 历史）
-> 关联文档：上一轮审查见 `docs/audit-report-2026-08-21.md`；本次为 4 天后的跟进审查。
+> 关联文档：上一轮审查见 `./audit-report-2026-08-21.md`；本次为 4 天后的跟进审查。
 >
 > **同日跟进（2026-08-25）**：P1-1 已处理——`agent_temp` 完成整合优化（共享工具收敛、
 > `pipeline_ingest` 改为进程内调用、删除一次性脚本 `agent_temp/tmp/e2e_llm_review.py`、
@@ -64,18 +64,18 @@
 | audit_log | 166 | — |
 | friendships | 1 | — |
 
-## 四、上轮问题复查（docs/audit-report-2026-08-21.md）
+## 四、上轮问题复查（./audit-report-2026-08-21.md）
 
 | # | 上轮问题 | 现状 |
 |---|---|---|
-| P1-1 | `PUBLIC_REVIEWED_ONLY` 默认值前后矛盾 | ✅ 已修复：`.env.example` 默认 `0`，`deploy/DEPLOY.md` 上线前清单明确「逐条审核后自行开启」 |
+| P1-1 | `PUBLIC_REVIEWED_ONLY` 默认值前后矛盾 | ✅ 已修复：`.env.example` 默认 `0`，`../../deploy/DEPLOY.md` 上线前清单明确「逐条审核后自行开启」 |
 | P1-2 | 本地 venv 残留 neo4j/openpyxl | ✅ 已修复：uv.lock 与新版 `.venv` 均干净 |
 | P1-3 | 限流信任边界（X-Forwarded-For 伪造） | ✅ 已修复：`app/ratelimit.py` 引入 `TRUSTED_PROXIES` 白名单，非可信对端不解析代理头；`.env.example` 有注释 |
 | P2-4 | 公开读每请求全量载入 | ✅ 已修复：`app/db.py` 增加进程内读缓存（默认 3 秒 TTL），键含 DB 路径 + owner + reviewed_only，admin 写/快照恢复显式 `invalidate_cache()` |
 | P2-5 | 列定义重复 | ✅ 已修复：`data_store` 直接引用 `sqlite_store` 的 `AUTHOR_COLS/WORK_COLS/EDGE_COLS` |
 | P2-6 | `rewrite_all` 仅测试使用 | 🟡 部分：docstring 已注明与 `replace_all` 分工，但仍留在生产模块、仍只被测试调用（见 P2-4） |
 | P2-7 | pnpm 构建许可双机制 | ✅ 已修复：`frontend/.npmrc` 已删除，仅留 workspace 精确许可 |
-| P2-8 | 文档过期点 | 🟡 大部分修复：to-do.md 头部注明「历史日志、部分条目过时」；README「存储与读取」重复要点已合并；`graph.ts` 注释已更新；`sqlite-migration.md` 已加「第 1-10 节为历史档案」标注。仍残留少量「贡献收件箱」表述（见 P2-2） |
+| P2-8 | 文档过期点 | 🟡 大部分修复：to-do.md 头部注明「历史日志、部分条目过时」；README「存储与读取」重复要点已合并；`graph.ts` 注释已更新；`../migration/sqlite-migration.md` 已加「第 1-10 节为历史档案」标注。仍残留少量「贡献收件箱」表述（见 P2-2） |
 | P2-9 | 同主题重复提交 | ✅ 已处理（提交信息已恢复为中文业务描述） |
 
 ## 五、新发现问题
@@ -103,9 +103,9 @@
    新环境照模板配置会缺键。建议补入 `.env.example` 并注明「仅 AI 录入管线需要」。
 
 3. **文档残留「贡献收件箱」表述**（schema v22 已删 `contributions` 表）
-   - `docs/ops-manual.md:19`：「公共星云 / 用户星云 / 贡献收件箱 / 审计日志 / 用户与会话」；
-   - `docs/ops-manual.md:110`：「用户星云 / 贡献 / 审计 / 会话一并回退」；
-   - `data/export/README.md`：「贡献与审计表不受影响」。
+   - `../ops-manual.md:19`：「公共星云 / 用户星云 / 贡献收件箱 / 审计日志 / 用户与会话」；
+   - `../ops-manual.md:110`：「用户星云 / 贡献 / 审计 / 会话一并回退」；
+   - `../../data/export/README.md`：「贡献与审计表不受影响」。
    建议删除「贡献收件箱 / 贡献」字样（审计与用户数据保留）。
 
 4. **`app/llm_review.py` 跨模块私有导入**
@@ -126,7 +126,7 @@
      本地管线产物，建议定期清理；
    - 审查期间重建了 `.venv`（旧的已改名 `.venv-broken-local`，可删除）。
 7. **`scripts/check_public_sync.py` 文档覆盖不足**
-   仅在 `to-do.md` 与 `multi-user-migration.md` 出现；建议在 `docs/ops-manual.md`
+   仅在 `../to-do.md` 与 `../migration/multi-user-migration.md` 出现；建议在 `../ops-manual.md`
    例行检查一节补一句（本地库公共数据 ↔ 仓库 CSV 漂移检查）。
 
 ## 六、冗余与脚本必要性评估
@@ -175,8 +175,8 @@ React 19 + TS ──> /api/* ──> FastAPI（单 worker）
   导出 + CI 新鲜度门禁；
 - **安全**：CSRF 同源校验、限流可信代理白名单、静态资源路径穿越防护、Argon2 密码、
   会话仅存 token 哈希；Git 全历史无 `.env` / 密钥泄露；
-- **文档**：`data_schema.md` 已按 schema v24 更新（2026-08-25，9 张业务表）；
-  `to-do.md` 含 2026-08-25 最近变更；`sqlite-migration.md` 有历史归档标注。
+- **文档**：`../data_schema.md` 已按 schema v24 更新（2026-08-25，9 张业务表）；
+  `../to-do.md` 含 2026-08-25 最近变更；`../migration/sqlite-migration.md` 有历史归档标注。
 
 可优化（非阻塞）：
 
@@ -189,6 +189,6 @@ React 19 + TS ──> /api/* ──> FastAPI（单 worker）
 1. 修复 ruff（P1-1）：`ruff check --fix` + 手工修 F841/E701，删除或修复
    `agent_temp/tmp/e2e_llm_review.py`，恢复 CI 绿色；
 2. 补 `.env.example` 的 `DEEPSEEK_*` / `ALIYUN_*`（P2-2）；
-3. 清理 `ops-manual.md` / `data/export/README.md` 的「贡献收件箱」残留（P2-3）；
+3. 清理 `../ops-manual.md` / `../../data/export/README.md` 的「贡献收件箱」残留（P2-3）；
 4. 顺手处理 `_after_write` 命名与 `rewrite_all` 归属（P2-4/P2-5）；
 5. 删除本地 `backups/venv-broken-20260822` 与多余 venv 备份（P3-6）。

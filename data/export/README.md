@@ -18,7 +18,7 @@ uv run python scripts/export_csv.py          # 覆盖 data/export/*.csv
 uv run python scripts/export_csv.py --check  # 仅校验(CI 门禁)
 ```
 
-重建 SQLite(从仓库 CSV 引导 / 恢复;贡献与审计表不受影响):
+重建 SQLite(从仓库 CSV 引导 / 恢复;审计与用户数据不受影响):
 
 ```bash
 uv run python scripts/migrate_csv_to_sqlite.py

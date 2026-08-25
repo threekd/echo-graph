@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, Response
 
-from app import auth, db_sqlite, ratelimit, sqlite_store
+from app import auth, db_sqlite, ratelimit
+from tests._helpers import rewrite_all
 
 
 class _FakeClient:
@@ -284,7 +285,7 @@ class AuthStoreTest(unittest.TestCase):
 
     def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
-            sqlite_store.rewrite_all(
+            rewrite_all(
                 [{"id": "01a00000-0000-7000-8000-000000000001", "originalName": "X", "Name_CN": "甲"}],
                 [],
                 [],
@@ -302,7 +303,7 @@ class AuthStoreTest(unittest.TestCase):
         with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
             user = auth.register("boss@test.local", "password123", username="boss01")
             self.assertEqual(user["role"], "user")
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{"id": "01a00000-0000-7000-8000-000000000002", "originalName": "X", "Name_CN": "甲"}],
             [],
             [],

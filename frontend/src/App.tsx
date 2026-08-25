@@ -1,11 +1,10 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import {
   AppProvider,
   useApp,
   type AppAction,
   type AppState,
-  type CameraState,
   type GraphData,
 } from "./store";
 import GraphCanvas from "./components/GraphCanvas";
@@ -14,11 +13,13 @@ import Panel from "./components/Panel";
 import Toast from "./components/Toast";
 import Guide from "./components/Guide";
 import AuthModal from "./components/AuthModal";
+import ChunkBoundary from "./components/ChunkBoundary";
 import {
   loadGraphData, loadSpaceGraph, loadStats, spaceFromParam, spaceUserId, workDetail, type Space,
 } from "./lib/api";
 import { fetchMe } from "./lib/auth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
+import { parseCam, parseHashParams } from "./lib/hash";
 import {
   renderMain, setStateRef, renderRipple, renderAuthorView, renderPath, expandRippleDebounced,
   isSelfWrittenHash,
@@ -29,39 +30,6 @@ import { setOnCameraChange } from "./lib/renderer";
 // 管理页与贡献弹窗按需加载(普通用户默认不可见,不打进首屏包)
 const Admin = lazy(() => import("./components/Admin"));
 const Contribute = lazy(() => import("./components/Contribute"));
-
-// 懒加载 chunk 渲染异常时降级为空,避免整页白屏(图谱仍可用)
-class ChunkBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    console.error("按需加载模块渲染失败:", error);
-  }
-
-  render() {
-    return this.state.failed ? null : this.props.children;
-  }
-}
-
-function parseCam(s: string): CameraState | null {
-  const parts = String(s || "").split(",").map((x) => parseFloat(x));
-  if (parts.length < 6 || parts.some((x) => isNaN(x))) return null;
-  return { theta: parts[0], phi: parts[1], radius: parts[2], cx: parts[3], cy: parts[4], cz: parts[5] };
-}
-
-// 从 hash 中解析 space 参数(#v=main&space=mine / space=<用户id> 等)
-function hashSpaceParam(): string | null {
-  const h = location.hash.replace(/^#/, "");
-  for (const p of h.split("&")) {
-    const kv = p.split("=");
-    if (kv[0] === "space") return kv[1] == null ? "" : decodeURIComponent(kv[1]);
-  }
-  return null;
-}
 
 function AppContent() {
   const { state, dispatch } = useApp();
@@ -135,13 +103,7 @@ function AppContent() {
       }
       return;
     }
-    const h = location.hash.replace(/^#/, "");
-    if (!h) return;
-    const parts: Record<string, string> = {};
-    h.split("&").forEach((p) => {
-      const kv = p.split("=");
-      parts[kv[0]] = kv[1] == null ? "" : decodeURIComponent(kv[1]);
-    });
+    const parts = parseHashParams(location.hash);
     const v = parts.v || "";
     const st = stateRef.current!.state;
     // hash 的 space 参数与当前星云不一致时,先切换星云再应用视图
@@ -222,7 +184,7 @@ function AppContent() {
     });
     let cancelled = false;
     // 首载空间上下文:优先取 hash 的 space 参数(public / mine / <用户id>)
-    let target: Space = spaceFromParam(hashSpaceParam()) || "public";
+    let target: Space = spaceFromParam(parseHashParams(location.hash).space) || "public";
     let mineOwner = "我的星云";
 
     const loadTarget = async (): Promise<GraphData> => {

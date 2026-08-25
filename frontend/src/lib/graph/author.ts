@@ -1,0 +1,90 @@
+// 作者视图:作者名下作品为基底,沿 ECHO(无向)向外扩散
+import { isAnonymousAuthor, filterAuthorIslands, workAuthorIds, maxEchoHops } from "../graphData";
+import type { GraphData, GraphNode } from "../../store";
+import { dispatch, findNode, getState } from "./state";
+import { commitView, syncUrl, type ViewOpts } from "./view";
+
+export function authorViewData(author: GraphNode, hops: number, fullData: GraphData): GraphData {
+  const outHops = Math.max(0, hops - 1);
+  const works = fullData.nodes.filter((n) => n.type === "work" && workAuthorIds(n).includes(author.id));
+  const dist = new Map<string, number>();
+  const queue: string[] = [];
+  works.forEach((w) => { dist.set(w.id, 0); queue.push(w.id); });
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    const d = dist.get(cur) ?? 0;
+    if (d >= outHops) continue;
+    fullData.edges.forEach((e) => {
+      if (e.type !== "echo") return;
+      const other = e.source === cur ? e.target : (e.target === cur ? e.source : null);
+      if (other && !dist.has(other)) {
+        dist.set(other, d + 1);
+        queue.push(other);
+      }
+    });
+  }
+  const ids = new Set(dist.keys());
+  const nodes: GraphNode[] = [author];
+  fullData.nodes.forEach((n) => {
+    if (n.type === "work" && ids.has(n.id)) nodes.push(n);
+  });
+  const edges: any[] = [];
+  works.forEach((w) => edges.push({ source: w.id, target: author.id, type: "authored" }));
+  fullData.edges.forEach((e) => {
+    if (e.type === "echo" && ids.has(e.source) && ids.has(e.target)) edges.push({ ...e });
+  });
+  return { nodes, edges };
+}
+
+export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
+  if (isAnonymousAuthor(author)) {
+    dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
+    return;
+  }
+  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
+  const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
+  const fullData = opts?.fullData || getState().fullData;
+  // 作者视图:上限 = 该作者名下作品沿 ECHO 可达的最远跳数 + 1(作者层)
+  const seeds = fullData.nodes
+    .filter((n) => n.type === "work" && workAuthorIds(n).includes(author.id))
+    .map((n) => n.id);
+  const expandMax = Math.max(1, maxEchoHops(fullData, seeds) + 1);
+  const hops = Math.min(opts && typeof opts.hops === "number" ? opts.hops : getState().expandHops, expandMax);
+  dispatch({ type: "SET_EXPAND_MAX", value: expandMax });
+  dispatch({ type: "SET_EXPAND", value: hops });
+  dispatch({ type: "SET_AUTHOR", id: author.id });
+  dispatch({ type: "SET_PANEL", panel: { type: "author", author } });
+  let data = authorViewData(author, hops, fullData);
+  if (hideIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛星
+  commitView("author", data, opts || {});
+  syncUrl({
+    view: "author", id: author.id, hops,
+    hideIslands, showAuthors,
+  });
+}
+
+export function expandAuthorDebounced(hops: number) {
+  const st = getState();
+  const author = st.currentAuthorId ? findNode(st.currentAuthorId) : undefined;
+  if (!author) return;
+  dispatch({ type: "SET_EXPAND", value: hops });
+  let data = authorViewData(author, hops, st.fullData);
+  if (st.hideIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛星
+  dispatch({ type: "SET_VIEW_DATA", data });
+  const works = data.nodes.filter((n) => n.type === "work").length;
+  dispatch({ type: "SET_TOAST", msg: hops + " 级扩散 · " + works + " 本书" });
+  syncUrl({
+    view: "author", id: author.id, hops,
+    hideIslands: st.hideIslands, showAuthors: st.showAuthors,
+  });
+}
+
+// 作者视图下切换过滤状态时,按当前设置重新渲染(保持相机)
+export function reRenderAuthor(opts?: ViewOpts) {
+  const st = getState();
+  if (st.currentView !== "author" || !st.currentAuthorId) return;
+  const author = st.currentAuthorId ? findNode(st.currentAuthorId) : undefined;
+  if (!author) return;
+  renderAuthorView(author, { preserveCamera: true, hops: st.expandHops, ...(opts || {}) });
+}

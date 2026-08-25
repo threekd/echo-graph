@@ -1,4 +1,4 @@
-"""只读五件套路由工厂:graph / search / work / expansion / path。
+"""只读六件套路由工厂:graph / search / work / expansion / path / stats。
 
 `/api`(公共)、`/api/me`(个人空间)、`/api/space/{user_id}`(星际跃迁)三套端点
 此前各自实现一份(参数校验与 404 处理逐行重复),统一收敛到本模块:
@@ -35,7 +35,7 @@ def register_read_routes(
     name_prefix: str = "",
     tag: str | None = None,
 ) -> None:
-    """注册只读五件套。
+    """注册只读六件套。
 
     target:FastAPI 实例或 APIRouter。
     path_prefix:目标完整前缀(FastAPI 实例用 /api;APIRouter 自带前缀时传空串)。
@@ -100,6 +100,10 @@ def register_read_routes(
         if data is None:
             raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
         return data
+
+    @_register("/stats", "stats")
+    def stats(request: Request) -> dict:
+        return store_factory(request, _user_id(request)).stats()
 
     @_register("/path", "path")
     def path(

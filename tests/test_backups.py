@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 import app.backups as backups
 import app.data_store as ds
-from app import auth, db_sqlite, sqlite_store
+from app import auth, db_sqlite
+from tests._helpers import rewrite_all
 
 
 class BackupsTest(unittest.TestCase):
@@ -137,7 +138,7 @@ class BackupsTest(unittest.TestCase):
         self._make_db(db_sqlite.DB_PATH, "current")
         # 用户私有行:CSV 恢复后必须原样保留
         user = auth.register("user@test.local", "user-password-123", username="user01")
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{
                 "id": "01a013e6-e885-766b-b9db-315d518adeec",
                 "originalName": "私有作者",

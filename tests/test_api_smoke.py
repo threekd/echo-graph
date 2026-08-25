@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 import app.main as main  # noqa: E402
 from app import auth, db_sqlite, sqlite_store  # noqa: E402
+from tests._helpers import rewrite_all  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -34,7 +35,7 @@ class ApiSmokeTest(unittest.TestCase):
     def seed(self, authors=(), works=(), edges=(), owner_id: str | None = None) -> None:
         """按 admin 空间造数:所有行显式归属,避免依赖未认领过渡态。"""
         owner = owner_id if owner_id is not None else self.admin_id
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{**r, "owner_id": owner} for r in authors],
             [{**r, "owner_id": owner} for r in works],
             [{**r, "owner_id": owner} for r in edges],
@@ -84,6 +85,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/space/{user_id}/work/{work_id}", paths)
         self.assertIn("/api/space/{user_id}/expansion/{work_id}", paths)
         self.assertIn("/api/space/{user_id}/path", paths)
+        self.assertIn("/api/space/{user_id}/stats", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"

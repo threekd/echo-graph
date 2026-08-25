@@ -1,7 +1,7 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.5`(2026-08-25 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 24`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.6`(2026-08-25 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 25`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
@@ -11,7 +11,7 @@
 
 ## 表总览
 
-当前库共 9 张业务表:
+当前库共 10 张业务表:
 
 | 表 | 用途 | 归属 / 隔离 |
 |---|---|---|
@@ -22,6 +22,7 @@
 | `work_authors` | 作品-作者关联(合著 N:N) | 经 `works.owner_id` 派生 |
 | `edges` | 回声关系 `(Work)-[:ECHO]->(Work)` | `owner_id` |
 | `friendships` | 单向关注(模型好友) | `user_id` / `friend_id` |
+| `embeddings` | AI 语义去重向量缓存(作者/作品标题嵌入) | 经实体 id 关联,不承载业务数据 |
 | `audit_log` | 管理写操作审计 | — |
 | `meta` | 元信息(`schema_version` 等) | — |
 
@@ -185,6 +186,25 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 接口:`POST/DELETE /api/follow/{user_id}`、`GET /api/follow/following|followers`、
 `GET /api/follow/relation/{user_id}`。
 
+### embeddings AI 语义去重向量缓存
+
+由 `agent_temp/tools/dedupe_check.py` 使用:把库内作者/作品标题向量落库,
+避免每次管线运行对全库重复调用阿里云百炼 embedding。不属于业务数据,不进 CSV,
+无 admin 维护入口。
+
+| 列 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `entity_type` | TEXT | 是 | 实体类型:`author` / `work` |
+| `entity_id` | TEXT | 是 | 实体 id(引用 authors/works.id) |
+| `model` | TEXT | 是 | 使用的 embedding 模型名 |
+| `version` | INTEGER | 是 | 向量方案版本(`VECTOR_VERSION`,模型/阈值调整时递增失效缓存) |
+| `text_hash` | TEXT | 是 | 嵌入文本的 SHA-256;标题/作者字段变更后 hash 变化即重新嵌入 |
+| `vector` | TEXT | 是 | 向量 JSON 文本(1024 维约 8KB/行) |
+| `updated_at` | TEXT | 是 | 写入时间(UTC ISO-8601) |
+
+主键:`PRIMARY KEY (entity_type, entity_id, model, version)`;读取为全量线性
+余弦扫描,当前量级(几十~几百条)开销可忽略。
+
 ### audit_log 审计
 
 | 列 | 类型 | 必填 | 说明 |
@@ -205,7 +225,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `key` | TEXT | 是(PK) | 键,如 `schema_version` |
-| `value` | TEXT | 否 | 值,当前 `schema_version = 24` |
+| `value` | TEXT | 否 | 值,当前 `schema_version = 25` |
 
 ## 约束与索引汇总
 
@@ -215,7 +235,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 - `sessions.id`、`sessions.token_hash`
 - `authors.id`、`works.id`、`edges.id`、`friendships.id`
 - `edges(source_work_id, target_work_id)`、`friendships(user_id, friend_id)`、
-  `work_authors(work_id, author_id)`、`meta.key`
+  `work_authors(work_id, author_id)`、`meta.key`、`embeddings(entity_type, entity_id, model, version)`
 
 非唯一索引:
 
@@ -252,8 +272,14 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 24);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 25);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.5 → 1.6` 变更(2026-08-25):
+
+- 新增 `embeddings` 向量缓存表(schema v25 迁移):AI 语义去重把库内作者/作品
+  标题向量落库,缓存键 = entity_type + entity_id + model + version,
+  text_hash 感知标题/作者字段变更;不属于业务数据,不进 CSV,无管理入口。
 
 `1.4 → 1.5` 变更(2026-08-25):
 

@@ -2,6 +2,11 @@
 
 """书籍解析数据审核 / 发布 CLI（system_llm 管线配套工具）。
 
+**legacy**：审核 / 发布已收敛到管理端「AI 草稿」页（app/llm_review.py,admin 审核 →
+公共星云）；本 CLI 的 make-batch / review / publish 为早期流程,保留兼容但不再被
+README / 文档引用。新管线请走 pipeline_ingest(extract → dedupe → build_batch →
+stage_batch 写入 system_llm 草稿区)。
+
 职责链（agent_temp 实验管线）：
     extract_source_book.py（提取 作者/作品/涟漪）
       → dedupe_check.py（基础 + 语义去重报告）
@@ -809,6 +814,7 @@ def _parse_review_input(raw: str, item: dict[str, Any]) -> tuple[str, str | None
 
 
 def cmd_review(args: argparse.Namespace) -> None:
+    """legacy:批内逐条审核已改由管理端「AI 草稿」页完成(见 app/llm_review.py),本命令保留兼容。"""
     batch = llm_space.load_batch(args.batch_id)
     by_id = {it["item_id"]: it for it in batch["items"]}
     queue = [it for it in batch["items"] if it.get("status") in REVIEWABLE]
@@ -965,6 +971,7 @@ def _publish_edge(
 
 
 def cmd_publish(args: argparse.Namespace) -> None:
+    """legacy:发布已改由管理端「AI 草稿」批准完成(见 app/llm_review.py),本命令保留兼容。"""
     if args.db:
         db_sqlite.DB_PATH = Path(args.db).resolve()
     admin_id = admin_user_id()
@@ -1061,6 +1068,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
 # make-batch：提取结果 + 去重报告 → 批次登记簿
 # ======================================================================
 def cmd_make_batch(args: argparse.Namespace) -> None:
+    """legacy:批次登记已改由 pipeline_ingest 一键管线完成,本命令保留兼容。"""
     if args.db:
         db_sqlite.DB_PATH = Path(args.db).resolve()
     input_path = Path(args.input)

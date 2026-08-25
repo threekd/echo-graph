@@ -75,7 +75,32 @@ export interface AppState {
   guideVisible: boolean;
 }
 
-export type AppAction = { type: string; [key: string]: any };
+export type AppAction =
+  | { type: "SET_DATA"; data: GraphData }
+  | { type: "SET_VIEW_DATA"; data: GraphData }
+  | { type: "SET_VIEW"; view: string }
+  | { type: "SET_RIPPLE_CENTER"; id: string | null }
+  | { type: "SET_AUTHOR"; id: string | null }
+  | { type: "SET_PATH"; from: string | null; to: string | null }
+  | { type: "SET_PATH_INPUTS"; inputs: { from: string; to: string } }
+  | { type: "SET_STORE"; name: string }
+  | { type: "SET_CAMERA"; camera: CameraState }
+  | { type: "SET_HIDE_ISLANDS"; value: boolean }
+  | { type: "SET_SHOW_AUTHORS"; value: boolean }
+  | { type: "SET_EXPAND"; value: number }
+  | { type: "SET_EXPAND_MAX"; value: number }
+  | { type: "SET_PANEL"; panel: PanelState }
+  | { type: "SET_TOAST"; msg: string | null; kind?: ToastKind }
+  | { type: "SET_ADMIN"; open: boolean }
+  | { type: "SET_CONTRIBUTE"; open: boolean }
+  | { type: "SET_AUTH"; open: boolean }
+  | { type: "SET_USER"; user: AuthUser | null }
+  | { type: "SET_SPACE"; space: Space }
+  | { type: "SET_SPACE_OWNER"; owner: string }
+  | { type: "SET_PIN_LEFT"; value: boolean }
+  | { type: "SET_PIN_RIGHT"; value: boolean }
+  | { type: "SET_SPACE_PROFILE"; profile: AppState["spaceProfile"] }
+  | { type: "SET_GUIDE"; value: boolean };
 
 export const initialState: AppState = {
   fullData: { nodes: [], edges: [] },

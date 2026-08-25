@@ -9,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.db as db
-from app import db_sqlite, sqlite_store
+from app import db_sqlite
+from tests._helpers import rewrite_all
 
 A1 = "01a013e6-e885-766b-b9db-315d518adeeb"
 A2 = "01a013e6-e885-766b-b9db-315d518adeec"
@@ -52,7 +53,7 @@ class SqliteStoreTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
-        sqlite_store.rewrite_all(*_fixture())
+        rewrite_all(*_fixture())
         self.store = db.SqliteStore(reviewed_only=False)
 
     def test_graph_shape(self) -> None:
@@ -131,7 +132,7 @@ class SqliteStoreTest(unittest.TestCase):
         for row in a:
             row["reviewStatus"] = "reviewed"
         w[0]["reviewStatus"] = "reviewed"  # 只有局外人 reviewed
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         store = db.SqliteStore(reviewed_only=True)
 
         g = store.graph()
@@ -158,7 +159,7 @@ class SqliteStoreTest(unittest.TestCase):
         for row in a:
             row["reviewStatus"] = "reviewed"
         w[0]["reviewStatus"] = "reviewed"  # W1 reviewed;e1(W2->W1) reviewed,但 W2 是 draft
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         store = db.SqliteStore(reviewed_only=True)
         out = store.expansion(W1, 2)
         self.assertIsNotNone(out)
@@ -183,7 +184,7 @@ class SqliteStoreTest(unittest.TestCase):
             (str(db_sqlite.DB_PATH), "public", self.store.reviewed_only),
             db._read_cache,
         )
-        sqlite_store.rewrite_all(*_fixture())
+        rewrite_all(*_fixture())
         self.assertEqual(db._read_cache, {})
 
     def test_read_cache_refreshes_after_rewrite(self) -> None:
@@ -191,7 +192,7 @@ class SqliteStoreTest(unittest.TestCase):
         self.store.graph()  # 先填充缓存
         a, w, e = _fixture()
         w[0]["Title_CN"] = "局外人(改)"
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         titles = [n["label"] for n in self.store.graph()["nodes"] if n["type"] == "work"]
         self.assertIn("局外人(改)", titles)
 

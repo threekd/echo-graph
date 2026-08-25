@@ -158,7 +158,7 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None, owne
     return errors
 
 
-def _after_write(owner_id: str) -> None:
+def after_write(owner_id: str) -> None:
     """写入后的收尾:任何空间都失效读缓存;只有公共星云(admin 空间)刷新 CSV 导出。"""
     invalidate_cache()
     if owner_id == admin_user_id():
@@ -245,7 +245,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
         db_sqlite.audit(
             conn, "create", kind, row.get("id"), f"新增「{label}」", after=row, actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "row": row}
 
 
@@ -302,7 +302,7 @@ def update_row(
         db_sqlite.audit(
             conn, "update", kind, item_id, detail, before=existing, after=row, actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "row": row}
 
 
@@ -340,7 +340,7 @@ def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowne
             after={**row, "deletedAt": now},
             actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "deletedAt": now, "cascade": cascade}
 
 
@@ -387,5 +387,5 @@ def restore_row(
             after={**row, "deletedAt": None},
             actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "cascade": cascade}

@@ -55,11 +55,6 @@ def my_data(
     return space_data(user["id"], include_deleted)
 
 
-@router.get("/stats")
-def my_stats(user: dict = Depends(require_user)) -> dict:  # noqa: B008
-    return SqliteStore(owner_id=user["id"]).stats()
-
-
 @router.post("/{kind}")
 def my_create(kind: Kind, row: dict, user: dict = Depends(require_user)) -> dict:  # noqa: B008
     return create_row(kind, row, user["id"], user["email"])
@@ -82,7 +77,7 @@ def my_restore(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> 
     return restore_row(kind, item_id, user["id"], user["email"])
 
 
-# 只读五件套(与 /api、/api/space 共用同一套实现,见 app/read_routes.py)
+# 只读六件套(与 /api、/api/space 共用同一套实现,见 app/read_routes.py)
 register_read_routes(
     router,
     _me_store,

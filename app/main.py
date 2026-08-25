@@ -110,11 +110,6 @@ def apple_touch_icon() -> FileResponse:
     return _serve_static("root", "apple-touch-icon.png")
 
 
-@app.get("/api/stats")
-def stats() -> dict:
-    return store.stats()
-
-
 @app.get("/api/health")
 def health() -> dict:
     """健康检查:返回当前存储后端(SQLite)。"""
@@ -128,7 +123,7 @@ app.include_router(follows_router)
 app.include_router(me_router)
 app.include_router(space_router)
 
-# 公共只读五件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
+# 公共只读六件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
 register_read_routes(
     app,
     lambda request, user_id: get_store(),

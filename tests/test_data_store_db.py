@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import app.data_store as ds
 from app import auth, db_sqlite, sqlite_store
+from tests._helpers import rewrite_all
 
 
 def _rows():
@@ -45,7 +46,7 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_save_then_load_roundtrip(self) -> None:
         a, w, e = _rows()
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         ds.export_csv_files()
         a2, w2, e2 = sqlite_store.load_rows()
         self.assertEqual(len(a2), 2)
@@ -60,7 +61,7 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_export_is_deterministic(self) -> None:
         a, w, e = _rows()
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         ds.export_csv_files()
         content = (self.export / "authors.csv").read_bytes()
         other = Path(self.tmp.name) / "other"
@@ -70,7 +71,7 @@ class DataStoreDbTest(unittest.TestCase):
 
     def test_load_csv_rows_reads_export_files(self) -> None:
         a, w, e = _rows()
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(a, w, e)
         ds.export_csv_files()
         a2, w2, e2 = ds.load_csv_rows()
         self.assertEqual(len(a2), 2)
@@ -84,7 +85,7 @@ class DataStoreDbTest(unittest.TestCase):
             user = auth.register("user@test.local", "user-password-123", username="user01")
             a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
             a2 = "01a013e6-e885-766b-b9db-315d518adeec"
-            sqlite_store.rewrite_all(
+            rewrite_all(
                 [
                     {"id": a1, "originalName": "公共", "Name_CN": "公共", "owner_id": admin["id"]},
                     {"id": a2, "originalName": "私有", "Name_CN": "私有", "owner_id": user["id"]},

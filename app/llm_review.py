@@ -29,7 +29,7 @@ from app.data_store import clean_row
 from app.llm_account import ensure_system_llm, get_system_llm_id
 from app.space_crud import (
     Kind,
-    _after_write,  # noqa: PLC2701 - 复用公共星云写入后的缓存/CSV 收尾
+    after_write,
     space_data,
     validate_row,
 )
@@ -391,7 +391,7 @@ def approve_draft(
             after={**staging, "published_to_id": public_row["id"], "reviewStatus": "reviewed"},
             actor=user["email"],
         )
-    _after_write(admin_id)
+    after_write(admin_id)
     return {"ok": True, "mode": "copy", "public_id": public_row["id"]}
 
 

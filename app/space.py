@@ -111,7 +111,7 @@ def random_space_graph(request: Request) -> dict:
     }
 
 
-# 只读五件套(与 /api、/api/me 共用同一套实现,见 app/read_routes.py)
+# 只读六件套(与 /api、/api/me 共用同一套实现,见 app/read_routes.py)
 # 注意:random 路由必须注册在 {user_id} 路由之前,避免被当作用户 id 匹配
 register_read_routes(
     router,

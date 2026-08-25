@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_temp.tools import dedupe_check, llm_space, review_publish
-from app import auth, data_store, db_sqlite, sqlite_store
+from app import auth, data_store, db_sqlite
+from tests._helpers import rewrite_all
 
 _ADMIN_EMAIL = "admin@echo.local"
 
@@ -145,7 +146,7 @@ class PipelineEdgeTest(unittest.TestCase):
     def _seed_existing_edge(self) -> None:
         """造一条公共涟漪:且听风吟 → 挪威的森林。"""
         owner = self.admin["id"]
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{"id": "a-1", "Name_CN": "村上春树", "originalName": "村上春樹", "owner_id": owner}],
             [
                 {

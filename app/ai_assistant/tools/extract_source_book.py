@@ -11,7 +11,8 @@ authors / works / edges 表结构(见 docs/data_schema.md)的 JSON:
 
 流程:
 1. 用 read_book.ReadBook.read_book_info() 读取 EPUB 元数据(书名、作者、语言)
-2. 用 read_book 识别书内提到的其他书名(带上下文与章节)
+2. 用 read_book 识别书内正文提到的其他书名(带上下文与章节;仅正文,
+   前言/尾记等非正文章节的提及在代码层直接过滤,涟漪只取正文)
 3. (可选)截取正文开头样本,帮助作者/作品提取确认内容与语言
 4. 阶段 A1/A2:分别调用 DeepSeek 输出源书作者(A1)与源书作品(A2),
    作品阶段附带作者结果辅助判断原著语言
@@ -304,13 +305,17 @@ def run_extract(
     )
 
     # 2. 书内提及(涟漪阶段输入;--no-ripples 时跳过)
+    #    涟漪只取正文:find_book_titles_with_context(body_only=True) 在聚合前
+    #    剔除前言/序言/尾记/附录等非正文章节的提及,不依赖 LLM 判断。
     mentions: list[dict[str, str]] = []
     if not no_ripples:
-        log("识别书内提到的书名...")
+        log("识别书内正文提及(已剔除前言/尾记等非正文章节)...")
         mentions = reader.find_book_titles_with_context(
-            str(book_path), context_chars=DEFAULT_CONTEXT_CHARS
+            str(book_path),
+            context_chars=DEFAULT_CONTEXT_CHARS,
+            body_only=True,
         )
-        log(f"识别到 {len(mentions)} 条书内提及")
+        log(f"识别到 {len(mentions)} 条书内正文提及")
 
     # 3. 可选正文样本(作者/作品阶段输入)
     content_sample = ""

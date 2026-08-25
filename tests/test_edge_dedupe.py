@@ -64,7 +64,7 @@ def _extract_with_ripples() -> dict:
                 "evidence": {
                     "evidence": "第一章提到挪威的森林。",
                     "evidenceSource": "第一章",
-                    "mention_type": "READ_BY_CHARACTER",
+                    "mention_type": "正文",
                 },
             },
             {
@@ -78,7 +78,7 @@ def _extract_with_ripples() -> dict:
                 "evidence": {
                     "evidence": "第三章再次提到挪威的森林。",
                     "evidenceSource": "第三章",
-                    "mention_type": "READ_BY_CHARACTER",
+                    "mention_type": "正文",
                 },
             },
         ],
@@ -223,7 +223,7 @@ class PipelineEdgeTest(unittest.TestCase):
                 "evidence": {
                     "evidence": "书中自指。",
                     "evidenceSource": "后记",
-                    "mention_type": "READ_BY_CHARACTER",
+                    "mention_type": "正文",
                 },
             }
         )

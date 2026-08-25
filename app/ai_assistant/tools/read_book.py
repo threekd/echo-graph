@@ -51,6 +51,27 @@ TITLE_PATTERN = re.compile(r"《([^》]{1,60})》")
 # 常见斜体标签（英文书名常用）
 ITALIC_TAGS = ("i", "em", "cite", "dfn", "var")
 
+# 非正文章节关键词:前言/序言/尾记/附录等非叙事章节。
+# find_book_titles_with_context(body_only=True) 时剔除;
+# 序章/序幕/楔子/尾声/引子等叙事性开头保留为正文。
+NON_BODY_CHAPTER_RE = re.compile(
+    r"(?:前言|序言|自序|代序|译者序|译序|(?<!序)序(?!章|幕)|编者按|编者的话|"
+    r"出版说明|出版者的话|导读|引言|开场白|凡例|内容简介|目录|题记|后记|跋|附录|"
+    r"注释|尾注|致谢|译后记|作者的话|参考文献|索引|年表|大事记|"
+    r"\b(?:preface|foreword|introduction|afterword|appendix|"
+    r"acknowledgements?|bibliography|index)\b)",
+    re.IGNORECASE,
+)
+
+
+def is_non_body_chapter(chapter: str | None) -> bool:
+    """判断章节标题是否属于非正文（前言/序言/尾记/附录等）。
+
+    空标题或无法归类的标题按正文处理（避免误杀正文提及）。
+    """
+    return bool(chapter and NON_BODY_CHAPTER_RE.search(str(chapter)))
+
+
 # ebook-convert 常见安装路径（PATH 中找不到时的备用方案）
 CALIBRE_CANDIDATES = (
     r"C:\Program Files\Calibre2\ebook-convert.exe",            # Windows
@@ -367,10 +388,13 @@ class ReadBook:
         output_epub: str | None = None,
         force_convert: bool = False,
         context_chars: int = DEFAULT_CONTEXT_CHARS,
+        body_only: bool = False,
     ) -> list[dict[str, str]]:
         """
         查找书中提到的其他书名，并附带出现的上下文片段与所在章节。
 
+        :param body_only: True 时只保留正文章节中的提及，
+            剔除前言/序言/尾记/附录等非正文章节（涟漪只取正文）。
         :return: 列表，元素形如 {"title", "context", "chapter"}
         """
         epub_path = self._prepare_epub(input_path, output_epub, force_convert)
@@ -379,6 +403,8 @@ class ReadBook:
         matches: dict[str, BookTitleMatch] = {}
         for soup, item in self._iter_documents(epub_path):
             chapter = self._get_chapter_title(soup, item)
+            if body_only and is_non_body_chapter(chapter):
+                continue
             text = soup.get_text("\n", strip=True)
 
             for title, pos in self._find_book_candidates(soup, text):

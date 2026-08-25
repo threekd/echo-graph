@@ -57,7 +57,7 @@ def _synthetic_extract() -> dict:
                 "evidence": {
                     "evidence": "书中提到了《白鲸》这部作品。",
                     "evidenceSource": "第一章",
-                    "mention_type": "READ_BY_CHARACTER",
+                    "mention_type": "正文",
                 },
             }
         ],

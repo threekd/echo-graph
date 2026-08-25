@@ -206,8 +206,9 @@ a JSON object:
   Each record: {"title", "context", "chapter"}.
 
 Your job: for every mention, decide whether the title refers to a genuine
-published BOOK, and for each real book produce (a) a WORK record and (b) the
-EVIDENCE of where and how it was mentioned in the source text.
+published BOOK, and for each real book mentioned in the MAIN BODY (正文) of the
+source text produce (a) a WORK record and (b) the EVIDENCE of where and how it
+was mentioned.
 
 ================ CLASSIFICATION RULES ================
 REAL_BOOK — actually published and sold as a book: novels, novellas,
@@ -227,7 +228,8 @@ skipped.self_or_unknown.
 
 ================ FOR EVERY REAL BOOK ================
 Merge duplicate mentions/aliases of the same book into ONE entry and combine
-all their locations. Output:
+all their locations. Only mentions located in the main body (正文) may become
+ripples. Output:
 
 COLLECTION_MERGE — when a mentioned COLLECTION (omnibus / collected works,
 e.g. 《福尔摩斯探案集》) and one of its contained single works (e.g.
@@ -262,9 +264,11 @@ EVIDENCE (aligned with Echo Graph "edges" table):
 - "evidenceSource": every chapter/section where the book appears, kept verbatim
   (if the input "chapter" contains "；"-separated values, keep all of them
   joined by "；")
-- "mention_type": READ_BY_CHARACTER (read/referenced by characters) |
-  EDITORIAL_MATTER (translator's preface, author's afterword, award speech,
-  footnotes) | FOOTNOTE_CROSS_REF (cross-referenced in notes)
+- "mention_type": where the mention occurs, one of:
+  前言 — preface / foreword / introduction / translator's preface / editorial note
+  正文 — main body chapters (the narrative text itself)
+  尾记 — afterword / postscript / appendix / endnotes / author's note
+  其它 — anything else or unclear
 
 ================ OUTPUT JSON SCHEMA ================
 {
@@ -284,14 +288,15 @@ EVIDENCE (aligned with Echo Graph "edges" table):
       "evidence": {
         "evidence": "verbatim excerpt",
         "evidenceSource": "chapter1；chapter2",
-        "mention_type": "READ_BY_CHARACTER"
+        "mention_type": "正文"
       }
     }
   ],
   "skipped": {
     "non_books": <integer>,
     "ambiguous": <integer>,
-    "self_or_unknown": <integer>
+    "self_or_unknown": <integer>,
+    "out_of_body": <integer>
   }
 }
 
@@ -299,6 +304,11 @@ EVIDENCE (aligned with Echo Graph "edges" table):
 - Base every decision on the "context" snippet; when unsure, skip and count it.
 - Do not output songs, films, paintings, periodicals, papers, laws, or
   in-universe fictional works as ripples.
+- Ripples may ONLY come from mentions in the main body (正文). If a mention's
+  chapter/section indicates 前言 / 尾记 / 其它, do NOT output it as a ripple —
+  skip it and count it under skipped.out_of_body. If the same book also appears
+  in 前言 / 尾记 / 其它, ignore those locations: "evidence" and
+  "evidenceSource" must be based only on 正文 mentions.
 - Keep the source-language wording of the excerpt verbatim.
 - Output ONLY a single valid JSON object (UTF-8, no Markdown code fences, no
   text outside the JSON).
@@ -311,9 +321,10 @@ B) {"title": "卡拉马佐夫兄弟", "context": "……失业。《卡拉马佐
      Title_CN: "卡拉马佐夫兄弟", Title_EN: "The Brothers Karamazov",
      publicationYear: 1880, genre: "Fiction", author: "陀思妥耶夫斯基"},
      evidence {evidence: <verbatim paragraph>, evidenceSource: "3",
-     mention_type: "READ_BY_CHARACTER"}
+     mention_type: "正文"}
 C) {"title": "三体", "context": "……在《三体》这部小说里……", "chapter": "后记"}
-   → SELF_MENTION of the source book: skipped.self_or_unknown += 1
+   → SELF_MENTION of the source book (also located in 尾记, but self-mention
+     takes precedence): skipped.self_or_unknown += 1
 D) {"title": "福尔摩斯探案集", "context": "……老师拿出了一本书，是《福尔摩斯探案集》，他翻到一篇，好像是《红字的研究》吧……", "chapter": "第十七章 三体问题"}
    {"title": "红字的研究", "context": "……好像是《红字的研究》吧，有一段大意是这样……", "chapter": "第十七章 三体问题"}
    → The two mentions are the SAME work: 《红字的研究》 in the text is a misprint
@@ -321,6 +332,9 @@ D) {"title": "福尔摩斯探案集", "context": "……老师拿出了一本书
      ripple for the collection 福尔摩斯探案集; the contained work 血字的研究
      goes into Title_Other (e.g. "血字的研究（红字的研究）") or note;
      evidenceSource = "第十七章 三体问题"
+E) {"title": "白鲸", "context": "……译者序中提到《白鲸》与《老人与海》的互文关系……", "chapter": "译者序"}
+   → The mention is in a translator's preface (前言), NOT the main body: do NOT
+     output a ripple — skipped.out_of_body += 1
 """
 
 

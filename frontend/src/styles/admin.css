@@ -660,9 +660,110 @@ th.sortable.active .sort-icon {
 }
 .llm-drafts .llm-clear:disabled { opacity: 0.5; cursor: not-allowed; }
 .llm-drafts .llm-tip { margin: 4px 0; color: #8a93a6; font-size: 12px; line-height: 1.6; }
-.llm-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.llm-drafts .llm-toolbar-title { font-size: 13px; color: #c8d4f0; font-weight: 600; }
+.llm-drafts .llm-empty { color: #8a93a6; font-size: 13px; padding: 18px 4px; }
+.llm-drafts .llm-batch {
+  border: 1px solid rgba(138, 184, 255, 0.22);
+  border-radius: 10px;
+  background: #141d3a;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+}
+.llm-drafts .llm-batch-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(138, 184, 255, 0.18);
+}
+.llm-drafts .llm-batch button,
+.llm-drafts .llm-ripple button {
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(30, 44, 90, 0.75);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.llm-drafts .llm-batch button:hover,
+.llm-drafts .llm-ripple button:hover {
+  border-color: rgba(138, 184, 255, 0.8);
+}
+.llm-drafts .llm-batch button.primary,
+.llm-drafts .llm-ripple button.primary { font-weight: 600; }
+.llm-drafts .llm-batch-body {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 184, 255, 0.35) transparent;
+}
+.llm-drafts .llm-batch-body .llm-ripple { margin-top: 0; }
+.llm-drafts .llm-batch-title { font-size: 14px; color: #ffe9a8; font-weight: 600; }
+.llm-drafts .llm-batch-meta { color: #8a93a6; font-size: 12px; }
+.llm-drafts .llm-ripple {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(138, 184, 255, 0.14);
+  border-radius: 8px;
+  background: #0d1529;
+}
+.llm-drafts .llm-ripple.published { opacity: 0.72; }
+.llm-drafts .llm-ripple-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+.llm-drafts .llm-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #dce6ff; min-width: 0; }
+.llm-drafts .llm-field.full { grid-column: 1 / -1; }
+.llm-drafts .llm-field > span:first-child { color: #8a93a6; font-size: 11px; }
+.llm-drafts .llm-evidence {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.llm-drafts .llm-hint { margin: 6px 0 0; color: #ffb0b0; font-size: 11.5px; }
+.llm-drafts .llm-ripple-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.llm-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .llm-actions button.primary { font-weight: 600; }
 .llm-published { color: #4caf7d; font-size: 12px; white-space: nowrap; }
+.llm-drafts .llm-published-section {
+  margin-top: 16px;
+  border-top: 1px solid rgba(138, 184, 255, 0.18);
+  padding-top: 10px;
+}
+.llm-drafts .llm-published-toggle {
+  background: none;
+  border: none;
+  color: #8a93a6;
+  cursor: pointer;
+  font-size: 13px;
+}
+.llm-drafts .llm-published-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.llm-drafts .llm-published-list li {
+  color: #9db4d6;
+  font-size: 12px;
+}
 
 
 /* 书籍导入弹窗 */

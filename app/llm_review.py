@@ -126,8 +126,8 @@ def _hint_work(row: dict, public_works: list[dict], author_names: list[str]) -> 
 def _draft_rows(owner_id: str) -> dict:
     """读取某 admin 的 AI 草稿行(owner_id=上传者 + created_by='llm')。
 
-    返回 {"authors", "works", "edges"} 三张列表(活跃行,不含软删除);
-    草稿判定与公共读取的排除条件一致(见 db_sqlite.ai_draft_clause)。
+    返回 {"authors", "works", "edges", "work_authors"} 四张列表(活跃行,
+    不含软删除);草稿判定与公共读取的排除条件一致(见 db_sqlite.ai_draft_clause)。
     """
     draft = db_sqlite.ai_draft_clause()
     with db_sqlite._db() as conn:
@@ -155,47 +155,149 @@ def _draft_rows(owner_id: str) -> dict:
                 (owner_id,),
             )
         ]
-    return {"authors": authors, "works": works, "edges": edges}
+        wa_rows = conn.execute(
+            "SELECT wa.work_id, wa.author_id FROM work_authors wa"
+            " JOIN works w ON w.id = wa.work_id"
+            f" WHERE w.owner_id = ? AND w.deletedAt IS NULL AND {db_sqlite.ai_draft_clause('w')}"
+            " ORDER BY wa.work_id, wa.author_id",
+            (owner_id,),
+        ).fetchall()
+    return {
+        "authors": authors,
+        "works": works,
+        "edges": edges,
+        "work_authors": [dict(r) for r in wa_rows],
+    }
+
+
+def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
+    """按源书作品分组 AI 草稿为「批次」,并列出已发布条目。
+
+    批次 = 一部导入的书:source(作品+作者) + ripples(每条涟漪含目标作品/作者与
+    证据,字段对齐「点亮星空」表单)。无涟漪的孤立作品视为 0 涟漪批次
+    (--no-ripples 导入)。返回 (batches, published)。
+    """
+    rows = _draft_rows(owner_id)
+    authors_by_id = {a["id"]: a for a in rows["authors"]}
+    works_by_id = {w["id"]: w for w in rows["works"]}
+    wa_by_work: dict[str, list[dict]] = {}
+    for r in rows["work_authors"]:
+        author = authors_by_id.get(r["author_id"])
+        if author is not None:
+            wa_by_work.setdefault(r["work_id"], []).append(author)
+
+    src_ids = {e["source_work_id"] for e in rows["edges"] if e["source_work_id"] in works_by_id}
+    tgt_ids = {e["target_work_id"] for e in rows["edges"] if e["target_work_id"] in works_by_id}
+    # 孤立作品(非任何涟漪端点)按 0 涟漪批次处理(--no-ripples 的源书)
+    orphan_ids = [w["id"] for w in rows["works"] if w["id"] not in src_ids and w["id"] not in tgt_ids]
+
+    batches: list[dict] = []
+    for wid in sorted(src_ids) + sorted(orphan_ids):
+        work = works_by_id[wid]
+        batch_edges = sorted(
+            (e for e in rows["edges"] if e["source_work_id"] == wid),
+            key=lambda e: e["id"],
+        )
+        ripples: list[dict] = []
+        for e in batch_edges:
+            target_work = works_by_id.get(e["target_work_id"])
+            ripples.append({
+                "edge": e,
+                "target": {
+                    "work": target_work,
+                    "authors": wa_by_work.get(e["target_work_id"]) or [],
+                } if target_work else None,
+            })
+        batches.append({
+            "source": {
+                "work": work,
+                "authors": wa_by_work.get(wid) or [],
+            },
+            "ripples": ripples,
+            "created_at": work.get("createdAt") or "",
+        })
+
+    published: list[dict] = []
+    for kind, table_rows in (("authors", rows["authors"]), ("works", rows["works"]), ("edges", rows["edges"])):
+        for r in table_rows:
+            public_id = r.get("published_to_id")
+            if not public_id:
+                continue
+            if kind == "authors":
+                label = r.get("Name_CN") or r.get("originalName") or r["id"]
+            elif kind == "works":
+                label = r.get("Title_CN") or r.get("originalTitle") or r["id"]
+            else:
+                src = works_by_id.get(r.get("source_work_id")) or {}
+                tgt = works_by_id.get(r.get("target_work_id")) or {}
+                label = (
+                    f"{src.get('Title_CN') or r.get('source_work_id')}"
+                    f" → {tgt.get('Title_CN') or r.get('target_work_id')}"
+                )
+            published.append({
+                "kind": kind,
+                "id": r["id"],
+                "label": label,
+                "public_id": public_id,
+            })
+    published.sort(key=lambda x: x["label"])
+    return batches, published
 
 
 @router.get("/drafts")
 def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
-    """当前 admin 上传的 AI 草稿(owner_id=user + created_by='llm')+ 公共星云去重提示。"""
+    """当前 admin 上传的 AI 草稿,按导入批次(源书)分组 + 公共星云去重提示。"""
     migrate_legacy_llm_drafts()  # 旧 system_llm 共享草稿一次性改挂到引导管理员
     owner = user["id"]
-    data = _draft_rows(owner)
-    counts = {
-        "authors": len(data["authors"]),
-        "works": len(data["works"]),
-        "edges": len(data["edges"]),
-        "deleted": {"authors": 0, "works": 0, "edges": 0},
-    }
-    data["warnings"] = {
-        "duplicateAuthorNames": [],
-        "duplicateWorkTitles": [],
-        "duplicateEdgePairs": [],
-    }
-    data["counts"] = counts
+    batches, published = _draft_batches(owner)
+
     admin = admin_user_id()
     public = load_rows(public_only=True)
     public_authors, public_works = public["authors"], public["works"]
+
+    # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
+    batch_works: dict[str, dict] = {}
+    batch_authors: dict[str, dict] = {}
+    for b in batches:
+        src = b["source"]
+        batch_works[src["work"]["id"]] = src["work"]
+        for a in src["authors"]:
+            batch_authors[a["id"]] = a
+        for r in b["ripples"]:
+            if not r["target"]:
+                continue
+            batch_works[r["target"]["work"]["id"]] = r["target"]["work"]
+            for a in r["target"]["authors"]:
+                batch_authors[a["id"]] = a
     staging_author_names = {
-        a["id"]: (a.get("Name_CN") or a.get("Name_EN") or "")
-        for a in data["authors"]
+        aid: (a.get("Name_CN") or a.get("Name_EN") or "")
+        for aid, a in batch_authors.items()
     }
-    hints_a = {r["id"]: _hint_author(r, public_authors) for r in data["authors"]}
+    hints_a = {aid: _hint_author(a, public_authors) for aid, a in batch_authors.items()}
     hints_w = {
-        r["id"]: _hint_work(
-            r,
-            public_works,
-            [staging_author_names.get(aid, "") for aid in _author_id_list(r.get("author_id"))],
-        )
-        for r in data["works"]
+        wid: _hint_work(w, public_works, [staging_author_names.get(x, "") for x in _author_id_list(w.get("author_id"))])
+        for wid, w in batch_works.items()
     }
+
+    for b in batches:
+        b["source"]["hint"] = hints_w.get(b["source"]["work"]["id"])
+        b["source"]["author_hint"] = (
+            hints_a.get(b["source"]["authors"][0]["id"]) if b["source"]["authors"] else None
+        )
+        for r in b["ripples"]:
+            if not r["target"]:
+                r["hint"] = None
+                r["author_hint"] = None
+                continue
+            r["hint"] = hints_w.get(r["target"]["work"]["id"])
+            r["author_hint"] = (
+                hints_a.get(r["target"]["authors"][0]["id"]) if r["target"]["authors"] else None
+            )
+
     hints_e: dict[str, Any] = {}
     with db_sqlite._db() as conn:
         # 批量取回草稿作品的发布映射,避免对每条涟漪重复查库(N+1)
-        edge_ids = [r["id"] for r in data["edges"]]
+        edge_ids = [r["edge"]["id"] for b in batches for r in b["ripples"]]
         published_by_id: dict[str, Any] = {}
         if edge_ids:
             placeholders = ",".join("?" for _ in edge_ids)
@@ -205,27 +307,41 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                 (*edge_ids, owner),
             ).fetchall()
             published_by_id = {r["id"]: r["published_to_id"] for r in pub_rows}
-        for r in data["edges"]:
-            src_id = published_by_id.get(r.get("source_work_id"))
-            tgt_id = published_by_id.get(r.get("target_work_id"))
-            if not (src_id and tgt_id):
-                continue
-            dup = conn.execute(
-                "SELECT id, source_work_id, target_work_id FROM edges"
-                " WHERE source_work_id = ? AND target_work_id = ? AND deletedAt IS NULL"
-                " AND (owner_id = ? OR owner_id IS NULL)",
-                (src_id, tgt_id, admin),
-            ).fetchone()
-            if dup:
-                hints_e[r["id"]] = {
-                    "level": "edge_duplicate",
-                    "score": 1.0,
-                    "existing_id": dup["id"],
-                    "existing_label": f"{dup['source_work_id']} → {dup['target_work_id']}",
-                }
+        for b in batches:
+            for r in b["ripples"]:
+                e = r["edge"]
+                src_id = published_by_id.get(e.get("source_work_id"))
+                tgt_id = published_by_id.get(e.get("target_work_id"))
+                if not (src_id and tgt_id):
+                    continue
+                dup = conn.execute(
+                    "SELECT id, source_work_id, target_work_id FROM edges"
+                    " WHERE source_work_id = ? AND target_work_id = ? AND deletedAt IS NULL"
+                    " AND (owner_id = ? OR owner_id IS NULL)",
+                    (src_id, tgt_id, admin),
+                ).fetchone()
+                if dup:
+                    hints_e[e["id"]] = {
+                        "level": "edge_duplicate",
+                        "score": 1.0,
+                        "existing_id": dup["id"],
+                        "existing_label": (
+                            f"{dup['source_work_id']} → {dup['target_work_id']}"
+                        ),
+                    }
+        for b in batches:
+            for r in b["ripples"]:
+                r["edge_hint"] = hints_e.get(r["edge"]["id"])
+
+    counts = {
+        "batches": len(batches),
+        "ripples": sum(len(b["ripples"]) for b in batches),
+        "published": len(published),
+    }
     return {
-        "staging": data,
-        "hints": {"authors": hints_a, "works": hints_w, "edges": hints_e},
+        "batches": batches,
+        "published": published,
+        "counts": counts,
         "public_counts": {"authors": len(public_authors), "works": len(public_works)},
     }
 
@@ -345,6 +461,93 @@ class ApproveBody(BaseModel):
     reuse_id: str | None = None
 
 
+class ApproveRippleBody(BaseModel):
+    reuse_source_work_id: str | None = None
+    reuse_source_author_id: str | None = None
+    reuse_target_work_id: str | None = None
+    reuse_target_author_id: str | None = None
+    reuse_edge_id: str | None = None
+
+
+class ApproveSourceBody(BaseModel):
+    reuse_work_id: str | None = None
+    reuse_author_id: str | None = None
+
+
+def _draft_work_authors(conn, work_id: str, owner: str) -> list[dict]:
+    """草稿作品的作者行(按 work_authors 关联,活跃作者)。"""
+    rows = conn.execute(
+        "SELECT a.* FROM work_authors wa JOIN authors a ON a.id = wa.author_id"
+        " WHERE wa.work_id = ? AND a.owner_id = ? AND a.deletedAt IS NULL",
+        (work_id, owner),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _publish_draft_entity(
+    conn,
+    kind: Kind,
+    draft: dict,
+    owner: str,
+    admin_id: str,
+    reuse_id: str | None,
+    actor: str,
+) -> str:
+    """把单条草稿发布/复用到公共星云;已发布直接返回现有公共 id。
+
+    返回公共行 id;审计 create / llm_publish / llm_reuse 留痕。
+    """
+    existing = draft.get("published_to_id")
+    if existing:
+        return existing
+    now = db_sqlite.now_iso()
+    reuse_id = (reuse_id or "").strip() or None
+    if reuse_id:
+        target = sqlite_store.get_row(conn, kind, reuse_id)
+        if target is None or target.get("deletedAt") or target.get("owner_id") not in (admin_id, None):
+            raise HTTPException(status_code=404, detail="复用目标在公共星云不存在或已删除")
+        sqlite_store.update_row(
+            conn, kind, draft["id"], draft, owner_id=owner,
+            extra={"published_to_id": reuse_id, "reviewStatus": "reviewed", "updatedAt": now},
+        )
+        db_sqlite.audit(
+            conn, "llm_reuse", kind, draft["id"],
+            f"复用公共记录发布「{_label(kind, draft)}」→ #{reuse_id}",
+            before=draft,
+            after={**draft, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
+            actor=actor,
+        )
+        return reuse_id
+
+    public_row = _public_payload(conn, kind, draft, owner, admin_id)
+    errors = validate_row(conn, kind, public_row, owner_id=admin_id)
+    if errors:
+        raise HTTPException(status_code=409, detail="校验失败:\n- " + "\n".join(errors))
+    sqlite_store.insert_row(conn, kind, public_row, owner_id=admin_id, extra={"created_by": "llm"})
+    if kind == "works":
+        sqlite_store.set_work_authors(
+            conn, public_row["id"], _author_id_list(public_row.get("author_id"))
+        )
+    db_sqlite.audit(
+        conn, "create", kind, public_row["id"],
+        f"AI 草稿发布「{_label(kind, public_row)}」",
+        after=public_row,
+        actor=actor,
+    )
+    sqlite_store.update_row(
+        conn, kind, draft["id"], draft, owner_id=owner,
+        extra={"published_to_id": public_row["id"], "reviewStatus": "reviewed", "updatedAt": now},
+    )
+    db_sqlite.audit(
+        conn, "llm_publish", kind, draft["id"],
+        f"草稿「{_label(kind, draft)}」发布到公共星云 → #{public_row['id']}",
+        before=draft,
+        after={**draft, "published_to_id": public_row["id"], "reviewStatus": "reviewed"},
+        actor=actor,
+    )
+    return public_row["id"]
+
+
 @router.post("/drafts/{kind}/{item_id}/approve")
 def approve_draft(
     kind: Kind,
@@ -354,56 +557,101 @@ def approve_draft(
 ) -> dict:
     """批准草稿:复制进公共星云(默认),或复用现有公共记录(reuse_id)。"""
     admin_id = user["id"]
-    staging_owner = user["id"]
-    reuse_id = ((body.reuse_id if body else None) or "").strip() or None
-    now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        staging = _staging_row(conn, kind, item_id, staging_owner)
-        if reuse_id:
-            target = sqlite_store.get_row(conn, kind, reuse_id)
-            if target is None or target.get("deletedAt") or target.get("owner_id") not in (admin_id, None):
-                raise HTTPException(status_code=404, detail="复用目标在公共星云不存在或已删除")
-            sqlite_store.update_row(
-                conn, kind, item_id, staging, owner_id=staging_owner,
-                extra={"published_to_id": reuse_id, "reviewStatus": "reviewed", "updatedAt": now},
-            )
-            db_sqlite.audit(
-                conn, "llm_reuse", kind, item_id,
-                f"复用公共记录发布「{_label(kind, staging)}」→ #{reuse_id}",
-                before=staging,
-                after={**staging, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
-                actor=user["email"],
-            )
-            return {"ok": True, "mode": "reuse", "public_id": reuse_id}
-
-        public_row = _public_payload(conn, kind, staging, staging_owner, admin_id)
-        errors = validate_row(conn, kind, public_row, owner_id=admin_id)
-        if errors:
-            raise HTTPException(status_code=409, detail="校验失败:\n- " + "\n".join(errors))
-        sqlite_store.insert_row(
-            conn, kind, public_row, owner_id=admin_id, extra={"created_by": "llm"},
-        )
-        if kind == "works":
-            sqlite_store.set_work_authors(conn, public_row["id"], _author_id_list(public_row.get("author_id")))
-        db_sqlite.audit(
-            conn, "create", kind, public_row["id"],
-            f"AI 草稿发布「{_label(kind, public_row)}」",
-            after=public_row,
-            actor=user["email"],
-        )
-        sqlite_store.update_row(
-            conn, kind, item_id, staging, owner_id=staging_owner,
-            extra={"published_to_id": public_row["id"], "reviewStatus": "reviewed", "updatedAt": now},
-        )
-        db_sqlite.audit(
-            conn, "llm_publish", kind, item_id,
-            f"草稿「{_label(kind, staging)}」发布到公共星云 → #{public_row['id']}",
-            before=staging,
-            after={**staging, "published_to_id": public_row["id"], "reviewStatus": "reviewed"},
-            actor=user["email"],
+        staging = _staging_row(conn, kind, item_id, user["id"])
+        reuse_id = ((body.reuse_id if body else None) or "").strip() or None
+        public_id = _publish_draft_entity(
+            conn, kind, staging, user["id"], admin_id, reuse_id, user["email"]
         )
     after_write(admin_id)
-    return {"ok": True, "mode": "copy", "public_id": public_row["id"]}
+    return {"ok": True, "mode": "reuse" if reuse_id else "copy", "public_id": public_id}
+
+
+@router.post("/ripples/{edge_id}/approve")
+def approve_ripple(
+    edge_id: str,
+    body: ApproveRippleBody | None = None,
+    user: dict = Depends(require_admin),  # noqa: B008
+) -> dict:
+    """批准一条涟漪:按 源作者→源作品→目标作者→目标作品→涟漪 依赖顺序建库。
+
+    已批准的依赖自动复用;body 可传各端复用目标(reuse_*_id,默认新建)。
+    """
+    admin_id = user["id"]
+    owner = user["id"]
+    body = body or ApproveRippleBody()
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        edge = _staging_row(conn, "edges", edge_id, owner)
+        src_work = sqlite_store.get_row(conn, "works", edge["source_work_id"], owner)
+        tgt_work = sqlite_store.get_row(conn, "works", edge["target_work_id"], owner)
+        if src_work is None or tgt_work is None:
+            raise HTTPException(status_code=404, detail="涟漪端点作品草稿不存在")
+        src_authors = _draft_work_authors(conn, src_work["id"], owner)
+        tgt_authors = _draft_work_authors(conn, tgt_work["id"], owner)
+        if not src_authors:
+            raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
+
+        public_ids: dict[str, Any] = {}
+        public_ids["source_authors"] = [
+            _publish_draft_entity(
+                conn, "authors", a, owner, admin_id,
+                body.reuse_source_author_id if len(src_authors) == 1 else None,
+                user["email"],
+            )
+            for a in src_authors
+        ]
+        public_ids["source_work"] = _publish_draft_entity(
+            conn, "works", src_work, owner, admin_id, body.reuse_source_work_id, user["email"]
+        )
+        public_ids["target_authors"] = [
+            _publish_draft_entity(
+                conn, "authors", a, owner, admin_id,
+                body.reuse_target_author_id if len(tgt_authors) == 1 else None,
+                user["email"],
+            )
+            for a in tgt_authors
+        ]
+        public_ids["target_work"] = _publish_draft_entity(
+            conn, "works", tgt_work, owner, admin_id, body.reuse_target_work_id, user["email"]
+        )
+        public_ids["edge"] = _publish_draft_entity(
+            conn, "edges", edge, owner, admin_id, body.reuse_edge_id, user["email"]
+        )
+    after_write(admin_id)
+    return {"ok": True, "public_ids": public_ids}
+
+
+@router.post("/source/{work_id}/approve")
+def approve_source(
+    work_id: str,
+    body: ApproveSourceBody | None = None,
+    user: dict = Depends(require_admin),  # noqa: B008
+) -> dict:
+    """批准无涟漪批次的源书(作者+作品),--no-ripples 导入使用。"""
+    admin_id = user["id"]
+    owner = user["id"]
+    body = body or ApproveSourceBody()
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        work = _staging_row(conn, "works", work_id, owner)
+        authors = _draft_work_authors(conn, work["id"], owner)
+        if not authors:
+            raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
+        author_ids = [
+            _publish_draft_entity(
+                conn, "authors", a, owner, admin_id,
+                body.reuse_author_id if len(authors) == 1 else None,
+                user["email"],
+            )
+            for a in authors
+        ]
+        work_public = _publish_draft_entity(
+            conn, "works", work, owner, admin_id, body.reuse_work_id, user["email"]
+        )
+    after_write(admin_id)
+    return {
+        "ok": True,
+        "public_ids": {"source_authors": author_ids, "source_work": work_public},
+    }
 
 
 @router.post("/drafts/{kind}/{item_id}/reject")

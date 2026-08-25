@@ -224,11 +224,14 @@ class BookImportTest(unittest.TestCase):
         self.assertEqual(task["result"]["counts"]["staged"], 5)  # 2 作者(源书+涟漪) + 2 作品(源书+提及) + 1 涟漪
         self.assertEqual(task["result"]["counts"]["failed"], 0)
 
-        # 草稿已写入 system_llm 空间
+        # 草稿已写入上传者的 AI 草稿区(按批次分组)
         drafts = llm_drafts(self.admin)
-        self.assertEqual(drafts["staging"]["counts"]["authors"], 2)
-        self.assertEqual(drafts["staging"]["counts"]["works"], 2)
-        self.assertEqual(drafts["staging"]["counts"]["edges"], 1)
+        self.assertEqual(drafts["counts"]["batches"], 1)
+        self.assertEqual(drafts["counts"]["ripples"], 1)
+        self.assertEqual(drafts["counts"]["published"], 0)
+        src = drafts["batches"][0]["source"]
+        self.assertEqual(src["work"]["Title_CN"], "测试之书")
+        self.assertEqual(len(drafts["batches"][0]["ripples"]), 1)
 
         # 批次登记簿已保存到临时 BATCH_DIR
         self.assertTrue(book_import.llm_space.batch_path(task["result"]["batch_id"]).exists())

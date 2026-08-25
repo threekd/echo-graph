@@ -134,12 +134,40 @@ export interface BookImportTask {
 }
 
 export interface LlmDraftsData {
-  staging: AdminData;
-  hints: {
-    authors: Record<string, DedupeHint | null>;
-    works: Record<string, DedupeHint | null>;
-    edges: Record<string, DedupeHint | null>;
+  batches: LlmDraftBatch[];
+  published: {
+    kind: "authors" | "works" | "edges";
+    id: string;
+    label: string;
+    public_id: string;
+  }[];
+  counts: {
+    batches: number;
+    ripples: number;
+    published: number;
   };
   public_counts: { authors: number; works: number };
+}
+
+export interface LlmDraftBatch {
+  source: {
+    work: WorkRow;
+    authors: AuthorRow[];
+    hint?: DedupeHint | null;
+    author_hint?: DedupeHint | null;
+  };
+  ripples: LlmDraftRipple[];
+  created_at: string;
+}
+
+export interface LlmDraftRipple {
+  edge: EdgeRow;
+  target: {
+    work: WorkRow;
+    authors: AuthorRow[];
+  } | null;
+  hint?: DedupeHint | null;
+  author_hint?: DedupeHint | null;
+  edge_hint?: DedupeHint | null;
 }
 

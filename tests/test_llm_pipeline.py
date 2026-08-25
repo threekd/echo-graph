@@ -17,7 +17,11 @@ from fastapi import HTTPException
 from app import auth, data_store, db_sqlite
 from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from app.llm_review import (
+    ApproveRippleBody,
+    ApproveSourceBody,
     approve_draft,
+    approve_ripple,
+    approve_source,
     clear_drafts,
     llm_drafts,
     reject_draft,
@@ -114,55 +118,47 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(len(batch["items"]), 5)  # 2 作者 + 2 作品 + 1 涟漪
         return batch
 
-    def test_stage_approve_publish_roundtrip(self) -> None:
+    def test_stage_approve_ripple_roundtrip(self) -> None:
+        """草稿按批次分组;涟漪单独批准,依赖按 作者→作品→涟漪 自动建库。"""
         batch = self._batch()
         counts = review_publish.stage_batch(batch, self.owner)
         self.assertEqual(counts["staged"], 5)
         self.assertEqual(counts["failed"], 0)
 
         drafts = llm_drafts(self.admin)
-        self.assertEqual(drafts["staging"]["counts"]["authors"], 2)
-        self.assertEqual(drafts["staging"]["counts"]["works"], 2)
-        self.assertEqual(drafts["staging"]["counts"]["edges"], 1)
+        self.assertEqual(drafts["counts"], {"batches": 1, "ripples": 1, "published": 0})
+        b = drafts["batches"][0]
+        src = b["source"]
+        self.assertEqual(src["work"]["Title_CN"], "测试之书")
+        self.assertEqual([a["Name_CN"] for a in src["authors"]], ["测试作者"])
+        self.assertEqual(len(b["ripples"]), 1)
+        ripple = b["ripples"][0]
+        self.assertEqual(ripple["target"]["work"]["Title_CN"], "白鲸")
+        self.assertEqual(ripple["edge"]["evidenceSource"], "第一章")
+        self.assertIsNone(ripple["hint"])  # 空库无去重提示
 
         admin_user = {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"}
-        staging = drafts["staging"]
 
-        # 依赖守卫:作者未批准时,作品批准应 409
-        first_work = staging["works"][0]
+        # 依赖守卫(per-kind 兼容路径):作者未批准时,作品批准应 409
         with self.assertRaises(HTTPException) as ctx:
-            approve_draft("works", first_work["id"], None, admin_user)
+            approve_draft("works", src["work"]["id"], None, admin_user)
         self.assertEqual(ctx.exception.status_code, 409)
 
-        # 驳回 / 重开(批准前;驳回保留草稿行)
-        a0 = staging["authors"][0]
-        reject_draft("authors", a0["id"], admin_user)
+        # 驳回 / 重开涟漪(批准前;驳回保留草稿行)
+        edge_id = ripple["edge"]["id"]
+        reject_draft("edges", edge_id, admin_user)
         drafts2 = llm_drafts(self.admin)
-        row = next(x for x in drafts2["staging"]["authors"] if x["id"] == a0["id"])
-        self.assertEqual(row["reviewStatus"], "rejected")
-        reopen_draft("authors", a0["id"], admin_user)
-        self.assertEqual(
-            llm_drafts(self.admin)["staging"]["counts"]["authors"], 2
-        )
+        edge2 = drafts2["batches"][0]["ripples"][0]["edge"]
+        self.assertEqual(edge2["reviewStatus"], "rejected")
+        reopen_draft("edges", edge_id, admin_user)
 
-        # 按 作者 → 作品 → 涟漪 顺序批准(空库无复用目标,全部 copy)
-        for a in staging["authors"]:
-            r = approve_draft("authors", a["id"], None, admin_user)
-            self.assertEqual(r["mode"], "copy")
-        for w in staging["works"]:
-            r = approve_draft("works", w["id"], None, admin_user)
-            self.assertEqual(r["mode"], "copy")
-        for e in staging["edges"]:
-            r = approve_draft("edges", e["id"], None, admin_user)
-            self.assertEqual(r["mode"], "copy")
+        # 批准涟漪:单事务内 源作者→源作品→目标作者→目标作品→涟漪 全部建库
+        r = approve_ripple(edge_id, ApproveRippleBody(), admin_user)
+        self.assertEqual(len(r["public_ids"]["source_authors"]), 1)
+        self.assertEqual(len(r["public_ids"]["target_authors"]), 1)
+        self.assertIsNotNone(r["public_ids"]["edge"])
 
-        # 已发布草稿不可重复发布
-        w1 = staging["works"][0]
-        with self.assertRaises(HTTPException) as ctx:
-            approve_draft("works", w1["id"], None, admin_user)
-        self.assertEqual(ctx.exception.status_code, 409)
-
-        # 公共星云落库校验:2 作者 / 2 作品 / 1 涟漪,草稿行回写 published_to_id
+        # 公共星云落库校验:2 作者 / 2 作品 / 1 涟漪;草稿行回写 published_to_id
         with db_sqlite._db() as conn:
             pub_a = conn.execute(
                 "SELECT count(*) c FROM authors WHERE owner_id = ? AND deletedAt IS NULL"
@@ -179,7 +175,7 @@ class LlmPipelineTest(unittest.TestCase):
                 f" AND {db_sqlite.ai_draft_clause(negate=True)}",
                 (self.admin["id"],),
             ).fetchone()["c"]
-            published = conn.execute(
+            draft_published = conn.execute(
                 "SELECT count(*) c FROM works WHERE owner_id = ?"
                 " AND published_to_id IS NOT NULL",
                 (self.owner,),
@@ -189,8 +185,17 @@ class LlmPipelineTest(unittest.TestCase):
                 " WHERE action IN ('llm_ingest', 'llm_publish', 'llm_reuse')"
             ).fetchone()["c"]
         self.assertEqual((pub_a, pub_w, pub_e), (2, 2, 1))
-        self.assertEqual(published, 2)
+        self.assertEqual(draft_published, 2)
         self.assertGreater(llm_audit, 0)
+
+        # 已发布折叠区:作者2 + 作品2 + 涟漪1 = 5 条
+        after = llm_drafts(self.admin)
+        self.assertEqual(after["counts"]["published"], 5)
+
+        # 已发布涟漪不可重复批准
+        with self.assertRaises(HTTPException) as ctx:
+            approve_ripple(edge_id, ApproveRippleBody(), admin_user)
+        self.assertEqual(ctx.exception.status_code, 409)
 
     def test_build_batch_uses_enriched_ripple_author(self) -> None:
         """涟漪作者补全后:build_batch 使用完整记录(国籍/生卒年),入库草稿带全字段。"""
@@ -310,19 +315,19 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(src_author_labels, ["测试作者"])
 
     def test_clear_drafts_soft_deletes_all(self) -> None:
-        """清空 AI 草稿:软删除 system_llm 空间全部草稿,公共数据不受影响,审计留痕。"""
+        """清空 AI 草稿:软删除当前 admin 上传的全部草稿,公共数据不受影响,审计留痕。"""
         batch = self._batch()
         review_publish.stage_batch(batch, self.owner)
-        before = llm_drafts(self.admin)["staging"]["counts"]
-        self.assertEqual((before["authors"], before["works"], before["edges"]), (2, 2, 1))
+        before = llm_drafts(self.admin)["counts"]
+        self.assertEqual((before["batches"], before["ripples"], before["published"]), (1, 1, 0))
 
         admin = {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"}
         result = clear_drafts(admin)
         self.assertTrue(result["ok"])
         self.assertEqual(result["counts"], {"authors": 2, "works": 2, "edges": 1})
 
-        after = llm_drafts(self.admin)["staging"]["counts"]
-        self.assertEqual((after["authors"], after["works"], after["edges"]), (0, 0, 0))
+        after = llm_drafts(self.admin)["counts"]
+        self.assertEqual((after["batches"], after["ripples"], after["published"]), (0, 0, 0))
         with db_sqlite._db() as conn:
             deleted = conn.execute(
                 "SELECT count(*) c FROM works WHERE owner_id = ? AND deletedAt IS NOT NULL",
@@ -356,12 +361,86 @@ class LlmPipelineTest(unittest.TestCase):
 
         drafts_a = llm_drafts(self.admin)
         drafts_b = llm_drafts(owner_b)
-        labels_a = {r["Name_CN"] for r in drafts_a["staging"]["authors"]}
-        labels_b = {r["Name_CN"] for r in drafts_b["staging"]["authors"]}
+
+        def author_labels(drafts: dict) -> set[str]:
+            labels: set[str] = set()
+            for b in drafts["batches"]:
+                for a in b["source"]["authors"]:
+                    labels.add(a["Name_CN"])
+                for r in b["ripples"]:
+                    for a in (r["target"] or {}).get("authors", []):
+                        labels.add(a["Name_CN"])
+            return labels
+
+        labels_a = author_labels(drafts_a)
+        labels_b = author_labels(drafts_b)
         self.assertIn("测试作者", labels_a)
         self.assertNotIn("作者B", labels_a)
         self.assertIn("作者B", labels_b)
         self.assertNotIn("测试作者", labels_b)
+
+    def test_approve_ripple_reuses_existing_target_work(self) -> None:
+        """涟漪批准支持复用现有公共作品(去重命中时),目标作品草稿映射到被复用行。"""
+        batch = self._batch()
+        review_publish.stage_batch(batch, self.owner)
+        # 预置公共作品「白鲸」(admin 空间,reviewed)
+        with db_sqlite._db() as conn:
+            existing = db_sqlite.new_uuid()
+            now = db_sqlite.now_iso()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'en', 'Moby Dick', '白鲸', 'reviewed', 'curated', ?, ?, ?)",
+                (existing, self.admin["id"], now, now),
+            )
+
+        drafts = llm_drafts(self.admin)
+        ripple = drafts["batches"][0]["ripples"][0]
+        self.assertIsNotNone(ripple["hint"])  # 目标作品白鲸命中公共记录
+        r = approve_ripple(
+            ripple["edge"]["id"],
+            ApproveRippleBody(reuse_target_work_id=existing),
+            {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"},
+        )
+        self.assertEqual(r["public_ids"]["target_work"], existing)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id FROM works WHERE id = ? AND owner_id = ?",
+                (ripple["target"]["work"]["id"], self.owner),
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], existing)
+
+    def test_approve_source_no_ripples(self) -> None:
+        """无涟漪批次:批准源书(作者+作品)即可发布。"""
+        extract = _synthetic_extract()
+        extract["ripples"] = []
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
+        report = dedupe_check.run_dedupe(
+            work_cands, author_cands, db_path=str(self.db_path), basic_only=True, llm_confirm=False
+        )
+        batch = review_publish.build_batch(
+            extract, report, db_path=str(self.db_path), owner_id=self.owner
+        )
+        review_publish.stage_batch(batch, self.owner)
+
+        drafts = llm_drafts(self.admin)
+        self.assertEqual(drafts["counts"], {"batches": 1, "ripples": 0, "published": 0})
+        src = drafts["batches"][0]["source"]
+        r = approve_source(
+            src["work"]["id"],
+            ApproveSourceBody(),
+            {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"},
+        )
+        self.assertEqual(len(r["public_ids"]["source_authors"]), 1)
+        after = llm_drafts(self.admin)
+        self.assertEqual(after["counts"]["published"], 2)  # 源书作者 + 源书作品
+        with db_sqlite._db() as conn:
+            pub_w = conn.execute(
+                "SELECT count(*) c FROM works WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {db_sqlite.ai_draft_clause(negate=True)}",
+                (self.admin["id"],),
+            ).fetchone()["c"]
+        self.assertEqual(pub_w, 1)
 
     def test_legacy_shared_drafts_migrated_to_bootstrap_admin(self) -> None:
         """旧 system_llm 共享草稿一次性迁移到引导管理员,并删除空账号。"""

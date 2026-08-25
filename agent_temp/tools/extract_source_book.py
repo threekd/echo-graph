@@ -31,7 +31,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -233,6 +233,7 @@ def call_llm(
     *,
     model: str,
     stage: str,
+    on_log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """调用一次 LLM 并解析 JSON 结果。"""
     messages = [
@@ -242,7 +243,7 @@ def call_llm(
     log(f"阶段 {stage}:调用 DeepSeek(模型 {model},深度思考 {'开' if THINKING else '关'})...")
     try:
         content, reasoning_content = stream_completion(
-            client, messages, model=model, thinking=THINKING
+            client, messages, model=model, thinking=THINKING, on_log=on_log
         )
     except Exception as exc:
         log(f"阶段 {stage} API 调用失败:{type(exc).__name__}: {exc}")
@@ -265,8 +266,13 @@ def run_extract(
     model: str | None = None,
     calibre_path: str | None = None,
     dry_run: bool = False,
+    on_log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """执行完整提取流程,返回结果 dict(不写文件;CLI 与 pipeline_ingest 共用)。"""
+    """执行完整提取流程,返回结果 dict(不写文件;CLI 与 pipeline_ingest 共用)。
+
+    on_log 可选:LLM 推理进度(「思考中... 已接收 N 字符」)回调,供
+    app/book_import 写入任务日志在前端展示。
+    """
     reader = ReadBook(calibre_convert_path=calibre_path)
 
     # 1. 源书元信息(支持人工覆盖)
@@ -320,6 +326,7 @@ def run_extract(
         author_work_payload,
         model=model_name,
         stage="A 作者/作品",
+        on_log=on_log,
     )
 
     # 6. 阶段 B:涟漪(书内提及 → 真实作品 + 证据)
@@ -336,6 +343,7 @@ def run_extract(
             ripple_payload,
             model=model_name,
             stage="B 涟漪",
+            on_log=on_log,
         )
         result["ripples"] = ripple_result.get("ripples", [])
         result["ripple_skipped"] = ripple_result.get("skipped", {})

@@ -8,6 +8,7 @@ import AuditPanel from "./admin/AuditPanel";
 import LlmDraftsPanel from "./admin/LlmDraftsPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
+import ImportBookModal from "./admin/ImportBookModal";
 import { refreshSpaceGraph } from "../lib/graph";
 import {
   authorLabelOf,
@@ -110,6 +111,7 @@ export default function Admin() {
   const [warnings, setWarnings] = useState<AdminData["warnings"] | null>(null);
   // { mode: "add" | "edit", row: 表单初始值(编辑时为完整行) }
   const [modal, setModal] = useState<{ mode: "add" | "edit"; row: Partial<AdminRow> } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
@@ -382,7 +384,12 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "audit" && kind !== "snapshots" && kind !== "llm" && <button onClick={openAdd}>＋ 新增</button>}
+            {kind !== "audit" && kind !== "snapshots" && kind !== "llm" && (
+            <>
+              {isAdmin && <button onClick={() => setImportOpen(true)}>导入</button>}
+              <button onClick={openAdd}>＋ 新增</button>
+            </>
+          )}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -492,6 +499,14 @@ export default function Admin() {
             refreshGraphAfterWrite();
           }}
           onDelete={modal.mode === "edit" ? () => doDelete(modal.row as AdminRow) : undefined}
+        />
+      )}
+
+      {importOpen && (
+        <ImportBookModal
+          authFetch={authFetch}
+          onClose={() => setImportOpen(false)}
+          onStatus={setStatus}
         />
       )}
     </div>

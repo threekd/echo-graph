@@ -99,6 +99,20 @@ export interface DedupeHint {
   existing_label: string;
 }
 
+// 书籍导入任务:/api/admin/import-book 提交与轮询响应形状
+export interface BookImportTask {
+  task_id: string;
+  status: "queued" | "running" | "done" | "error";
+  stage: string;
+  log: string[];
+  result: {
+    batch_id: string;
+    extracted: { authors: number; works: number; edges: number };
+    counts: { staged: number; already: number; failed: number };
+  } | null;
+  error: string | null;
+}
+
 export interface LlmDraftsData {
   staging: AdminData;
   hints: {

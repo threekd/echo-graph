@@ -15,11 +15,11 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 
-from agent_temp.tools.common import load_dotenv_once
+from agent_temp.tools.common import load_dotenv_once, utf8_stdout
 
 # 导入即加载 .env,保证下面的 MODEL / THINKING 能读到项目配置覆盖
 load_dotenv_once()
@@ -78,8 +78,15 @@ def stream_completion(
     *,
     model: str = MODEL,
     thinking: bool = THINKING,
+    on_log: Callable[[str], None] | None = None,
 ) -> tuple[str, str]:
-    """调用模型并实时显示流式输出,返回 (content, reasoning_content)。"""
+    """调用模型并实时显示流式输出,返回 (content, reasoning_content)。
+
+    on_log 可选:推理进度每到达一个汇报点(REASONING_PROGRESS_INTERVAL 字符),
+    除了打印到控制台外,也会调用 on_log(行文本),供 Web 端把「思考中...
+    已接收 N 字符」同步展示到前端。
+    """
+    utf8_stdout()
     request_options: dict[str, Any] = {}
     if thinking:
         request_options["extra_body"] = {"thinking": {"type": "enabled"}}
@@ -106,7 +113,10 @@ def stream_completion(
         if delta_reasoning:
             reasoning_content += delta_reasoning
             if len(reasoning_content) - last_reported >= REASONING_PROGRESS_INTERVAL:
-                print(f"  思考中... 已接收 {len(reasoning_content)} 字符", flush=True)
+                line = f"  思考中... 已接收 {len(reasoning_content)} 字符"
+                print(line, flush=True)
+                if on_log is not None:
+                    on_log(line)
                 last_reported = len(reasoning_content)
 
         if delta_content:

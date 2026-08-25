@@ -31,7 +31,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.ai_assistant.tools import dedupe_check, extract_source_book, llm_space, review_publish
+from app.ai_assistant.tools import (
+    dedupe_check,
+    entity_extract,
+    extract_source_book,
+    llm_space,
+    review_publish,
+)
 from app.auth import require_admin
 
 router = APIRouter(
@@ -120,6 +126,14 @@ def _run_import(
             no_ripples=no_ripples,
             on_log=_task_log_hook(task_id),
         )
+        try:
+            n_enriched = entity_extract.enrich_ripple_authors(
+                extracted, on_log=lambda line: _append_log(task_id, line)
+            )
+            if n_enriched:
+                _append_log(task_id, f"涟漪作者补全:{n_enriched} 位(国籍/生卒年等),并入去重候选")
+        except Exception as exc:  # noqa: BLE001 - 补全失败降级为未补全作者,不阻断管线
+            _append_log(task_id, f"⚠ 涟漪作者补全失败:{type(exc).__name__}: {exc}")
         n_auth = len(extracted.get("authors") or [])
         n_ripple = len(extracted.get("ripples") or [])
         src = extracted.get("work") or {}

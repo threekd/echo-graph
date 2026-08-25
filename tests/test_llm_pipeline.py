@@ -187,6 +187,64 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(published, 2)
         self.assertGreater(llm_audit, 0)
 
+    def test_build_batch_uses_enriched_ripple_author(self) -> None:
+        """涟漪作者补全后:build_batch 使用完整记录(国籍/生卒年),入库草稿带全字段。"""
+        extract = _synthetic_extract()
+        ripple_author = {
+            "originalName": "Herman Melville",
+            "Name_CN": "赫尔曼·梅尔维尔",
+            "Name_EN": "Herman Melville",
+            "nationality": "US",
+            "birthYear": 1819,
+            "deathYear": 1891,
+            "note": "美国小说家。",
+        }
+        # 模拟 enrich_ripple_authors 的效果:author_info 写回涟漪 + 并入 extract["authors"]
+        extract["ripples"][0]["work"]["author_info"] = ripple_author
+        extract["authors"].append(ripple_author)
+
+        # 涟漪作者进入去重候选(基础匹配)
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
+        self.assertEqual(len(author_cands), 2)
+        report = dedupe_check.run_dedupe(
+            work_cands,
+            author_cands,
+            db_path=str(self.db_path),
+            basic_only=True,
+            llm_confirm=False,
+        )
+
+        batch = review_publish.build_batch(
+            extract, report, db_path=str(self.db_path), owner_id=self.owner
+        )
+        author_items = [it for it in batch["items"] if it["kind"] == "author"]
+        mel = next(it for it in author_items if it["payload"].get("Name_CN") == "赫尔曼·梅尔维尔")
+        self.assertEqual(mel["payload"]["nationality"], "US")
+        self.assertEqual(mel["payload"]["birthYear"], 1819)
+        self.assertEqual(mel["payload"]["deathYear"], 1891)
+
+        # 入库草稿:作者行带国籍/生卒年,涟漪作品仍正确关联该作者
+        counts = review_publish.stage_batch(batch, self.owner)
+        self.assertEqual(counts["failed"], 0)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT nationality, birthYear, deathYear FROM authors"
+                " WHERE owner_id = ? AND Name_CN = ?",
+                (self.owner, "赫尔曼·梅尔维尔"),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(
+                (row["nationality"], row["birthYear"], row["deathYear"]),
+                ("US", 1819, 1891),
+            )
+            wa = conn.execute(
+                "SELECT count(*) c FROM work_authors wa"
+                " JOIN works w ON w.id = wa.work_id"
+                " WHERE w.owner_id = ? AND w.Title_CN = ?",
+                (self.owner, "白鲸"),
+            ).fetchone()
+            self.assertGreater(wa["c"], 0)
+
     def test_stage_marks_failed_item(self) -> None:
         """坏数据条目单条失败不中断整批(stage_batch 的容错)。"""
         batch = self._batch()

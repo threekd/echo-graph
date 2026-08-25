@@ -31,7 +31,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from app import db_sqlite  # noqa: E402
-from app.ai_assistant.tools import dedupe_check, extract_source_book, llm_space, review_publish  # noqa: E402
+from app.ai_assistant.tools import (  # noqa: E402
+    dedupe_check,
+    entity_extract,
+    extract_source_book,
+    llm_space,
+    review_publish,
+)
 from app.ai_assistant.tools.common import DEFAULT_BOOK, log, write_json  # noqa: E402
 
 _TOOLS_DIR = Path(__file__).resolve().parent
@@ -152,6 +158,12 @@ def main() -> None:
         model=args.model,
         calibre_path=args.calibre_path,
     )
+    try:
+        n_auth = entity_extract.enrich_ripple_authors(result)
+        if n_auth:
+            log(f"涟漪作者补全:{n_auth} 位(国籍/生卒年等),并入去重候选")
+    except Exception as exc:  # noqa: BLE001 - 补全失败降级为未补全作者,不阻断管线
+        log(f"⚠ 涟漪作者补全失败(以未补全状态继续):{type(exc).__name__}: {exc}")
     write_json(extract_out, result)
     log(
         f"提取结果:作者 {len(result.get('authors') or [])} "

@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 AI_ASSISTANT_DIR = REPO_ROOT / "app" / "ai_assistant"
 TOOLS_DIR = AI_ASSISTANT_DIR / "tools"
 # 无参数运行各 CLI 时的默认书籍
-DEFAULT_BOOK = AI_ASSISTANT_DIR / "books" / "三体.epub"
+DEFAULT_BOOK = AI_ASSISTANT_DIR / "books" / "遇到百分之百的女孩.epub"
 
 # 允许以「uv run python -m app.ai_assistant.tools.<tool>」从仓库根目录运行
 if str(REPO_ROOT) not in sys.path:

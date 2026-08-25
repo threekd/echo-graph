@@ -74,6 +74,13 @@ class BookImportTest(unittest.TestCase):
         self.patch_db.start()
         self.addCleanup(self.patch_db.stop)
 
+        # 涟漪作者补全(LLM)由 entity_extract / llm_pipeline 单测覆盖,此处隔离避免测试触网
+        self.patch_enrich = patch.object(
+            book_import.entity_extract, "enrich_ripple_authors", return_value=0
+        )
+        self.patch_enrich.start()
+        self.addCleanup(self.patch_enrich.stop)
+
         self.patch_email = patch.object(auth, "BOOTSTRAP_EMAIL", _ADMIN_EMAIL)
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)

@@ -13,7 +13,8 @@ authors / works / edges 表结构(见 docs/data_schema.md)的 JSON:
 1. 用 read_book.ReadBook.read_book_info() 读取 EPUB 元数据(书名、作者、语言)
 2. 用 read_book 识别书内提到的其他书名(带上下文与章节)
 3. (可选)截取正文开头样本,帮助作者/作品提取确认内容与语言
-4. 阶段 A:调用 DeepSeek 输出源书作者 + 作品
+4. 阶段 A1/A2:分别调用 DeepSeek 输出源书作者(A1)与源书作品(A2),
+   作品阶段附带作者结果辅助判断原著语言
 5. 阶段 B:调用 DeepSeek 把书内提及分类为真实作品并输出涟漪(含证据)
 
 核心入口:run_extract() 供 pipeline_ingest 进程内复用;CLI 只做参数解析与落盘。
@@ -210,13 +211,27 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_author_work_payload(
+def build_author_payload(
     source_info: dict[str, object], content_sample: str
 ) -> dict[str, object]:
-    """阶段 A payload:源书元信息 + 可选正文样本。"""
+    """阶段 A1 payload:源书元信息 + 可选正文样本(提取作者)。"""
     payload: dict[str, object] = {"source_book": source_info}
     if content_sample:
         payload["content_sample"] = content_sample
+    return payload
+
+
+def build_work_payload(
+    source_info: dict[str, object],
+    content_sample: str,
+    authors: list[dict[str, object]],
+) -> dict[str, object]:
+    """阶段 A2 payload:源书元信息 + 可选正文样本 + 已提取作者记录(辅助判断原著语言)。"""
+    payload: dict[str, object] = {"source_book": source_info}
+    if content_sample:
+        payload["content_sample"] = content_sample
+    if authors:
+        payload["author_info"] = authors
     return payload
 
 
@@ -303,12 +318,13 @@ def run_extract(
         log(f"提取正文样本(前 {content_chars} 字符)...")
         content_sample = reader.read(str(book_path), max_chars=content_chars)
 
-    author_work_payload = build_author_work_payload(source_info, content_sample)
+    author_payload = build_author_payload(source_info, content_sample)
     ripple_payload = build_ripple_payload(source_info, mentions) if not no_ripples else None
 
     if dry_run:
         preview: dict[str, object] = {"source_book": source_info}
-        preview["author_work_payload"] = author_work_payload
+        preview["author_payload"] = author_payload
+        preview["work_payload"] = build_work_payload(source_info, content_sample, [])
         if ripple_payload is not None:
             preview["ripple_payload"] = ripple_payload
             preview["ripple_payload"]["mentions_count"] = len(mentions)
@@ -320,21 +336,33 @@ def run_extract(
     client = create_client(api_key, base_url)
     model_name = model or MODEL
 
-    # 5. 阶段 A:作者 + 作品
-    author_work = call_llm(
+    # 5. 阶段 A1:作者(单独提取,输出 authors 数组)
+    author_result = call_llm(
         client,
-        prompts.AUTHOR_WORK_SYSTEM_PROMPT,
-        author_work_payload,
+        prompts.AUTHOR_SYSTEM_PROMPT,
+        author_payload,
         model=model_name,
-        stage="A 作者/作品",
+        stage="A1 作者",
         on_log=on_log,
     )
 
-    # 6. 阶段 B:涟漪(书内提及 → 真实作品 + 证据)
+    # 6. 阶段 A2:作品(附带已提取作者,辅助判断原著语言)
+    authors = author_result.get("authors", [])
+    work_payload = build_work_payload(source_info, content_sample, authors)
+    work_result = call_llm(
+        client,
+        prompts.WORK_SYSTEM_PROMPT,
+        work_payload,
+        model=model_name,
+        stage="A2 作品",
+        on_log=on_log,
+    )
+
+    # 7. 阶段 B:涟漪(书内提及 → 真实作品 + 证据)
     result: dict[str, Any] = {
         "source_book": source_info,
-        "authors": author_work.get("authors", []),
-        "work": author_work.get("work", {}),
+        "authors": authors,
+        "work": work_result.get("work", {}),
         "ripples": [],
     }
     if ripple_payload is not None:

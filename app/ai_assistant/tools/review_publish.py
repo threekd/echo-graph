@@ -287,11 +287,20 @@ def build_dedupe_info(
 # ======================================================================
 # 批次构建（make-batch）
 # ======================================================================
+# authors 表字段白名单(涟漪作者补全与 _author_payload 共用)
+AUTHOR_FIELDS = (
+    "originalName",
+    "Name_CN",
+    "Name_EN",
+    "nationality",
+    "birthYear",
+    "deathYear",
+    "note",
+)
+
+
 def _author_payload(a: dict[str, Any]) -> dict[str, Any]:
-    return {
-        k: a.get(k)
-        for k in ("originalName", "Name_CN", "Name_EN", "nationality", "birthYear", "deathYear", "note")
-    }
+    return {k: a.get(k) for k in AUTHOR_FIELDS}
 
 
 def _work_payload(w: dict[str, Any], author_name: str | None = None) -> dict[str, Any]:
@@ -562,8 +571,14 @@ def build_batch(
         author_name = (w.get("author") or "").strip()
         if not author_name:
             continue
-        cn, en = _split_author_name(author_name)
-        payload = {"originalName": author_name, "Name_CN": cn, "Name_EN": en}
+        info = w.get("author_info")
+        if isinstance(info, dict) and (info.get("Name_CN") or info.get("originalName")):
+            # enrich_ripple_authors 已补全(国籍/生卒年/英文名等):直接使用完整记录
+            payload = {k: info.get(k) for k in AUTHOR_FIELDS}
+        else:
+            # 未补全(离线/兼容路径):仅拆中文名/英文名
+            cn, en = _split_author_name(author_name)
+            payload = {"originalName": author_name, "Name_CN": cn, "Name_EN": en}
         _add_author_item(items, payload, report, public)
 
     # 2) 作品：源书 + 涟漪提及作品
@@ -1045,6 +1060,17 @@ def cmd_make_batch(args: argparse.Namespace) -> None:
             raise SystemExit(f"去重报告不存在：{report_path}")
         report = read_json(report_path)
 
+    if getattr(args, "enrich_authors", False):
+        # 涟漪作者补全(国籍/生卒年等),失败不阻断批次生成
+        from app.ai_assistant.tools.entity_extract import enrich_ripple_authors
+
+        try:
+            n = enrich_ripple_authors(extract)
+            if n:
+                log(f"涟漪作者补全:{n} 位(国籍/生卒年等)")
+        except Exception as exc:  # noqa: BLE001 - 补全失败降级为未补全作者
+            log(f"⚠ 涟漪作者补全失败:{type(exc).__name__}: {exc}")
+
     owner_id = llm_space.ensure_system_llm()  # 批次归属 system_llm 专用账号（缺失则创建）
     batch = build_batch(extract, report, db_path=args.db, owner_id=owner_id)
     batch["source"]["input_file"] = str(input_path)
@@ -1198,6 +1224,7 @@ def main() -> None:
     p.add_argument("--dedupe", help="dedupe_check.py 输出报告 JSON（可选）")
     p.add_argument("--batch-id", help="自定义批次 id（默认自动生成）")
     p.add_argument("--db", default=None, help="SQLite 数据库路径（默认 data/echo-graph.db）")
+    p.add_argument("--enrich-authors", action="store_true", help="用 LLM 补全涟漪作者(国籍/生卒年等),需 DEEPSEEK 配置")
     p.set_defaults(func=cmd_make_batch)
 
     p = sub.add_parser("list", help="列出全部批次")

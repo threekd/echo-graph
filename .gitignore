@@ -24,6 +24,9 @@ backups/
 .DS_Store
 Thumbs.db
 
-# other
+# 书籍/调试输出
 app/ai_assistant/output
 app/ai_assistant/books
+
+# other
+personal_record.md

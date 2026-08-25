@@ -170,22 +170,27 @@ def llm_drafts() -> dict:
     }
     hints_e: dict[str, Any] = {}
     with db_sqlite._db() as conn:
+        # 批量取回草稿作品的发布映射,避免对每条涟漪重复查库(N+1)
+        edge_ids = [r["id"] for r in data["edges"]]
+        published_by_id: dict[str, Any] = {}
+        if edge_ids:
+            placeholders = ",".join("?" for _ in edge_ids)
+            pub_rows = conn.execute(
+                f"SELECT id, published_to_id FROM works WHERE id IN ({placeholders})"
+                " AND owner_id = ?",
+                (*edge_ids, owner),
+            ).fetchall()
+            published_by_id = {r["id"]: r["published_to_id"] for r in pub_rows}
         for r in data["edges"]:
-            src = conn.execute(
-                "SELECT published_to_id FROM works WHERE id = ? AND owner_id = ?",
-                (r.get("source_work_id"), owner),
-            ).fetchone()
-            tgt = conn.execute(
-                "SELECT published_to_id FROM works WHERE id = ? AND owner_id = ?",
-                (r.get("target_work_id"), owner),
-            ).fetchone()
-            if not (src and tgt and src["published_to_id"] and tgt["published_to_id"]):
+            src_id = published_by_id.get(r.get("source_work_id"))
+            tgt_id = published_by_id.get(r.get("target_work_id"))
+            if not (src_id and tgt_id):
                 continue
             dup = conn.execute(
                 "SELECT id, source_work_id, target_work_id FROM edges"
                 " WHERE source_work_id = ? AND target_work_id = ? AND deletedAt IS NULL"
                 " AND (owner_id = ? OR owner_id IS NULL)",
-                (src["published_to_id"], tgt["published_to_id"], admin),
+                (src_id, tgt_id, admin),
             ).fetchone()
             if dup:
                 hints_e[r["id"]] = {

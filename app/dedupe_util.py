@@ -63,16 +63,21 @@ def load_rows(
         if public_only:
             admin_id = admin_user_id()
             if admin_id:
-                owner_scope = "owner_id IN (?, NULL)"
-                works_owner_scope = "w.owner_id IN (?, NULL)"
+                # 注意:IN (?, NULL) 不匹配 owner_id IS NULL 的未认领行,
+                # 必须用 OR 形式显式包含(与 sqlite_store._owner_clause 等一致)
+                owner_scope = "(owner_id = ? OR owner_id IS NULL)"
+                works_owner_scope = "(w.owner_id = ? OR w.owner_id IS NULL)"
+                edges_owner_scope = "(e.owner_id = ? OR e.owner_id IS NULL)"
                 owner_params: tuple = (admin_id,)
             else:
                 owner_scope = "owner_id IS NULL"
                 works_owner_scope = "w.owner_id IS NULL"
+                edges_owner_scope = "e.owner_id IS NULL"
                 owner_params = ()
         else:
             owner_scope = ""
             works_owner_scope = ""
+            edges_owner_scope = ""
             owner_params = ()
         authors = [
             dict(r)
@@ -100,7 +105,6 @@ def load_rows(
                 owner_params,
             )
         ]
-        edges_owner_scope = "e." + owner_scope if owner_scope else ""
         edges = [
             dict(r)
             for r in conn.execute(

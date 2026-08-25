@@ -296,7 +296,7 @@ ls -lt backups | head -20
 | `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(公共星云所有者) | 必须配置;恢复 csv 快照依赖它 |
 | `PUBLIC_REVIEWED_ONLY` | 公开视图只显示已审核数据 | 生产开启前需先完成数据审核 |
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
-| `TURNSTILE_*` | 注册人机验证 | 不配置则注册跳过验证(仅本地) |
+| `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |
 
 ## 9. 快速命令参考

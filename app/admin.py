@@ -131,7 +131,11 @@ def admin_set_vip(
 def admin_audit(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    action: str | None = Query(None, pattern="^(create|update|delete|restore|approve|reject)$"),
+    action: str | None = Query(
+        None,
+        pattern="^(create|update|delete|restore|approve|reject|"
+        "llm_ingest|llm_publish|llm_reuse|llm_reject|llm_reopen)$",
+    ),
     kind: str | None = Query(None, pattern="^(authors|works|edges)$"),
 ) -> dict:
     """管理写操作审计记录。"""

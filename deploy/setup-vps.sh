@@ -69,6 +69,9 @@ systemctl enable echo-graph
 
 tee /etc/nginx/sites-available/echo-graph >/dev/null <<EOF
 # 由 setup-vps.sh 自动生成
+# X-Forwarded-For 直接用 \$remote_addr(单层代理):不要用
+# \$proxy_add_x_forwarded_for 追加客户端可控值,否则可伪造最左 IP
+# 绕过应用层限流(app/ratelimit.py 从右向左解析)。
 server {
     listen 80;
     server_name $DOMAIN;
@@ -76,11 +79,18 @@ server {
     root $APP_DIR/frontend/dist;
     index index.html;
 
+    # 安全响应头(HTTPS 部署时 HSTS 生效;CSP 若引入新外部资源需同步调整)
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 60s;
     }
@@ -88,6 +98,12 @@ server {
     location /assets/ {
         expires 30d;
         add_header Cache-Control "public, immutable";
+        # 子块定义 add_header 后不再继承 server 级头,需重复安全头
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'" always;
     }
 
     location / {

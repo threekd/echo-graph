@@ -17,7 +17,7 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 
 import app.main as main  # noqa: E402
-from app import auth, book_import, data_store, db_sqlite
+from app import auth, book_import, data_store, db_sqlite, ratelimit
 from app.llm_review import llm_drafts
 
 _ADMIN_EMAIL = "admin@echo.local"
@@ -84,6 +84,7 @@ class BookImportTest(unittest.TestCase):
         self.patch_email = patch.object(auth, "BOOTSTRAP_EMAIL", _ADMIN_EMAIL)
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)
+        ratelimit.clear_rate_limits()
 
         # 写入公共星云会触发 CSV 导出,重定向到临时目录避免污染仓库 data/export
         self.patch_export = patch.object(data_store, "EXPORT_DIR", Path(self.tmp.name) / "export")
@@ -192,6 +193,7 @@ class BookImportTest(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
 
     def test_http_upload_requires_admin(self) -> None:
+        """未登录调用导入接口被拒 401。"""
         client = TestClient(main.app, raise_server_exceptions=False)
         r = client.post(
             "/api/admin/import-book",
@@ -200,6 +202,7 @@ class BookImportTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 401)
 
+    def test_submit_import_direct_flow(self) -> None:
         """提交任务 → 提取(mock) → 去重 → 草稿入库,结果落 system_llm 空间。"""
         book = Path(self.tmp.name) / "测试之书.epub"
         book.write_bytes(b"fake epub bytes")  # run_extract 被 mock,不真读文件
@@ -208,7 +211,9 @@ class BookImportTest(unittest.TestCase):
             "app.ai_assistant.tools.extract_source_book.run_extract",
             return_value=_synthetic_extract(),
         ):
-            resp = book_import.submit_import(book, title="测试之书", authors=["测试作者"], basic_only=True)
+            resp = book_import.submit_import(
+                book, title="测试之书", authors=["测试作者"], basic_only=True
+            )
         task_id = resp["task_id"]
         self.assertTrue(task_id)
 
@@ -227,6 +232,110 @@ class BookImportTest(unittest.TestCase):
 
         # 批次登记簿已保存到临时 BATCH_DIR
         self.assertTrue(book_import.llm_space.batch_path(task["result"]["batch_id"]).exists())
+
+    def test_import_task_visible_only_to_owner_and_admin(self) -> None:
+        """导入任务按创建者隔离:其他 VIP 查询 404,创建者/admin 可查。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        self.assertIsNotNone(admin_id)
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        with patch(
+            "app.ai_assistant.tools.extract_source_book.run_extract",
+            return_value=_synthetic_extract(),
+        ):
+            r = client.post(
+                "/api/admin/import-book?basic_only=true",
+                content=b"fake epub bytes",
+                headers={"X-Filename": quote("测试之书.epub")},
+            )
+        self.assertEqual(r.status_code, 200, r.text)
+        task_id = r.json()["task_id"]
+        self._wait_done(task_id)
+
+        # 其他 VIP 用户查询该任务 → 404(不暴露存在性)
+        other = auth.register("vip2@test.local", "password123", username="viptwo")
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (other["id"],))
+        client2 = TestClient(main.app, raise_server_exceptions=False)
+        client2.cookies.set(auth.SESSION_COOKIE, auth.create_session(other["id"]))
+        r2 = client2.get("/api/admin/import-book/" + task_id)
+        self.assertEqual(r2.status_code, 404)
+
+        # 创建者本人(admin)可查
+        r3 = client.get("/api/admin/import-book/" + task_id)
+        self.assertEqual(r3.status_code, 200)
+
+    def test_import_rate_limited_per_user(self) -> None:
+        """每用户每小时导入次数限流(第二笔直接 429)。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        with patch.object(book_import, "IMPORT_LIMIT_PER_USER", 1):
+            with patch(
+                "app.ai_assistant.tools.extract_source_book.run_extract",
+                return_value=_synthetic_extract(),
+            ):
+                r1 = client.post(
+                    "/api/admin/import-book?basic_only=true",
+                    content=b"a",
+                    headers={"X-Filename": quote("a.epub")},
+                )
+                self.assertEqual(r1.status_code, 200, r1.text)
+                self._wait_done(r1.json()["task_id"])  # 等后台任务结束,避免遗留线程干扰后续用例
+                r2 = client.post(
+                    "/api/admin/import-book?basic_only=true",
+                    content=b"b",
+                    headers={"X-Filename": quote("b.epub")},
+                )
+                self.assertEqual(r2.status_code, 429)
+
+    def test_import_concurrency_capped(self) -> None:
+        """全局并发上限:已有 running 任务时新提交 429。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        fake_id = "fake-running-task"
+        with patch.object(book_import, "MAX_CONCURRENT_IMPORTS", 1):
+            with book_import._LOCK:
+                book_import._TASKS[fake_id] = {
+                    "task_id": fake_id,
+                    "status": "running",
+                    "user_id": admin_id,
+                }
+            try:
+                r = client.post(
+                    "/api/admin/import-book?basic_only=true",
+                    content=b"x",
+                    headers={"X-Filename": quote("x.epub")},
+                )
+                self.assertEqual(r.status_code, 429)
+            finally:
+                with book_import._LOCK:
+                    book_import._TASKS.pop(fake_id, None)
+
+    def test_upload_dir_cleaned_after_task(self) -> None:
+        """HTTP 上传的书籍文件在任务结束后被清理,避免磁盘无限增长。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        with patch(
+            "app.ai_assistant.tools.extract_source_book.run_extract",
+            return_value=_synthetic_extract(),
+        ):
+            r = client.post(
+                "/api/admin/import-book?basic_only=true",
+                content=b"fake epub bytes",
+                headers={"X-Filename": quote("测试之书.epub")},
+            )
+        self.assertEqual(r.status_code, 200, r.text)
+        task_id = r.json()["task_id"]
+        self._wait_done(task_id)
+
+        task_dir = book_import.IMPORT_DIR / task_id
+        deadline = time.monotonic() + 5
+        while task_dir.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(task_dir.exists())
 
     def test_unsupported_suffix_rejected(self) -> None:
         book = Path(self.tmp.name) / "book.pdf"

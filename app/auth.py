@@ -3,8 +3,10 @@
 - 密码:argon2id(依赖 argon2-cffi),库中只存哈希,不存明文。
 - 会话:随机 token 只放在 httpOnly + SameSite=Lax Cookie 中;数据库只存其
   SHA-256 哈希,泄露 DB 也无法伪造会话;30 天过期,登出立即失效。
-- 注册人机验证:Cloudflare Turnstile(服务端 siteverify)。未配置
-  TURNSTILE_SECRET_KEY 时跳过验证(便于本地开发),生产环境务必配置。
+- 注册人机验证:Cloudflare Turnstile(服务端 siteverify)。生产环境必须配置
+  TURNSTILE_SECRET_KEY——未配置且未显式设置 TURNSTILE_ALLOW_SKIP=1 时注册
+  按失败处理(fail-closed),避免生产漏配导致机器人可随意注册;仅本地开发
+  用 TURNSTILE_ALLOW_SKIP=1 临时放行。
 - 限流:注册/登录按 IP 滑动窗口,复用 app.ratelimit(单 worker 精确)。
 - CSRF:SameSite=Lax 之外的补充防线由全局中间件(app/security.py)统一执行——
   所有状态变更请求(含本模块的 register/login/logout/PATCH /me)带 Origin 头时
@@ -224,11 +226,25 @@ def _turnstile_siteverify(secret: str, token: str, remote_ip: str) -> bool:
 
 
 def verify_turnstile(token: str | None, remote_ip: str) -> bool:
-    """校验人机验证 token。未配置密钥时跳过(仅限本地开发)。"""
+    """校验人机验证 token。
+
+    未配置 TURNSTILE_SECRET_KEY 时默认拒绝(fail-closed);仅当显式设置
+    TURNSTILE_ALLOW_SKIP=1(本地开发)时才跳过验证。
+    """
     secret = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
     if not secret:
-        logger.warning("TURNSTILE_SECRET_KEY 未配置,注册人机验证已跳过")
-        return True
+        if os.getenv("TURNSTILE_ALLOW_SKIP", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        ):
+            logger.warning(
+                "TURNSTILE_SECRET_KEY 未配置,且 TURNSTILE_ALLOW_SKIP=1,"
+                "注册人机验证已跳过(仅限本地开发)"
+            )
+            return True
+        logger.error(
+            "TURNSTILE_SECRET_KEY 未配置,注册人机验证按失败处理(fail-closed)"
+        )
+        return False
     if not token:
         return False
     return _turnstile_siteverify(secret, token, remote_ip)

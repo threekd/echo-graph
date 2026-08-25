@@ -47,8 +47,11 @@ def _trusted_networks_list() -> list[ipaddress.ip_network]:
 def client_ip(request: Request) -> str:
     """解析限流用客户端 IP。
 
-    仅当对端地址属于可信代理列表时才取 X-Forwarded-For 的最左有效 IP;
-    否则(直连 uvicorn / 伪造头)一律使用对端地址,防伪造绕过。
+    仅当对端地址属于可信代理列表时才解析 X-Forwarded-For;解析从右向左
+    跳过可信代理段,取第一个不可信的客户端 IP(与 uvicorn 的
+    ProxyHeadersMiddleware 语义一致,客户端无法通过在左侧预置伪造值绕过
+    限流);全部为可信代理时回退最左值。直连 uvicorn(非可信对端)或伪造
+    请求头时一律使用对端地址。
     """
     peer = request.client.host if request.client else ""
     if not peer:
@@ -60,16 +63,22 @@ def client_ip(request: Request) -> str:
     if not any(peer_addr in net for net in _trusted_networks_list()):
         return peer
     xff = request.headers.get("x-forwarded-for", "")
-    for hop in xff.split(","):
-        hop = hop.strip()
-        if not hop:
-            continue
+    hops = [h.strip() for h in xff.split(",") if h.strip()]
+    valid: list[str] = []
+    for hop in hops:
         try:
             ipaddress.ip_address(hop)
-            return hop
+            valid.append(hop)
         except ValueError:
             continue
-    return peer
+    if not valid:
+        return peer
+    # 每一跳由上游代理追加到末尾,从右向左取第一个非可信 IP
+    for hop in reversed(valid):
+        hop_addr = ipaddress.ip_address(hop)
+        if not any(hop_addr in net for net in _trusted_networks_list()):
+            return hop
+    return valid[0]
 
 
 def sliding_limited(key: str, limit: int, window_seconds: float) -> bool:

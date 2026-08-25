@@ -22,7 +22,9 @@ data/export/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)�
    admin 角色并认领公共星云数据;数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
 4. **账号体系(可选但建议)**:注册接口含 Cloudflare Turnstile 人机验证——在
    Cloudflare Dashboard 创建 Site,把 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
-   写入 `.env`(未配置时注册跳过验证,仅限本地开发);HTTPS 部署请设 `COOKIE_SECURE=1`。
+   写入 `.env`(**未配置密钥时注册默认失败**,仅本地开发可设
+   `TURNSTILE_ALLOW_SKIP=1` 临时跳过,请勿在生产设置);HTTPS 部署**必须**设
+   `COOKIE_SECURE=1`(未设置时服务启动会输出告警日志)。
 
 ## 1. 准备仓库
 
@@ -97,7 +99,7 @@ SQLite 为权威库,日常更新**不再从 CSV 重建**(避免清空用户星�
 
 | 数据 | 位置 | 备份方式 |
 |---|---|---|
-| 策展数据 + 投稿 + 审计 `data/echo-graph.db` | VPS 本地 | `deploy.sh` 每次 `sqlite3 .backup` 到 `backups/`(保留 14 份);建议再 rsync 到异地 |
+| 策展数据 + 审计日志 + 用户与会话 `data/echo-graph.db` | VPS 本地 | `deploy.sh` 每次 `sqlite3 .backup` 到 `backups/`(保留 14 份);建议再 rsync 到异地 |
 | CSV 导出 `data/export/*.csv` | git 仓库 | push 到远端即备份 |
 | 编辑版本快照 `data/versions/` | VPS 本地 | `deploy.sh` 打包;建议 rsync(历史遗留,新代码不再写入) |
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
@@ -150,8 +152,10 @@ curl https://<你的域名>/api/health     # 期望 {"status":"ok","store":"sqli
 - 关注 / 取关按用户每小时限流(见 `app/follows.py`)。
 
 信任边界:`TRUSTED_PROXIES`(默认 `127.0.0.1,::1`,可在 `.env` 用逗号分隔的 IP/CIDR
-覆盖)决定是否解析 `X-Forwarded-For` 取最左客户端 IP;直连 uvicorn 或伪造请求头时
-一律使用对端地址,不依赖 uvicorn 的 `--proxy-headers` 设置。
+覆盖)决定是否解析 `X-Forwarded-For`;解析**从右向左跳过可信代理段**取第一个不可信
+客户端 IP,客户端无法通过在左侧预置伪造值绕过限流。部署模板(nginx.conf /
+setup-vps.sh)已把 `X-Forwarded-For` 直接设为 `$remote_addr`(单层代理,不再追加
+客户端可控值);直连 uvicorn 或伪造请求头时一律使用对端地址。
 
 > 早期贡献收件箱的 `/api/contribute/echo` 与对应 nginx `limit_req` zone 已随
 > contributions 移除(2026-08-24),部署模板不再包含该限流块。

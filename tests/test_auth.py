@@ -159,8 +159,14 @@ class AuthStoreTest(unittest.TestCase):
                 )
             self.assertEqual(ctx.exception.status_code, 429)
 
-    def test_turnstile_skip_without_secret(self) -> None:
+    def test_turnstile_fail_closed_without_secret(self) -> None:
+        """生产漏配密钥:注册人机验证默认失败(fail-closed,不再静默跳过)。"""
         with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(auth.verify_turnstile(None, "127.0.0.1"))
+
+    def test_turnstile_skip_only_when_explicitly_allowed(self) -> None:
+        """仅 TURNSTILE_ALLOW_SKIP=1(本地开发)时跳过验证。"""
+        with patch.dict(os.environ, {"TURNSTILE_ALLOW_SKIP": "1"}, clear=True):
             self.assertTrue(auth.verify_turnstile(None, "127.0.0.1"))
 
     def test_turnstile_requires_token_when_configured(self) -> None:
@@ -374,3 +380,27 @@ class RateLimitTest(unittest.TestCase):
             headers={"x-forwarded-for": "6.6.6.6"},
         )
         self.assertEqual(ratelimit.client_ip(req), "203.0.113.9")
+
+    def test_client_ip_from_right_to_left_skipping_trusted(self) -> None:
+        """可信对端:从右向左跳过可信代理段,取第一个不可信 IP(左侧伪造值无效)。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "6.6.6.6, 203.0.113.9"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "203.0.113.9")
+
+    def test_client_ip_all_trusted_hops_falls_back_leftmost(self) -> None:
+        """全部为可信代理时回退最左值(与 uvicorn 语义一致)。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "127.0.0.1, ::1"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "127.0.0.1")
+
+    def test_client_ip_skips_invalid_hops(self) -> None:
+        """非法 IP 跳被跳过,不影响取到有效客户端 IP。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "not-an-ip, 198.51.100.7"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "198.51.100.7")

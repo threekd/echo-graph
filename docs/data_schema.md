@@ -1,7 +1,7 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.6`(2026-08-25 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 25`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.7`(2026-08-25 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 26`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
@@ -65,9 +65,11 @@
   唯一索引 `idx_users_username` 带 `COLLATE NOCASE` |
 | `nickname` | TEXT | 否 | 昵称(展示用,优先于用户名;为空时展示名回退用户名) |
 | `bio` | TEXT | 否 | 简介(最多 500 字,应用层校验) |
+| `vip` | INTEGER | 是 | VIP 标记(0/1,默认 0):VIP 用户拥有 AI 书籍导入权限
+  (草稿仍由 admin 在「AI 草稿」页审核;由 admin 通过 `POST /api/admin/users/{id}/vip` 维护) |
 
 约束:`CHECK (role IN ('user','admin'))`、`CHECK (status IN ('active','disabled'))`、
-`CHECK (space_visibility IN ('private','public'))`。
+`CHECK (space_visibility IN ('private','public'))`、`CHECK (vip IN (0, 1))`。
 
 ### sessions 会话
 
@@ -225,7 +227,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `key` | TEXT | 是(PK) | 键,如 `schema_version` |
-| `value` | TEXT | 否 | 值,当前 `schema_version = 25` |
+| `value` | TEXT | 否 | 值,当前 `schema_version = 26` |
 
 ## 约束与索引汇总
 
@@ -272,8 +274,15 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 25);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 26);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.6 → 1.7` 变更(2026-08-25):
+
+- `users` 新增 `vip` 标记列(schema v26 迁移):布尔 0/1,默认 0;
+  VIP 用户拥有 AI 书籍导入权限(`/api/admin/import-book`),
+  草稿仍由 admin 在「AI 草稿」页审核;由 admin 接口
+  `POST /api/admin/users/{user_id}/vip` 维护。
 
 `1.5 → 1.6` 变更(2026-08-25):
 

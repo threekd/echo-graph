@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -46,6 +47,11 @@ def _app_version() -> str:
 async def lifespan(_: FastAPI):
     # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色并认领未归属数据(公共星云)
     bootstrap_admin()
+    if os.getenv("COOKIE_SECURE", "").strip().lower() not in ("1", "true", "yes", "on"):
+        logger.warning(
+            "COOKIE_SECURE 未开启:会话 Cookie 允许经非 HTTPS 连接传输,"
+            "生产环境必须设 COOKIE_SECURE=1"
+        )
     yield
     close = getattr(store, "close", None)
     if callable(close):

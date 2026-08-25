@@ -15,7 +15,15 @@ export function parseHashParams(hash: string): Record<string, string> {
   if (!h) return parts;
   h.split("&").forEach((p) => {
     const kv = p.split("=");
-    parts[kv[0]] = kv[1] == null ? "" : decodeURIComponent(kv[1]);
+    let value = "";
+    if (kv[1] != null) {
+      try {
+        value = decodeURIComponent(kv[1]);
+      } catch {
+        value = kv[1]; // 畸形编码(如 %zz)按原始串容错,不中断 hash 解析
+      }
+    }
+    parts[kv[0]] = value;
   });
   return parts;
 }

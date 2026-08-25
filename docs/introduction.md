@@ -110,7 +110,10 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 - 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
 - 资料接口:`PATCH /api/auth/me`(支持 `nickname` / `bio` / `space_visibility` 修改;用户名不可修改)
-- 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`(未配置时注册跳过人机验证,仅限本地开发);HTTPS 部署时设置 `COOKIE_SECURE=1`。
+- 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
+  (未配置密钥时注册默认失败 fail-closed,仅本地开发可设
+  `TURNSTILE_ALLOW_SKIP=1` 临时跳过);HTTPS 部署时设置 `COOKIE_SECURE=1`
+  (未设置时启动会告警)。
   注册报「人机验证失败」多为浏览器无法加载 challenges.cloudflare.com(部分地区网络受限)或验证超时——
   前端会提示组件加载失败并可重试;服务端 siteverify 仅对公网 IP 传 `remoteip`,避免本地回环地址导致校验失败
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录与关注写接口按 IP 滑动窗口限流(共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`)做同源校验——带 Origin 头的跨站请求一律 403

@@ -274,7 +274,9 @@ export default function AuthModal() {
                   )}
                 </>
               ) : (
-                <p className="auth-hint">人机验证未配置,注册仍可继续(仅本地开发)</p>
+                <p className="auth-hint">
+                  人机验证未配置,注册可能被拒绝(需后端配置密钥;仅本地开发可临时放行)
+                </p>
               )}
             </div>
           </>

@@ -261,8 +261,20 @@ export default function SpaceTab(props: SpaceTabProps) {
         >
           点亮星空
         </button>
+        {state.user?.role === "admin" && (
+          <button
+            id="btn-users"
+            className="side-btn"
+            title="用户管理(禁用/角色/星云可见性/VIP)"
+            onClick={() => dispatch({ type: "SET_USER_ADMIN", open: true })}
+          >
+            用户管理
+          </button>
+        )}
         {state.user && (
-          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
+          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>
+            数据管理
+          </button>
         )}
       </div>
     </>

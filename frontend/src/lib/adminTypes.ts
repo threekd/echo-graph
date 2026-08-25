@@ -68,6 +68,26 @@ export interface AuditEntry {
   after?: string | null;
 }
 
+export type UserRole = "user" | "admin";
+export type UserStatus = "active" | "disabled";
+export type SpaceVisibility = "public" | "private";
+
+// 用户管理列表项(/api/admin/users 响应形状)
+export interface UserRow {
+  id: string;
+  email: string;
+  username: string;
+  nickname?: string | null;
+  bio?: string | null;
+  role: UserRole;
+  status: UserStatus;
+  space_visibility: SpaceVisibility;
+  vip: boolean;
+  counts: { authors: number; works: number; edges: number };
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 // 三张业务表行的联合(管理表格/表单的通用行类型)
 export type AdminRow = AuthorRow | WorkRow | EdgeRow;
 

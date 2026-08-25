@@ -6,10 +6,19 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app import db_sqlite, sqlite_store
-from app.auth import admin_user_id, bootstrap_admin, bootstrap_email, require_admin
+from app.auth import (
+    admin_user_id,
+    bootstrap_admin,
+    bootstrap_email,
+    is_bootstrap_email,
+    require_admin,
+)
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
 from app.data_store import export_csv_files
 from app.db import invalidate_cache
@@ -114,17 +123,127 @@ def admin_set_vip(
     user: dict | None = Depends(require_admin),  # noqa: B008
 ) -> dict:
     """标记/取消用户 VIP(admin)。VIP 用户拥有 AI 书籍导入权限。"""
-    admin = _admin_context(user)
     vip = bool((body or {}).get("vip"))
+    return admin_update_user(user_id, UserPatchBody(vip=vip), user)
+
+
+class UserPatchBody(BaseModel):
+    """用户管理可修改字段(至少一项;取值由 Literal 校验)。"""
+
+    status: Literal["active", "disabled"] | None = None
+    role: Literal["user", "admin"] | None = None
+    space_visibility: Literal["public", "private"] | None = None
+    vip: bool | None = None
+
+
+def _safe_user_row(row: dict) -> dict:
+    """审计记录排除密码哈希等敏感字段。"""
+    return {k: v for k, v in row.items() if k != "password_hash"}
+
+
+def _space_counts(conn) -> dict[str, dict[str, int]]:
+    """每个 owner 的活跃星云数据量(作者/作品/涟漪)。"""
+    counts: dict[str, dict[str, int]] = {}
+    for table in ("authors", "works", "edges"):
+        for r in conn.execute(
+            f"SELECT owner_id AS uid, count(*) AS c FROM {table}"
+            " WHERE deletedAt IS NULL GROUP BY owner_id"
+        ):
+            counts.setdefault(r["uid"], {})[table] = r["c"]
+    return counts
+
+
+@router.get("/users")
+def admin_users(user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
+    """用户列表(含角色/状态/星云可见性/VIP 与星云数据量,仅 admin)。"""
+    _admin_context(user)
+    with db_sqlite._db() as conn:
+        rows = conn.execute(
+            "SELECT id, email, username, nickname, bio, role, status,"
+            " space_visibility, vip, createdAt, updatedAt"
+            " FROM users ORDER BY createdAt DESC, id DESC"
+        ).fetchall()
+        counts = _space_counts(conn)
+    return {
+        "items": [
+            {
+                "id": r["id"],
+                "email": r["email"],
+                "username": r["username"],
+                "nickname": r["nickname"],
+                "bio": r["bio"],
+                "role": r["role"],
+                "status": r["status"],
+                "space_visibility": r["space_visibility"],
+                "vip": bool(r["vip"]),
+                "createdAt": r["createdAt"],
+                "updatedAt": r["updatedAt"],
+                "counts": {
+                    "authors": counts.get(r["id"], {}).get("authors", 0),
+                    "works": counts.get(r["id"], {}).get("works", 0),
+                    "edges": counts.get(r["id"], {}).get("edges", 0),
+                },
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@router.patch("/users/{user_id}")
+def admin_update_user(
+    user_id: str,
+    body: UserPatchBody,
+    user: dict | None = Depends(require_admin),  # noqa: B008
+) -> dict:
+    """修改用户状态/角色/星云可见性/VIP(至少一项)。
+
+    保护规则:
+    - 不能修改自己的 role/status(防止最后一个管理员把自己锁出系统);
+    - 引导管理员(公共星云所有者)不能被禁用或降级;
+    - 系统至少保留一名可用管理员(防御性兜底)。
+    """
+    admin = _admin_context(user)
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        return {"ok": True, "user_id": user_id, "changed": []}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="用户不存在")
+        row = dict(row)
+        if user_id == admin["id"] and (updates.get("status") or updates.get("role")):
+            raise HTTPException(status_code=400, detail="不能修改自己的角色或状态")
+        if is_bootstrap_email(row["email"]) and (
+            updates.get("status") == "disabled" or updates.get("role") == "user"
+        ):
+            raise HTTPException(status_code=400, detail="不能禁用或降级引导管理员(公共星云所有者)")
+        if row["role"] == "admin" and (
+            updates.get("role") == "user" or updates.get("status") == "disabled"
+        ):
+            active_admins = conn.execute(
+                "SELECT count(*) AS c FROM users"
+                " WHERE role = 'admin' AND status = 'active'"
+            ).fetchone()["c"]
+            if active_admins <= 1:
+                raise HTTPException(status_code=400, detail="系统至少需要保留一名可用管理员")
+        sets = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
-            "UPDATE users SET vip = ?, updatedAt = ? WHERE id = ?",
-            (1 if vip else 0, db_sqlite.now_iso(), user_id),
+            f"UPDATE users SET {sets}, updatedAt = ? WHERE id = ?",
+            [*updates.values(), db_sqlite.now_iso(), user_id],
         )
-    return {"ok": True, "user_id": user_id, "vip": vip, "by": admin["id"]}
+        label = row.get("username") or row.get("email") or user_id
+        detail = (
+            f"用户管理「{label}」:"
+            + "；".join(f"{k}: {row.get(k)} → {v}" for k, v in updates.items())
+        )
+        db_sqlite.audit(
+            conn, "update", "users", user_id, detail,
+            before=_safe_user_row(row),
+            after=_safe_user_row({**row, **updates}),
+            actor=admin["email"],
+        )
+    return {"ok": True, "user_id": user_id, "changed": list(updates)}
 
 
 @router.get("/audit")
@@ -136,7 +255,7 @@ def admin_audit(
         pattern="^(create|update|delete|restore|approve|reject|"
         "llm_ingest|llm_publish|llm_reuse|llm_reject|llm_reopen)$",
     ),
-    kind: str | None = Query(None, pattern="^(authors|works|edges)$"),
+    kind: str | None = Query(None, pattern="^(authors|works|edges|users)$"),
 ) -> dict:
     """管理写操作审计记录。"""
     return sqlite_store.list_audit(limit, offset, action, kind)

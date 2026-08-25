@@ -39,8 +39,9 @@
       DB 只存 token 的 SHA-256 哈希);`/api/auth/register|login|logout|me|config`;
       注册 Cloudflare Turnstile 人机验证;注册/登录 IP 滑动窗口限流
        (限流抽为 app/ratelimit.py,与关注等写接口共用);带 Origin 头的跨站状态请求拒绝
-- ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录、
-      admin 用户管理(用户列表 / 禁用 `users.status` / 角色调整 / 星云可见性管理)
+- [x] 账号体系后续:admin 用户管理(用户列表 / 禁用 `users.status` / 角色调整 /
+      星云可见性管理 / VIP 标记)——见「最近变更(2026-08-25)」
+- ⬜ 账号体系后续:密码重置/邮箱验证、OIDC 社交登录
 - [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
       私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);公共星云 = admin 空间
       (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 启动认领未归属数据);隔离测试
@@ -217,6 +218,13 @@
 
 ## 最近变更(2026-08-25)
 
+- [x] admin 用户管理:侧边栏新增「用户管理」入口(点亮星空下方、数据管理上方,
+      与数据管理同样式,仅 admin 可见),打开**独立用户管理窗口**(不并入数据
+      管理窗口);接口 `GET /api/admin/users`、`PATCH /api/admin/users/{id}`,
+      支持禁用/启用、角色调整、星云可见性、VIP 维护;保护规则:不能修改自己的
+      角色/状态、引导管理员不可禁用/降级、至少保留一名可用管理员;
+      变更写入审计(kind=`users`,不含 `password_hash`);
+      旧 `POST /api/admin/users/{id}/vip` 接口保持兼容
 - [x] AI 草稿审核管道(schema v24):`system_llm` 机器账号私有空间承载 AI 提取草稿
       (`created_by='llm'`、`reviewStatus='draft'`、随机密码不可登录,不可人工登录);
       admin 管理端新增「AI 草稿」Tab,作者/作品/涟漪分页浏览(附与公共星云的基础

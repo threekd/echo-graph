@@ -215,7 +215,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `ts` | TEXT | 是 | 操作时间(UTC) |
 | `actor` | TEXT | 是 | 操作者(邮箱),默认 `admin` |
 | `action` | TEXT | 是 | `create` / `update` / `delete` / `restore` / `approve` / `reject` / `llm_ingest` / `llm_publish` / `llm_reuse` / `llm_reject` / `llm_reopen` |
-| `kind` | TEXT | 是 | `authors` / `works` / `edges`(历史行可能含 `contributions`,仅作记录) |
+| `kind` | TEXT | 是 | `authors` / `works` / `edges` / `users`(历史行可能含 `contributions`,仅作记录) |
 | `row_id` | TEXT | 否 | 操作对象 id |
 | `detail` | TEXT | 否 | 人读摘要(对象名称与变更字段) |
 | `before` / `after` | TEXT | 否 | 改动前后的行 JSON(审计页展开对比用) |

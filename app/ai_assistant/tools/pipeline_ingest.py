@@ -190,7 +190,7 @@ def main() -> None:
 
     # 3) 生成批次登记簿(make-batch 内部会确保 system_llm 账号存在)
     log("3/4 生成批次登记簿")
-    owner = llm_space.ensure_system_llm()
+    owner = llm_space.draft_owner_id()
     batch = review_publish.build_batch(result, report, db_path=db_path, owner_id=owner)
     batch["batch_id"] = batch_id
     batch["source"]["input_file"] = str(book)

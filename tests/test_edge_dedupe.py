@@ -141,7 +141,8 @@ class PipelineEdgeTest(unittest.TestCase):
         self.addCleanup(self.patch_batch_dir.stop)
         self.admin = auth.register(_ADMIN_EMAIL, "password123", username="admin01")
         self.assertEqual(self.admin["role"], "admin")
-        self.owner = llm_space.ensure_system_llm()
+        # 草稿 owner_id = 上传者(admin);不再使用共享 system_llm 账号
+        self.owner = self.admin["id"]
 
     def _seed_existing_edge(self) -> None:
         """造一条公共涟漪:且听风吟 → 挪威的森林。"""

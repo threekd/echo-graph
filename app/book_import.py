@@ -162,6 +162,7 @@ def _run_import(
     authors: list[str] | None,
     no_ripples: bool,
     basic_only: bool,
+    uploader_id: str | None = None,
 ) -> None:
     """后台线程:完整执行 提取 → 去重 → 批次 → 草稿,逐步更新任务状态。"""
     batch_id = _make_id("book")
@@ -205,7 +206,8 @@ def _run_import(
 
         # 3) 批次登记簿
         _update_task(task_id, stage="3/4 生成批次登记簿")
-        owner = llm_space.ensure_system_llm()
+        # 草稿归属上传者(owner_id=上传者、created_by='llm'),admin 只看到自己上传的草稿
+        owner = llm_space.draft_owner_id(uploader_id)
         batch = review_publish.build_batch(extracted, report, owner_id=owner)
         batch["batch_id"] = batch_id
         batch["source"]["input_file"] = str(book_path)
@@ -299,6 +301,7 @@ def submit_import(
             "authors": authors,
             "no_ripples": no_ripples,
             "basic_only": basic_only,
+            "uploader_id": user_id,
         },
         daemon=True,
     )

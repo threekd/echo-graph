@@ -225,7 +225,7 @@ class BookImportTest(unittest.TestCase):
         self.assertEqual(task["result"]["counts"]["failed"], 0)
 
         # 草稿已写入 system_llm 空间
-        drafts = llm_drafts()
+        drafts = llm_drafts(self.admin)
         self.assertEqual(drafts["staging"]["counts"]["authors"], 2)
         self.assertEqual(drafts["staging"]["counts"]["works"], 2)
         self.assertEqual(drafts["staging"]["counts"]["edges"], 1)

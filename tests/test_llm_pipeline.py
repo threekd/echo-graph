@@ -96,7 +96,8 @@ class LlmPipelineTest(unittest.TestCase):
 
         self.admin = auth.register(_ADMIN_EMAIL, "password123", username="admin01")
         self.assertEqual(self.admin["role"], "admin")
-        self.owner = llm_space.ensure_system_llm()
+        # 草稿 owner_id = 上传者(admin);不再使用共享 system_llm 账号
+        self.owner = self.admin["id"]
 
     def _batch(self) -> dict:
         extract = _synthetic_extract()
@@ -119,7 +120,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(counts["staged"], 5)
         self.assertEqual(counts["failed"], 0)
 
-        drafts = llm_drafts()
+        drafts = llm_drafts(self.admin)
         self.assertEqual(drafts["staging"]["counts"]["authors"], 2)
         self.assertEqual(drafts["staging"]["counts"]["works"], 2)
         self.assertEqual(drafts["staging"]["counts"]["edges"], 1)
@@ -136,12 +137,12 @@ class LlmPipelineTest(unittest.TestCase):
         # 驳回 / 重开(批准前;驳回保留草稿行)
         a0 = staging["authors"][0]
         reject_draft("authors", a0["id"], admin_user)
-        drafts2 = llm_drafts()
+        drafts2 = llm_drafts(self.admin)
         row = next(x for x in drafts2["staging"]["authors"] if x["id"] == a0["id"])
         self.assertEqual(row["reviewStatus"], "rejected")
         reopen_draft("authors", a0["id"], admin_user)
         self.assertEqual(
-            llm_drafts()["staging"]["counts"]["authors"], 2
+            llm_drafts(self.admin)["staging"]["counts"]["authors"], 2
         )
 
         # 按 作者 → 作品 → 涟漪 顺序批准(空库无复用目标,全部 copy)
@@ -164,15 +165,18 @@ class LlmPipelineTest(unittest.TestCase):
         # 公共星云落库校验:2 作者 / 2 作品 / 1 涟漪,草稿行回写 published_to_id
         with db_sqlite._db() as conn:
             pub_a = conn.execute(
-                "SELECT count(*) c FROM authors WHERE owner_id = ? AND deletedAt IS NULL",
+                "SELECT count(*) c FROM authors WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {db_sqlite.ai_draft_clause(negate=True)}",
                 (self.admin["id"],),
             ).fetchone()["c"]
             pub_w = conn.execute(
-                "SELECT count(*) c FROM works WHERE owner_id = ? AND deletedAt IS NULL",
+                "SELECT count(*) c FROM works WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {db_sqlite.ai_draft_clause(negate=True)}",
                 (self.admin["id"],),
             ).fetchone()["c"]
             pub_e = conn.execute(
-                "SELECT count(*) c FROM edges WHERE owner_id = ? AND deletedAt IS NULL",
+                "SELECT count(*) c FROM edges WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {db_sqlite.ai_draft_clause(negate=True)}",
                 (self.admin["id"],),
             ).fetchone()["c"]
             published = conn.execute(
@@ -309,7 +313,7 @@ class LlmPipelineTest(unittest.TestCase):
         """清空 AI 草稿:软删除 system_llm 空间全部草稿,公共数据不受影响,审计留痕。"""
         batch = self._batch()
         review_publish.stage_batch(batch, self.owner)
-        before = llm_drafts()["staging"]["counts"]
+        before = llm_drafts(self.admin)["staging"]["counts"]
         self.assertEqual((before["authors"], before["works"], before["edges"]), (2, 2, 1))
 
         admin = {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"}
@@ -317,7 +321,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["counts"], {"authors": 2, "works": 2, "edges": 1})
 
-        after = llm_drafts()["staging"]["counts"]
+        after = llm_drafts(self.admin)["staging"]["counts"]
         self.assertEqual((after["authors"], after["works"], after["edges"]), (0, 0, 0))
         with db_sqlite._db() as conn:
             deleted = conn.execute(
@@ -330,6 +334,64 @@ class LlmPipelineTest(unittest.TestCase):
             ).fetchone()["c"]
         self.assertEqual(deleted, 2)
         self.assertGreater(audit, 0)
+
+    def test_admin_sees_only_own_uploaded_drafts(self) -> None:
+        """草稿按 owner_id=上传者 隔离:admin 只能看到自己上传的草稿。"""
+        batch_a = self._batch()
+        review_publish.stage_batch(batch_a, self.admin["id"])
+
+        owner_b = auth.register("uploader2@test.local", "password123", username="uploader2")
+        extract_b = _synthetic_extract()
+        extract_b["source_book"]["authors"] = ["作者B"]
+        extract_b["authors"] = [{"originalName": "作者B", "Name_CN": "作者B"}]
+        extract_b["work"]["Title_CN"] = "书籍B"
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract_b)
+        report_b = dedupe_check.run_dedupe(
+            work_cands, author_cands, db_path=str(self.db_path), basic_only=True, llm_confirm=False
+        )
+        batch_b = review_publish.build_batch(
+            extract_b, report_b, db_path=str(self.db_path), owner_id=owner_b["id"]
+        )
+        review_publish.stage_batch(batch_b, owner_b["id"])
+
+        drafts_a = llm_drafts(self.admin)
+        drafts_b = llm_drafts(owner_b)
+        labels_a = {r["Name_CN"] for r in drafts_a["staging"]["authors"]}
+        labels_b = {r["Name_CN"] for r in drafts_b["staging"]["authors"]}
+        self.assertIn("测试作者", labels_a)
+        self.assertNotIn("作者B", labels_a)
+        self.assertIn("作者B", labels_b)
+        self.assertNotIn("测试作者", labels_b)
+
+    def test_legacy_shared_drafts_migrated_to_bootstrap_admin(self) -> None:
+        """旧 system_llm 共享草稿一次性迁移到引导管理员,并删除空账号。"""
+        from app.llm_account import migrate_legacy_llm_drafts
+
+        with db_sqlite._db() as conn:
+            legacy = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO users (id, email, username, password_hash, role, status,"
+                " space_visibility) VALUES (?, 'system_llm@echo.local', 'system_llm',"
+                " 'x', 'user', 'active', 'private')",
+                (legacy,),
+            )
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id) VALUES ('w-legacy', 'zh', '旧草稿', '旧草稿',"
+                " 'draft', 'llm', ?)",
+                (legacy,),
+            )
+        moved = migrate_legacy_llm_drafts()
+        self.assertEqual(moved, 1)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT owner_id FROM works WHERE id = 'w-legacy'"
+            ).fetchone()
+            self.assertEqual(row["owner_id"], self.admin["id"])
+            acc = conn.execute(
+                "SELECT count(*) c FROM users WHERE id = ?", (legacy,)
+            ).fetchone()["c"]
+            self.assertEqual(acc, 0)
 
 
 if __name__ == "__main__":

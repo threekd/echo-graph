@@ -48,6 +48,23 @@ def now_iso() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
+def ai_draft_clause(alias: str = "", negate: bool = False) -> str:
+    """AI 草稿判定 SQL 片段:created_by='llm' 且未发布(或已发布但保留映射)的行。
+
+    negate=False 返回「是 AI 草稿」条件(草稿区读取用);
+    negate=True 返回「非 AI 草稿」条件(公共星云/策展/导出读取用,
+    保证草稿不会因为 owner_id=上传者(admin 空间即公共星云)而泄露)。
+    alias 为表别名(如 'w.'),用于联表查询。
+    """
+    prefix = f"{alias}." if alias else ""
+    inner = (
+        f"({prefix}created_by = 'llm'"
+        f" AND ({prefix}reviewStatus != 'reviewed'"
+        f" OR {prefix}published_to_id IS NOT NULL))"
+    )
+    return ("NOT " if negate else "") + inner
+
+
 def new_uuid() -> str:
     """统一的主键生成:优先 UUID v7(时间有序),环境不支持时回退 UUID v4。"""
     try:

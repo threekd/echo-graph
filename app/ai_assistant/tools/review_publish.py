@@ -987,7 +987,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
         raise SystemExit(
             "公共星云管理员不存在：请先用 ADMIN_BOOTSTRAP_EMAIL 注册并登录引导管理员账号"
         )
-    llm_space.ensure_system_llm()
+    llm_space.draft_owner_id()
 
     batch = llm_space.load_batch(args.batch_id)
     by_id = {it["item_id"]: it for it in batch["items"]}
@@ -1101,7 +1101,7 @@ def cmd_make_batch(args: argparse.Namespace) -> None:
         except Exception as exc:  # noqa: BLE001 - 补全失败降级为未补全作者
             log(f"⚠ 涟漪作者补全失败:{type(exc).__name__}: {exc}")
 
-    owner_id = llm_space.ensure_system_llm()  # 批次归属 system_llm 专用账号（缺失则创建）
+    owner_id = llm_space.draft_owner_id()  # CLI 无登录用户,草稿归属引导管理员
     batch = build_batch(extract, report, db_path=args.db, owner_id=owner_id)
     batch["source"]["input_file"] = str(input_path)
     batch["source"]["dedupe_file"] = str(report_path) if report else None
@@ -1221,7 +1221,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     """
     if args.db:
         db_sqlite.DB_PATH = Path(args.db).resolve()
-    owner = llm_space.ensure_system_llm()
+    owner = llm_space.draft_owner_id()
     batch = llm_space.load_batch(args.batch_id)
     counts = stage_batch(batch, owner)
     llm_space.save_batch(batch)

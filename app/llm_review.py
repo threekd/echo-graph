@@ -1,15 +1,18 @@
-"""AI 草稿审核 API(admin 角色):system_llm 私有空间草稿 → 公共星云。
+"""AI 草稿审核 API(admin 角色):按上传者隔离的 AI 草稿 → 公共星云。
 
 流程:
-    1) ingest(CLI)把 AI 提取的作者/作品/涟漪写入 system_llm 空间,
-       reviewStatus='draft'、created_by='llm'(见 app/ai_assistant/tools/review_publish.py ingest)。
+    1) 导入(Web/CLI)把 AI 提取的作者/作品/涟漪写入上传者的空间,
+       owner_id=上传者、reviewStatus='draft'、created_by='llm'
+       (见 app/ai_assistant/tools/review_publish.py ingest)。
     2) admin 在本页浏览草稿(附与公共星云的去重提示),可编辑/驳回/重开。
     3) 批准:默认复制进公共星云(created_by='llm'、reviewStatus='reviewed');
        或按去重提示选择「复用」现有公共记录。
        草稿行回写 published_to_id(公共行 id),同一草稿不可重复发布。
 
 隔离规则:
-    - 草稿区 = system_llm 账号私有空间(space_visibility='private',外界不可见);
+    - 草稿区 = 上传者的空间(owner_id=上传者 + created_by='llm'),admin 只能
+      看到自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
+      (见 db_sqlite.ai_draft_clause);
     - 公共星云 = 引导管理员(admin)空间;
     - 批准复制依赖先决条件:作品依赖的作者、涟漪依赖的两端作品必须已批准,
       依赖通过草稿行的 published_to_id 解析到公共行 id,保证引用不跨空间。
@@ -26,13 +29,8 @@ from app import db_sqlite, sqlite_store
 from app.auth import admin_user_id, require_admin
 from app.data_store import clean_row
 from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title
-from app.llm_account import ensure_system_llm, get_system_llm_id
-from app.space_crud import (
-    Kind,
-    after_write,
-    space_data,
-    validate_row,
-)
+from app.llm_account import migrate_legacy_llm_drafts
+from app.space_crud import Kind, after_write, validate_row
 
 router = APIRouter(
     prefix="/api/admin/llm",
@@ -125,36 +123,62 @@ def _hint_work(row: dict, public_works: list[dict], author_names: list[str]) -> 
 # ======================================================================
 # 草稿读取
 # ======================================================================
+def _draft_rows(owner_id: str) -> dict:
+    """读取某 admin 的 AI 草稿行(owner_id=上传者 + created_by='llm')。
+
+    返回 {"authors", "works", "edges"} 三张列表(活跃行,不含软删除);
+    草稿判定与公共读取的排除条件一致(见 db_sqlite.ai_draft_clause)。
+    """
+    draft = db_sqlite.ai_draft_clause()
+    with db_sqlite._db() as conn:
+        authors = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM authors WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {draft} ORDER BY id",
+                (owner_id,),
+            )
+        ]
+        works = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM works WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {draft} ORDER BY id",
+                (owner_id,),
+            )
+        ]
+        edges = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM edges WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {draft} ORDER BY id",
+                (owner_id,),
+            )
+        ]
+    return {"authors": authors, "works": works, "edges": edges}
+
+
 @router.get("/drafts")
-def llm_drafts() -> dict:
-    """system_llm 草稿区数据 + 与公共星云的去重提示。"""
-    owner = get_system_llm_id()
-    empty = {
-        "authors": [],
-        "works": [],
-        "edges": [],
-        "warnings": {
-            "duplicateAuthorNames": [],
-            "duplicateWorkTitles": [],
-            "duplicateEdgePairs": [],
-        },
-        "counts": {
-            "authors": 0,
-            "works": 0,
-            "edges": 0,
-            "deleted": {"authors": 0, "works": 0, "edges": 0},
-        },
+def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
+    """当前 admin 上传的 AI 草稿(owner_id=user + created_by='llm')+ 公共星云去重提示。"""
+    migrate_legacy_llm_drafts()  # 旧 system_llm 共享草稿一次性改挂到引导管理员
+    owner = user["id"]
+    data = _draft_rows(owner)
+    counts = {
+        "authors": len(data["authors"]),
+        "works": len(data["works"]),
+        "edges": len(data["edges"]),
+        "deleted": {"authors": 0, "works": 0, "edges": 0},
     }
-    if owner is None:
-        return {
-            "staging": empty,
-            "hints": {"authors": {}, "works": {}},
-            "public_counts": {"authors": 0, "works": 0},
-        }
+    data["warnings"] = {
+        "duplicateAuthorNames": [],
+        "duplicateWorkTitles": [],
+        "duplicateEdgePairs": [],
+    }
+    data["counts"] = counts
     admin = admin_user_id()
     public = load_rows(public_only=True)
     public_authors, public_works = public["authors"], public["works"]
-    data = space_data(owner, include_deleted=False)
     staging_author_names = {
         a["id"]: (a.get("Name_CN") or a.get("Name_EN") or "")
         for a in data["authors"]
@@ -211,19 +235,20 @@ def llm_drafts() -> dict:
 # ======================================================================
 @router.post("/drafts/clear")
 def clear_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
-    """清空 AI 草稿:软删除 system_llm 空间全部草稿行(作者/作品/涟漪)。
+    """清空当前 admin 上传的 AI 草稿(owner_id=user + created_by='llm')。
 
-    仅作用于 system_llm 私有空间的 AI 草稿,不影响公共星云已发布数据;
-    软删除保留行(带 deletedAt)可恢复,审计留痕。
+    不影响其他 admin 的草稿与公共星云已发布数据;软删除保留行
+    (带 deletedAt)可恢复,审计留痕。
     """
-    owner = ensure_system_llm()
+    owner = user["id"]
     now = db_sqlite.now_iso()
     counts: dict[str, int] = {"authors": 0, "works": 0, "edges": 0}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         for kind in ("authors", "works", "edges"):
             rows = conn.execute(
                 f"SELECT id FROM {KIND_TABLE[kind]}"
-                " WHERE owner_id = ? AND deletedAt IS NULL",
+                f" WHERE owner_id = ? AND deletedAt IS NULL"
+                f" AND {db_sqlite.ai_draft_clause()}",
                 (owner,),
             ).fetchall()
             ids = [r["id"] for r in rows]
@@ -329,7 +354,7 @@ def approve_draft(
 ) -> dict:
     """批准草稿:复制进公共星云(默认),或复用现有公共记录(reuse_id)。"""
     admin_id = user["id"]
-    staging_owner = ensure_system_llm()
+    staging_owner = user["id"]
     reuse_id = ((body.reuse_id if body else None) or "").strip() or None
     now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
@@ -388,7 +413,7 @@ def reject_draft(
     user: dict = Depends(require_admin),  # noqa: B008
 ) -> dict:
     """驳回草稿(reviewStatus='rejected',草稿保留可重开)。"""
-    staging_owner = ensure_system_llm()
+    staging_owner = user["id"]
     now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         staging = _staging_row(conn, kind, item_id, staging_owner)
@@ -415,7 +440,7 @@ def reopen_draft(
     user: dict = Depends(require_admin),  # noqa: B008
 ) -> dict:
     """重开草稿:rejected → draft,重新进入审核队列。"""
-    staging_owner = ensure_system_llm()
+    staging_owner = user["id"]
     now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         staging = _staging_row(conn, kind, item_id, staging_owner)
@@ -443,7 +468,7 @@ def edit_draft(
     user: dict = Depends(require_admin),  # noqa: B008
 ) -> dict:
     """编辑草稿内容(修正 AI 提取),审核状态保持不变;已发布的草稿不可再编辑。"""
-    staging_owner = ensure_system_llm()
+    staging_owner = user["id"]
     now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         staging = _staging_row(conn, kind, item_id, staging_owner)

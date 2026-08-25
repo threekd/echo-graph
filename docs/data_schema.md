@@ -294,10 +294,14 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 - AI 草稿审核管道(schema v24 迁移):作者/作品/涟漪三表新增 `published_to_id`,
   记录 system_llm 草稿批准后映射到的公共行 id(复用场景为被复用行 id),防重复发布;
-- 草稿区 = `system_llm` 账号私有空间(role=`user`、space_visibility=`private`,
-  随机密码不可登录,由 `app/llm_account.py` 按需创建);AI 提取行 `created_by='llm'`
-  `reviewStatus='draft'` 进入草稿区,admin 在管理端「AI 草稿」批准后复制进公共星云
+- 草稿区 = 上传者空间(`owner_id`=上传者、`created_by='llm'`、`reviewStatus='draft'`),
+  admin 只能看到自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
+  (判定:`created_by='llm'` 且 `reviewStatus != 'reviewed'` 或 `published_to_id` 非空,
+  见 `db_sqlite.ai_draft_clause`);admin 在管理端「AI 草稿」批准后复制进公共星云
   (`created_by='llm'`、`reviewStatus='reviewed'`)或按去重提示复用现有公共记录;
+- 历史数据:2026-08 之前的草稿曾落在共享 `system_llm` 账号空间,
+  `app/llm_account.migrate_legacy_llm_drafts()` 在首次读取草稿时一次性
+  改挂到引导管理员并删除空账号;
 - 审计新增动作:`llm_ingest`(批次入库草稿)/ `llm_publish`(批准发布)/
   `llm_reuse`(批准复用)/ `llm_reject`(驳回)/ `llm_reopen`(重开)。
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-"""system_llm 专用账号与批次登记簿公共工具。
+"""AI 草稿归属与批次登记簿公共工具。
 
-- 账号本身(ensure_system_llm / get_system_llm_id)收敛在 app/llm_account.py,
+- 草稿归属(draft_owner_id / migrate_legacy_llm_drafts)收敛在 app/llm_account.py,
   本模块仅为 CLI 实验脚本保留入口并继续提供批次登记簿:
   - 每次 ingest 生成一个批次 JSON(app/ai_assistant/output/batches/<id>.json),
     记录该批的作者/作品/涟漪草稿与映射,供 review_publish.py 审核与发布。
@@ -18,12 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from app.ai_assistant.tools.common import AI_ASSISTANT_DIR, read_json, write_json  # noqa: E402
 from app.llm_account import (  # noqa: E402, F401 - 复用账号逻辑,CLI 旧调用不破坏
-    SYSTEM_LLM_BIO,
     SYSTEM_LLM_EMAIL,
-    SYSTEM_LLM_NICKNAME,
     SYSTEM_LLM_USERNAME,
-    ensure_system_llm,
-    get_system_llm_id,
+    draft_owner_id,
+    migrate_legacy_llm_drafts,
 )
 
 BATCH_DIR = AI_ASSISTANT_DIR / "output" / "batches"

@@ -191,10 +191,13 @@ class SqliteStore:
             return hit[1]
         owner_sql, owner_params = self._owner_clause()
         wa_sql, wa_params = self._owner_clause("w.")
+        not_ai_draft = db_sqlite.ai_draft_clause(negate=True)
+        not_ai_draft_w = db_sqlite.ai_draft_clause("w", negate=True)
         with db_sqlite._db() as conn:
             authors = [
                 dict(r) for r in conn.execute(
                     f"SELECT * FROM authors WHERE deletedAt IS NULL AND {owner_sql}"
+                    f" AND {not_ai_draft}"
                     " ORDER BY id",
                     owner_params,
                 )
@@ -202,20 +205,22 @@ class SqliteStore:
             works = [
                 dict(r) for r in conn.execute(
                     f"SELECT * FROM works WHERE deletedAt IS NULL AND {owner_sql}"
+                    f" AND {not_ai_draft}"
                     " ORDER BY id",
                     owner_params,
                 )
             ]
             edges = [
                 dict(r) for r in conn.execute(
-                    f"SELECT * FROM edges WHERE deletedAt IS NULL AND {owner_sql} ORDER BY id",
+                    f"SELECT * FROM edges WHERE deletedAt IS NULL AND {owner_sql}"
+                    f" AND {not_ai_draft} ORDER BY id",
                     owner_params,
                 )
             ]
             wa_rows = conn.execute(
                 "SELECT wa.work_id, wa.author_id FROM work_authors wa"
                 " JOIN works w ON w.id = wa.work_id"
-                f" WHERE w.deletedAt IS NULL AND {wa_sql}"
+                f" WHERE w.deletedAt IS NULL AND {wa_sql} AND {not_ai_draft_w}"
                 " ORDER BY wa.work_id, wa.author_id",
                 wa_params,
             ).fetchall()

@@ -65,14 +65,33 @@ def load_rows(
             if admin_id:
                 # 注意:IN (?, NULL) 不匹配 owner_id IS NULL 的未认领行,
                 # 必须用 OR 形式显式包含(与 sqlite_store._owner_clause 等一致)
-                owner_scope = "(owner_id = ? OR owner_id IS NULL)"
-                works_owner_scope = "(w.owner_id = ? OR w.owner_id IS NULL)"
-                edges_owner_scope = "(e.owner_id = ? OR e.owner_id IS NULL)"
+                # AI 草稿(created_by='llm' 未发布/保留映射)不属于公共星云,一并排除
+                owner_scope = (
+                    "(owner_id = ? OR owner_id IS NULL)"
+                    f" AND {db_sqlite.ai_draft_clause(negate=True)}"
+                )
+                works_owner_scope = (
+                    "(w.owner_id = ? OR w.owner_id IS NULL)"
+                    f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
+                )
+                edges_owner_scope = (
+                    "(e.owner_id = ? OR e.owner_id IS NULL)"
+                    f" AND {db_sqlite.ai_draft_clause('e', negate=True)}"
+                )
                 owner_params: tuple = (admin_id,)
             else:
-                owner_scope = "owner_id IS NULL"
-                works_owner_scope = "w.owner_id IS NULL"
-                edges_owner_scope = "e.owner_id IS NULL"
+                owner_scope = (
+                    "owner_id IS NULL"
+                    f" AND {db_sqlite.ai_draft_clause(negate=True)}"
+                )
+                works_owner_scope = (
+                    "w.owner_id IS NULL"
+                    f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
+                )
+                edges_owner_scope = (
+                    "e.owner_id IS NULL"
+                    f" AND {db_sqlite.ai_draft_clause('e', negate=True)}"
+                )
                 owner_params = ()
         else:
             owner_scope = ""

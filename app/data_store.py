@@ -81,12 +81,22 @@ def export_csv_files(target_dir: Path | None = None) -> None:
 
     admin = admin_user_id()
     data = sqlite_store.list_all()
+
+    def _not_ai_draft(r: dict) -> bool:
+        return not (
+            r.get("created_by") == "llm"
+            and (r.get("reviewStatus") != "reviewed" or r.get("published_to_id"))
+        )
+
     for key in ("authors", "works", "edges"):
         rows = data[key]
         if admin is None:
-            data[key] = [r for r in rows if not r.get("owner_id")]
+            data[key] = [r for r in rows if not r.get("owner_id") and _not_ai_draft(r)]
         else:
-            data[key] = [r for r in rows if not r.get("owner_id") or r["owner_id"] == admin]
+            data[key] = [
+                r for r in rows
+                if (not r.get("owner_id") or r["owner_id"] == admin) and _not_ai_draft(r)
+            ]
     out = Path(target_dir) if target_dir is not None else EXPORT_DIR
     _write_csv(out / "authors.csv", AUTHOR_HEADER, data["authors"])
     _write_csv(out / "works.csv", WORK_HEADER, data["works"])

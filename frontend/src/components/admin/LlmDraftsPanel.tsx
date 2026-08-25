@@ -205,7 +205,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     <div className="llm-drafts">
       <div className="llm-head">
         <p className="llm-tip">
-          AI 草稿存放于 system_llm 私有空间（公共星云不可见），按 作者 → 作品 → 涟漪 顺序批准。
+          AI 草稿仅上传者本人可见（owner_id=上传者、created_by=llm，公共星云不可见），
+          按 作者 → 作品 → 涟漪 顺序批准。
           公共星云现有：作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
           {counts ? `；草稿：作者 ${counts.authors} · 作品 ${counts.works} · 涟漪 ${counts.edges}` : ""}
         </p>
@@ -285,8 +286,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
           <div className="auth-modal-card">
             <h3>清空 AI 草稿</h3>
             <p>
-              确定要清空当前 AI 草稿吗？将软删除 system_llm 空间中的全部草稿
-              （作者/作品/涟漪），公共星云已发布数据不受影响。
+              确定要清空您上传的 AI 草稿吗？将软删除您上传的全部草稿
+              （作者/作品/涟漪），其他管理员与公共星云数据不受影响。
             </p>
             <div className="admin-modal-actions">
               <button

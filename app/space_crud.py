@@ -170,8 +170,20 @@ def space_data(owner_id: str, include_deleted: bool = True) -> dict:
 
     计数(含 deleted)基于全量行统计,不随 include_deleted 过滤变化:
     include_deleted=False 时只裁剪返回列表,deleted 计数仍反映真实软删除行数。
+    AI 草稿(created_by='llm' 未发布/保留映射)不属于策展/个人空间视图,一律剔除
+    (草稿在「AI 草稿」页按 owner_id=上传者 单独展示)。
     """
     all_a, all_w, all_e = sqlite_store.load_rows(owner_id=owner_id)
+
+    def _not_ai_draft(r: dict) -> bool:
+        return not (
+            r.get("created_by") == "llm"
+            and (r.get("reviewStatus") != "reviewed" or r.get("published_to_id"))
+        )
+
+    all_a = [r for r in all_a if _not_ai_draft(r)]
+    all_w = [r for r in all_w if _not_ai_draft(r)]
+    all_e = [r for r in all_e if _not_ai_draft(r)]
     deleted = {
         "authors": sum(1 for r in all_a if r.get("deletedAt")),
         "works": sum(1 for r in all_w if r.get("deletedAt")),

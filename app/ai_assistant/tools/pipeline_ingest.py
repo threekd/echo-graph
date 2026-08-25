@@ -179,6 +179,7 @@ def main() -> None:
         author_cands,
         edge_cands=edge_cands,
         db_path=db_path,
+        user_id=llm_space.draft_owner_id(),
         basic_only=args.basic_only,
         force_semantic=args.force_semantic,
         rebuild_vectors=args.rebuild_vectors,

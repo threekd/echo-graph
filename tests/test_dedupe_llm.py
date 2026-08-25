@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import db_sqlite
+from app import auth, db_sqlite
 from app.ai_assistant.tools import dedupe_check, review_publish
 
 
@@ -212,6 +212,84 @@ class RunDedupeLLMTest(unittest.TestCase):
             "work", {"Title_CN": "三体（全集）"}, entry, public
         )
         self.assertEqual(dedupe["decision"], "possible")
+
+
+class UserScopeDedupeTest(unittest.TestCase):
+    """判重目标严格按用户个人空间:其他用户空间的行不参与。"""
+
+    ADMIN = "boss@test.local"
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db_path = Path(self.tmp.name) / "scope.db"
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            db_sqlite._migrate(conn)
+        finally:
+            conn.close()
+        self.patch_db = patch.object(db_sqlite, "DB_PATH", self.db_path)
+        self.patch_db.start()
+        self.addCleanup(self.patch_db.stop)
+        self.patch_email = patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN)
+        self.patch_email.start()
+        self.addCleanup(self.patch_email.stop)
+        self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
+        self.user_a = auth.register("a@test.local", "password123", username="usera")
+        self.user_b = auth.register("b@test.local", "password123", username="userb")
+
+    def _seed_work(self, owner_id: str | None, title: str = "三体") -> None:
+        now = db_sqlite.now_iso()
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'zh', ?, ?, 'reviewed', 'curated', ?, ?, ?)",
+                (db_sqlite.new_uuid(), title, title, owner_id, now, now),
+            )
+
+    def test_run_dedupe_only_sees_target_user_space(self) -> None:
+        """《三体》只在 user_b 空间:对 user_a 判重无命中,对 user_b 判重 exact。"""
+        self._seed_work(self.user_b["id"])
+        cand = [{"Title_CN": "三体", "originalTitle": "三体"}]
+        report_a = dedupe_check.run_dedupe(
+            cand, [], db_path=str(self.db_path), user_id=self.user_a["id"],
+            basic_only=True, llm_confirm=False,
+        )
+        report_b = dedupe_check.run_dedupe(
+            cand, [], db_path=str(self.db_path), user_id=self.user_b["id"],
+            basic_only=True, llm_confirm=False,
+        )
+        self.assertEqual(report_a["works"][0]["basic"]["level"], "none")
+        self.assertEqual(report_b["works"][0]["basic"]["level"], "exact")
+
+    def test_dedupe_entity_work_basic(self) -> None:
+        """统一入口 dedupe_entity:work 基础匹配 + 自动复用判定。"""
+        self._seed_work(self.admin["id"])  # admin 个人空间即公共星云
+        entry = dedupe_check.dedupe_entity(
+            "work",
+            {"Title_CN": "三体", "originalTitle": "三体"},
+            user_id=self.admin["id"],
+            db_path=str(self.db_path),
+            use_semantic=False,
+            use_llm=False,
+        )
+        self.assertEqual(entry["basic"]["level"], "exact")
+        self.assertEqual(entry["decision"], "likely_duplicate")
+
+    def test_dedupe_entity_admin_space_includes_unclaimed(self) -> None:
+        """admin 个人空间判重包含未认领(owner_id NULL)历史行。"""
+        self._seed_work(None)  # 未认领行 = 公共星云
+        entry = dedupe_check.dedupe_entity(
+            "work",
+            {"Title_CN": "三体", "originalTitle": "三体"},
+            user_id=self.admin["id"],
+            db_path=str(self.db_path),
+            use_semantic=False,
+            use_llm=False,
+        )
+        self.assertEqual(entry["basic"]["level"], "exact")
 
 
 if __name__ == "__main__":

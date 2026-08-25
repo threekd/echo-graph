@@ -14,6 +14,29 @@ from typing import Any
 from app import db_sqlite
 from app.auth import admin_user_id
 
+# 作者名相似度阈值:规范化后不相等,但二元组 Jaccard >= 此值视为同一人
+# (处理同人异译,如 蕾切尔·卡逊 vs 蕾切尔·卡森、村上春树 vs 村上春樹),
+# 不触发「同名异书」降级。
+AUTHOR_SIM_SAME = 0.5
+
+
+def authors_clearly_different(name_a: str | None, name_b: str | None) -> bool:
+    """判断两个作者名是否「明显不同」(用于同名异书的 exact 降级)。
+
+    任意一侧为空 → 不判定不同(无作者信息时宁可按 exact 复用);
+    规范化后相等 / 一方包含另一方 / 二元组相似度 >= AUTHOR_SIM_SAME
+    都视为同一人。返回 True 才降级为 exact_diff_author。
+    """
+    a = normalize_title(name_a)
+    b = normalize_title(name_b)
+    if not a or not b:
+        return False
+    if a == b:
+        return False
+    if len(a) >= 2 and len(b) >= 2 and (a in b or b in a):
+        return False
+    return jaccard(char_bigrams(a), char_bigrams(b)) < AUTHOR_SIM_SAME
+
 
 def normalize_title(text: str | None) -> str:
     """标题/姓名规范化:全角→半角、去书名号/标点/空白、拉丁转小写。"""
@@ -49,11 +72,13 @@ def load_rows(
     db_path: str | None = None,
     *,
     public_only: bool = False,
+    owner_id: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """读取库内活跃(未软删除)的作者/作品/涟漪。
 
     public_only=False:全部行(去重管线视角,含个人空间);
     public_only=True:公共星云(admin 认领 + 未认领历史行),复用/发布只认公共空间。
+    owner_id=某用户:该用户个人空间的行(判重目标库),AI 草稿一律排除。
     作品带 author_names(中文作者名串)用于同名异书消歧;涟漪同时带两端作品标题。
     """
     path = Path(db_path) if db_path else db_sqlite.DB_PATH
@@ -65,39 +90,30 @@ def load_rows(
             if admin_id:
                 # 注意:IN (?, NULL) 不匹配 owner_id IS NULL 的未认领行,
                 # 必须用 OR 形式显式包含(与 sqlite_store._owner_clause 等一致)
-                # AI 草稿(created_by='llm' 未发布/保留映射)不属于公共星云,一并排除
-                owner_scope = (
-                    "(owner_id = ? OR owner_id IS NULL)"
-                    f" AND {db_sqlite.ai_draft_clause(negate=True)}"
-                )
-                works_owner_scope = (
-                    "(w.owner_id = ? OR w.owner_id IS NULL)"
-                    f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
-                )
-                edges_owner_scope = (
-                    "(e.owner_id = ? OR e.owner_id IS NULL)"
-                    f" AND {db_sqlite.ai_draft_clause('e', negate=True)}"
-                )
+                owner_scope = "(owner_id = ? OR owner_id IS NULL)"
+                works_owner_scope = "(w.owner_id = ? OR w.owner_id IS NULL)"
+                edges_owner_scope = "(e.owner_id = ? OR e.owner_id IS NULL)"
                 owner_params: tuple = (admin_id,)
             else:
-                owner_scope = (
-                    "owner_id IS NULL"
-                    f" AND {db_sqlite.ai_draft_clause(negate=True)}"
-                )
-                works_owner_scope = (
-                    "w.owner_id IS NULL"
-                    f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
-                )
-                edges_owner_scope = (
-                    "e.owner_id IS NULL"
-                    f" AND {db_sqlite.ai_draft_clause('e', negate=True)}"
-                )
+                owner_scope = "owner_id IS NULL"
+                works_owner_scope = "w.owner_id IS NULL"
+                edges_owner_scope = "e.owner_id IS NULL"
                 owner_params = ()
+        elif owner_id is not None:
+            owner_scope = "owner_id = ?"
+            works_owner_scope = "w.owner_id = ?"
+            edges_owner_scope = "e.owner_id = ?"
+            owner_params = (owner_id,)
         else:
             owner_scope = ""
             works_owner_scope = ""
             edges_owner_scope = ""
             owner_params = ()
+        # 判重目标(公共星云/个人空间):AI 草稿一律不参与
+        if owner_scope:
+            owner_scope = owner_scope + f" AND {db_sqlite.ai_draft_clause(negate=True)}"
+            works_owner_scope = works_owner_scope + f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
+            edges_owner_scope = edges_owner_scope + f" AND {db_sqlite.ai_draft_clause('e', negate=True)}"
         authors = [
             dict(r)
             for r in conn.execute(
@@ -144,3 +160,11 @@ def load_rows(
     finally:
         conn.close()
     return {"authors": authors, "works": works, "edges": edges}
+
+
+def load_user_rows(user_id: str, db_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    """判重目标库:某用户个人空间的活跃行(admin 个人空间即公共星云)。"""
+    admin = admin_user_id()
+    if user_id == admin:
+        return load_rows(db_path, public_only=True)
+    return load_rows(db_path, owner_id=user_id)

@@ -26,9 +26,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app import db_sqlite, sqlite_store
+from app.ai_assistant.tools import dedupe_check
 from app.auth import admin_user_id, require_admin
 from app.data_store import clean_row
-from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title
+from app.dedupe_util import load_user_rows
 from app.llm_account import migrate_legacy_llm_drafts
 from app.space_crud import Kind, after_write, validate_row
 
@@ -54,70 +55,46 @@ def _label(kind: Kind, row: dict) -> str:
 
 
 # ======================================================================
-# 公共空间数据 + 去重提示(基础匹配原语与行读取共用 app/dedupe_util)
+# 去重提示(统一走 dedupe_check 基础匹配,判重目标 = 当前用户个人空间)
 # ======================================================================
 
 
-def _best_hit(
-    cand_variants: list[str],
-    rows: list[dict],
-    row_variants,
-    row_label,
-    cand_author: str = "",
-    row_author=lambda r: r.get("author_names") or "",
-) -> dict[str, Any] | None:
-    """对公共行做基础匹配,返回最高命中 {level, existing_id, existing_label, score}。"""
-    best: dict[str, Any] | None = None
-    for row in rows:
-        for cv in cand_variants:
-            if not cv:
-                continue
-            for rv in row_variants(row):
-                if not rv:
-                    continue
-                if cv == rv:
-                    level, score = "exact", 1.0
-                    if cand_author and row_author(row) and normalize_title(cand_author) != normalize_title(row_author(row)):
-                        level, score = "exact_diff_author", 0.5
-                elif len(cv) >= 2 and len(rv) >= 2 and (cv in rv or rv in cv):
-                    level, score = "contained", 0.7
-                else:
-                    sim = jaccard(char_bigrams(cv), char_bigrams(rv))
-                    if sim < 0.45:
-                        continue
-                    level, score = "token", round(sim, 3)
-                if best is None or score > best["score"]:
-                    best = {
-                        "level": level,
-                        "score": score,
-                        "existing_id": row["id"],
-                        "existing_label": row_label(row),
-                    }
-    return best
+def _hint_author(row: dict, user_rows: dict) -> dict[str, Any] | None:
+    """作者基础匹配提示(与去重管线同一实现)。"""
+    hit = dedupe_check.basic_match_author(row, user_rows["authors"])
+    if hit.get("level") == "none":
+        return None
+    existing = hit.get("existing") or {}
+    return {
+        "level": hit["level"],
+        "score": hit["score"],
+        "existing_id": existing.get("id"),
+        "existing_label": (
+            existing.get("Name_CN") or existing.get("Name_EN")
+            or existing.get("originalName") or existing.get("id") or ""
+        ),
+    }
 
 
-def _hint_author(row: dict, public_authors: list[dict]) -> dict[str, Any] | None:
-    cand = [normalize_title(row.get("Name_CN")), normalize_title(row.get("Name_EN")), normalize_title(row.get("originalName"))]
-    hit = _best_hit(
-        cand,
-        public_authors,
-        lambda r: [normalize_title(r.get("Name_CN")), normalize_title(r.get("Name_EN")), normalize_title(r.get("originalName"))],
-        lambda r: r.get("Name_CN") or r.get("Name_EN") or r.get("originalName") or r["id"],
-    )
-    return hit
-
-
-def _hint_work(row: dict, public_works: list[dict], author_names: list[str]) -> dict[str, Any] | None:
-    cand = [normalize_title(row.get("Title_CN")), normalize_title(row.get("originalTitle")),
-            normalize_title(row.get("Title_EN")), normalize_title(row.get("Title_Other"))]
-    return _best_hit(
-        cand,
-        public_works,
-        lambda r: [normalize_title(r.get("Title_CN")), normalize_title(r.get("originalTitle")),
-                   normalize_title(r.get("Title_EN")), normalize_title(r.get("Title_Other"))],
-        lambda r: r.get("Title_CN") or r.get("originalTitle") or r["id"],
-        cand_author=normalize_title(" ".join(n for n in author_names if n)),
-    )
+def _hint_work(row: dict, user_rows: dict, author_names: list[str]) -> dict[str, Any] | None:
+    """作品基础匹配提示(作者名用于同名异书消歧,与去重管线同一实现)。"""
+    cand = dict(row)
+    names = " ".join(n for n in author_names if n)
+    if names:
+        cand["author"] = names
+    hit = dedupe_check.basic_match_work(cand, user_rows["works"])
+    if hit.get("level") == "none":
+        return None
+    existing = hit.get("existing") or {}
+    return {
+        "level": hit["level"],
+        "score": hit["score"],
+        "existing_id": existing.get("id"),
+        "existing_label": (
+            existing.get("Title_CN") or existing.get("originalTitle")
+            or existing.get("id") or ""
+        ),
+    }
 
 
 # ======================================================================
@@ -252,8 +229,8 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
     batches, published = _draft_batches(owner)
 
     admin = admin_user_id()
-    public = load_rows(public_only=True)
-    public_authors, public_works = public["authors"], public["works"]
+    user_rows = load_user_rows(admin)
+    public_authors, public_works = user_rows["authors"], user_rows["works"]
 
     # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
     batch_works: dict[str, dict] = {}
@@ -286,9 +263,9 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                 for a in r["target"]["authors"]
             ]
             work_author_names[r["target"]["work"]["id"]] = tgt_names
-    hints_a = {aid: _hint_author(a, public_authors) for aid, a in batch_authors.items()}
+    hints_a = {aid: _hint_author(a, user_rows) for aid, a in batch_authors.items()}
     hints_w = {
-        wid: _hint_work(w, public_works, work_author_names.get(wid) or [])
+        wid: _hint_work(w, user_rows, work_author_names.get(wid) or [])
         for wid, w in batch_works.items()
     }
 
@@ -564,19 +541,18 @@ def _publish_draft_entity(
 def _exact_reuse_id(
     kind: Kind,
     draft_row: dict,
-    public_authors: list[dict],
-    public_works: list[dict],
+    user_rows: dict,
     author_names: list[str] | None = None,
 ) -> str | None:
-    """精确命中公共星云(exact)时返回可复用的公共行 id,否则 None。
+    """精确命中判重目标库(exact)时返回可复用的行 id,否则 None。
 
     批准时自动复用:只有 level == 'exact' 才复用(同名异书 exact_diff_author
     以及 contained/token 仍走新建,避免误复用)。
     """
     hint = (
-        _hint_author(draft_row, public_authors)
+        _hint_author(draft_row, user_rows)
         if kind == "authors"
-        else _hint_work(draft_row, public_works, author_names or [])
+        else _hint_work(draft_row, user_rows, author_names or [])
     )
     if hint and hint.get("level") == "exact":
         return hint["existing_id"]
@@ -615,8 +591,8 @@ def approve_ripple(
     admin_id = user["id"]
     owner = user["id"]
     body = body or ApproveRippleBody()
-    public = load_rows(public_only=True)
-    public_authors, public_works, public_edges = public["authors"], public["works"], public["edges"]
+    user_rows = load_user_rows(admin_id)
+    public_edges = user_rows["edges"]
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         edge = _staging_row(conn, "edges", edge_id, owner)
         src_work = sqlite_store.get_row(conn, "works", edge["source_work_id"], owner)
@@ -643,7 +619,7 @@ def approve_ripple(
                 conn, "authors", a, owner, admin_id,
                 body.reuse_source_author_id
                 if (len(src_authors) == 1 and body.reuse_source_author_id)
-                else _exact_reuse_id("authors", a, public_authors, public_works),
+                else _exact_reuse_id("authors", a, user_rows),
                 user["email"],
             )
             for a in src_authors
@@ -651,7 +627,7 @@ def approve_ripple(
         public_ids["source_work"] = _publish_draft_entity(
             conn, "works", src_work, owner, admin_id,
             body.reuse_source_work_id
-            or _exact_reuse_id("works", src_work, public_authors, public_works, src_author_names),
+            or _exact_reuse_id("works", src_work, user_rows, src_author_names),
             user["email"],
         )
         public_ids["target_authors"] = [
@@ -659,7 +635,7 @@ def approve_ripple(
                 conn, "authors", a, owner, admin_id,
                 body.reuse_target_author_id
                 if (len(tgt_authors) == 1 and body.reuse_target_author_id)
-                else _exact_reuse_id("authors", a, public_authors, public_works),
+                else _exact_reuse_id("authors", a, user_rows),
                 user["email"],
             )
             for a in tgt_authors
@@ -667,7 +643,7 @@ def approve_ripple(
         public_ids["target_work"] = _publish_draft_entity(
             conn, "works", tgt_work, owner, admin_id,
             body.reuse_target_work_id
-            or _exact_reuse_id("works", tgt_work, public_authors, public_works, tgt_author_names),
+            or _exact_reuse_id("works", tgt_work, user_rows, tgt_author_names),
             user["email"],
         )
         # 涟漪本身:两端作品(可能已复用)在公共星云已有同对边时,直接复用该边
@@ -699,8 +675,7 @@ def approve_source(
     admin_id = user["id"]
     owner = user["id"]
     body = body or ApproveSourceBody()
-    public = load_rows(public_only=True)
-    public_authors, public_works, _ = public["authors"], public["works"], public["edges"]
+    user_rows = load_user_rows(admin_id)
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         work = _staging_row(conn, "works", work_id, owner)
         authors = _draft_work_authors(conn, work["id"], owner)
@@ -715,7 +690,7 @@ def approve_source(
                 conn, "authors", a, owner, admin_id,
                 body.reuse_author_id
                 if (len(authors) == 1 and body.reuse_author_id)
-                else _exact_reuse_id("authors", a, public_authors, public_works),
+                else _exact_reuse_id("authors", a, user_rows),
                 user["email"],
             )
             for a in authors
@@ -723,7 +698,7 @@ def approve_source(
         work_public = _publish_draft_entity(
             conn, "works", work, owner, admin_id,
             body.reuse_work_id
-            or _exact_reuse_id("works", work, public_authors, public_works, author_names),
+            or _exact_reuse_id("works", work, user_rows, author_names),
             user["email"],
         )
     after_write(admin_id)

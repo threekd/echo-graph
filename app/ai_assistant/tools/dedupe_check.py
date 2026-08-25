@@ -44,7 +44,15 @@ from app import db_sqlite  # noqa: E402
 from app.ai_assistant import prompts  # noqa: E402
 from app.ai_assistant.tools import llm_client  # noqa: E402
 from app.ai_assistant.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
-from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title  # noqa: E402
+from app.auth import admin_user_id  # noqa: E402
+from app.dedupe_util import (  # noqa: E402
+    authors_clearly_different,
+    char_bigrams,
+    jaccard,
+    load_rows,
+    load_user_rows,
+    normalize_title,
+)
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "output" / "dedupe_report.json"
 EMBED_BATCH = 16  # 阿里云百炼 embedding 单批上限为 20,留余量取 16
@@ -157,7 +165,7 @@ def basic_match_work(
                 if level == "none":
                     continue
                 # 标题完全相同但作者明显不同 → 同名异书,降级提示人工确认
-                if level == "exact" and c_author and row_author and c_author != row_author:
+                if level == "exact" and authors_clearly_different(c_author, row_author):
                     level, score = "exact_diff_author", 0.5
                 if score > best["score"]:
                     best = {
@@ -894,12 +902,116 @@ def _dedupe_candidate(
     }
 
 
+def dedupe_entity(
+    kind: str,
+    cand: dict[str, Any],
+    *,
+    user_id: str,
+    db_path: str | None = None,
+    use_semantic: bool = True,
+    use_llm: bool = True,
+    force_semantic: bool = False,
+    top: int = 5,
+    strong: float = SEMANTIC_STRONG,
+    possible: float = SEMANTIC_POSSIBLE,
+) -> dict[str, Any]:
+    """统一三阶段去重入口:对单个候选在「user_id 个人空间」内判重。
+
+    kind: author / work / edge。
+    - author/work:基础匹配 + 向量语义 + LLM 兜底确认(可用 use_semantic /
+      use_llm 关闭阶段,默认全开;对应 API 未配置时自动降级)。
+    - edge:只需基础匹配——两端作品去重解析出公共 id 后,同源同目标对是否已存在。
+    返回与 run_dedupe 报告条目同形状的 dict。
+    """
+    existing = load_user_rows(user_id, db_path)
+    if kind == "edge":
+        basic = basic_match_edge(cand, existing["edges"])
+        decision, reason = _decide_edge(basic)
+        return {
+            "candidate": _clean_candidate(cand),
+            "basic": basic,
+            "semantic": None,
+            "llm": None,
+            "decision": decision,
+            "reason": reason,
+        }
+    if kind == "author":
+        label = "作者"
+        cache_type = "author"
+        basic = basic_match_author(cand, existing["authors"])
+        rows = existing["authors"]
+        embed_text = _author_embed_text
+        summarize = _summarize_author
+        compare_text = _author_compare_text
+        skip = ("exact",)
+    elif kind == "work":
+        label = "作品"
+        cache_type = "work"
+        basic = basic_match_work(cand, existing["works"])
+        rows = existing["works"]
+        embed_text = _work_embed_text
+        summarize = _summarize_work
+        compare_text = _work_compare_text
+        skip = ("exact", "exact_diff_author")
+    else:
+        raise ValueError(f"不支持的判重类型:{kind!r}")
+
+    client: OpenAI | None = None
+    model = ""
+    if use_semantic:
+        try:
+            client, model = _load_aliyun()
+        except RuntimeError as exc:
+            log(f"⚠ 未启用语义校验:{exc}")
+            client = None
+    ds_client: OpenAI | None = None
+    ds_model = ""
+    if use_llm:
+        try:
+            ds_client, ds_model = _load_deepseek()
+        except RuntimeError as exc:
+            log(f"⚠ 未启用 LLM 兜底确认:{exc}")
+            ds_client = None
+
+    texts: list[str] = []
+    vectors: list[list[float] | None] = []
+    if client is not None:
+        conn = _open_vector_conn(db_path)
+        try:
+            texts, vectors = _load_vectors_cached(
+                client, model, conn, cache_type, rows, embed_text
+            )
+        finally:
+            conn.close()
+    return _dedupe_candidate(
+        kind=label,
+        cand=cand,
+        basic=basic,
+        client=client,
+        model=model,
+        embed_text=embed_text,
+        existing_rows=rows,
+        texts=texts,
+        vectors=vectors,
+        summarize=summarize,
+        ds_client=ds_client,
+        ds_model=ds_model,
+        compare_text=compare_text,
+        force_semantic=force_semantic,
+        top=top,
+        strong=strong,
+        possible=possible,
+        semantic_skip_levels=skip,
+    )
+
+
 def run_dedupe(
     work_cands: list[dict[str, Any]],
     author_cands: list[dict[str, Any]],
     *,
     edge_cands: list[dict[str, Any]] | None = None,
     db_path: str | None = None,
+    user_id: str | None = None,
     basic_only: bool = False,
     force_semantic: bool = False,
     rebuild_vectors: bool = False,
@@ -910,12 +1022,18 @@ def run_dedupe(
 ) -> dict[str, Any]:
     """执行去重并返回报告 dict(CLI 与 pipeline_ingest 共用)。
 
+    user_id 指定判重目标库:只对该用户个人空间的行判重(admin 个人空间即公共
+    星云);缺省回退引导管理员。
     rebuild_vectors=True 时忽略 embeddings 缓存全量重嵌(换模型/阈值调整后重建)。
     llm_confirm=True 时对「可能重复」条目调 DeepSeek 兜底确认,置信度 > 0.8 直接按重复处理。
     """
     utf8_stdout()
-    existing = load_existing(db_path)
-    log(f"库内活跃数据:作品 {len(existing['works'])},作者 {len(existing['authors'])}")
+    if user_id is None:
+        user_id = admin_user_id() or ""
+        if not user_id:
+            raise RuntimeError("缺少判重目标用户(user_id),且引导管理员不存在")
+    existing = load_user_rows(user_id, db_path)
+    log(f"个人空间判重目标(用户 {user_id[:8]}):作品 {len(existing['works'])},作者 {len(existing['authors'])}")
     log(f"待检查:作品 {len(work_cands)},作者 {len(author_cands)},涟漪 {len(edge_cands or [])}")
 
     client: OpenAI | None = None

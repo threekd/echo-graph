@@ -445,6 +445,63 @@ class LlmPipelineTest(unittest.TestCase):
         )
         self.assertNotEqual(r["public_ids"]["target_work"], existing)
 
+    def test_same_title_same_person_variant_translation_reuses(self) -> None:
+        """同书同人异译(卡逊/卡森)不算同名异书:提示 exact 且批准自动复用。"""
+        extract = _synthetic_extract()
+        extract["ripples"][0]["work"].update({
+            "Title_CN": "寂静的春天",
+            "originalTitle": "Silent Spring",
+            "author": "蕾切尔·卡逊（Rachel Carson）",
+            "author_info": {
+                "originalName": "Rachel Carson",
+                "Name_CN": "蕾切尔·卡逊",
+                "Name_EN": "Rachel Carson",
+                "nationality": "US",
+                "birthYear": 1907,
+                "deathYear": 1964,
+                "note": None,
+            },
+        })
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
+        report = dedupe_check.run_dedupe(
+            work_cands, author_cands, db_path=str(self.db_path), basic_only=True, llm_confirm=False
+        )
+        batch = review_publish.build_batch(
+            extract, report, db_path=str(self.db_path), owner_id=self.owner
+        )
+        review_publish.stage_batch(batch, self.owner)
+        with db_sqlite._db() as conn:
+            existing = db_sqlite.new_uuid()
+            now = db_sqlite.now_iso()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'en', 'Silent Spring', '寂静的春天', 'reviewed', 'curated', ?, ?, ?)",
+                (existing, self.admin["id"], now, now),
+            )
+            pub_author = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO authors (id, originalName, Name_CN, reviewStatus, created_by,"
+                " owner_id, createdAt, updatedAt) VALUES (?, 'Rachel Carson', '蕾切尔·卡森',"
+                " 'reviewed', 'curated', ?, ?, ?)",
+                (pub_author, self.admin["id"], now, now),
+            )
+            conn.execute(
+                "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+                (existing, pub_author),
+            )
+
+        drafts = llm_drafts(self.admin)
+        ripple = drafts["batches"][0]["ripples"][0]
+        # 草稿作者为 蕾切尔·卡逊,公共为 蕾切尔·卡森:同人异译,不降级
+        self.assertEqual(ripple["hint"]["level"], "exact")
+        r = approve_ripple(
+            ripple["edge"]["id"],
+            ApproveRippleBody(),
+            {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"},
+        )
+        self.assertEqual(r["public_ids"]["target_work"], existing)
+
     def test_approve_source_no_ripples(self) -> None:
         """无涟漪批次:批准源书(作者+作品)即可发布。"""
         extract = _synthetic_extract()

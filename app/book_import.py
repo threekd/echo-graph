@@ -199,6 +199,7 @@ def _run_import(
             work_cands,
             author_cands,
             edge_cands=edge_cands,
+            user_id=llm_space.draft_owner_id(uploader_id),
             basic_only=basic_only,
             llm_confirm=False,  # Web 导入不额外调 LLM 兜底确认(审核页有实时去重提示)
         )

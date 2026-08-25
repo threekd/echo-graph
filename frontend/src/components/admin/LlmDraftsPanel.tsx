@@ -143,8 +143,12 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         new Map(
           data.batches
             .flatMap((b) => [
-              b.source.work,
-              ...b.ripples.flatMap((r) => (r.target ? [r.target.work] : [])),
+              { ...b.source.work, author_id: b.source.authors.map((a) => a.id).join(",") },
+              ...b.ripples.flatMap((r) =>
+                r.target
+                  ? [{ ...r.target.work, author_id: r.target.authors.map((a) => a.id).join(",") }]
+                  : []
+              ),
             ])
             .map((w) => [w.id, w] as const)
         ).values()
@@ -155,7 +159,14 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const renderEntityActions = (batch: LlmDraftBatch) => {
     return (
     <span className="llm-actions">
-      <button onClick={() => setModal({ kind: "works", row: batch.source.work as AdminRow })}>编辑作品</button>
+      <button
+        onClick={() => setModal({
+          kind: "works",
+          row: { ...batch.source.work, author_id: batch.source.authors.map((a) => a.id).join(",") } as AdminRow,
+        })}
+      >
+        编辑作品
+      </button>
       {batch.source.authors.map((a) => (
         <button key={a.id} onClick={() => setModal({ kind: "authors", row: a as AdminRow })}>
           编辑作者
@@ -249,7 +260,10 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                       <span className="llm-ripple-actions-left">
                         <button
                           title={"编辑目标作品 " + workLabelOf(r.target.work)}
-                          onClick={() => setModal({ kind: "works", row: r.target!.work as AdminRow })}
+                          onClick={() => setModal({
+                            kind: "works",
+                            row: { ...r.target!.work, author_id: r.target!.authors.map((a) => a.id).join(",") } as AdminRow,
+                          })}
                         >
                           编辑作品
                         </button>

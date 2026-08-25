@@ -265,3 +265,8 @@
       批准后进入「已发布」折叠区;新增接口
       `POST /api/admin/llm/ripples/{edge_id}/approve` 与
       `POST /api/admin/llm/source/{work_id}/approve`(无涟漪批次的源书批准)
+- [x] 去重逻辑统一:新增 `dedupe_check.dedupe_entity(kind, candidate, *, user_id, ...)`
+      统一入口(author/work 走 基础+语义+LLM 三阶段,edge 只走端点对基础匹配);
+      判重目标**严格按用户个人空间**(admin 个人空间即公共星云,`load_user_rows`,
+      含未认领历史行、排除 AI 草稿);`run_dedupe`、AI 草稿提示/自动复用、
+      个人空间新增全部改走统一入口;删除 llm_review 自写的 `_best_hit` 匹配

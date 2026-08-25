@@ -8,8 +8,32 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import auth, db_sqlite
-from app.dedupe_util import load_rows
+from app.dedupe_util import authors_clearly_different, load_rows
 from tests._helpers import rewrite_all
+
+
+class AuthorsClearlyDifferentTest(unittest.TestCase):
+    """authors_clearly_different:同人异译不降级,真正不同作者才判不同。"""
+
+    def test_same_name_not_different(self) -> None:
+        self.assertFalse(authors_clearly_different("蕾切尔·卡逊", "蕾切尔·卡逊"))
+
+    def test_variant_translation_not_different(self) -> None:
+        # 同人异译:卡逊/卡森、村上春树/村上春樹(繁简)、阿瑟/亚瑟
+        self.assertFalse(authors_clearly_different("蕾切尔·卡逊", "蕾切尔·卡森"))
+        self.assertFalse(authors_clearly_different("村上春树", "村上春樹"))
+        self.assertFalse(authors_clearly_different("阿瑟·克拉克", "亚瑟·克拉克"))
+
+    def test_containment_not_different(self) -> None:
+        self.assertFalse(authors_clearly_different("卡逊", "蕾切尔·卡逊（Rachel Carson）"))
+
+    def test_clearly_different_authors(self) -> None:
+        self.assertTrue(authors_clearly_different("蕾切尔·卡逊", "另一位作者"))
+        self.assertTrue(authors_clearly_different("刘慈欣", "罗贯中"))
+
+    def test_missing_side_never_different(self) -> None:
+        self.assertFalse(authors_clearly_different("蕾切尔·卡逊", None))
+        self.assertFalse(authors_clearly_different("", "蕾切尔·卡逊"))
 
 
 class LoadRowsPublicOnlyTest(unittest.TestCase):

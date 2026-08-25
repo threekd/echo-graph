@@ -66,7 +66,8 @@
 | `nickname` | TEXT | 否 | 昵称(展示用,优先于用户名;为空时展示名回退用户名) |
 | `bio` | TEXT | 否 | 简介(最多 500 字,应用层校验) |
 | `vip` | INTEGER | 是 | VIP 标记(0/1,默认 0):VIP 用户拥有 AI 书籍导入权限
-  (草稿仍由 admin 在「AI 草稿」页审核;由 admin 通过 `POST /api/admin/users/{id}/vip` 维护) |
+  (导入的草稿按 owner_id=上传者 隔离,「AI 草稿」审核页仅展示当前 admin 自己上传的草稿;
+  VIP 标记由 admin 通过 `POST /api/admin/users/{id}/vip` 维护) |
 
 约束:`CHECK (role IN ('user','admin'))`、`CHECK (status IN ('active','disabled'))`、
 `CHECK (space_visibility IN ('private','public'))`、`CHECK (vip IN (0, 1))`。
@@ -98,7 +99,7 @@
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
-| `published_to_id` | TEXT | 否 | AI 草稿发布映射:system_llm 空间草稿批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进 CSV |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:上传者空间草稿(owner_id=上传者、created_by='llm')批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进 CSV |
 
 约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
 `CHECK (created_by IN ('curated','user','llm'))`。
@@ -281,8 +282,8 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 - `users` 新增 `vip` 标记列(schema v26 迁移):布尔 0/1,默认 0;
   VIP 用户拥有 AI 书籍导入权限(`/api/admin/import-book`),
-  草稿仍由 admin 在「AI 草稿」页审核;由 admin 接口
-  `POST /api/admin/users/{user_id}/vip` 维护。
+  导入草稿按 owner_id=上传者 隔离(见「1.4 → 1.5」草稿区说明);
+  VIP 标记由 admin 接口 `POST /api/admin/users/{user_id}/vip` 维护。
 
 `1.5 → 1.6` 变更(2026-08-25):
 
@@ -293,7 +294,8 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 `1.4 → 1.5` 变更(2026-08-25):
 
 - AI 草稿审核管道(schema v24 迁移):作者/作品/涟漪三表新增 `published_to_id`,
-  记录 system_llm 草稿批准后映射到的公共行 id(复用场景为被复用行 id),防重复发布;
+  记录上传者空间草稿(owner_id=上传者、created_by='llm')批准后映射到的公共行 id
+  (复用场景为被复用行 id),防重复发布;
 - 草稿区 = 上传者空间(`owner_id`=上传者、`created_by='llm'`、`reviewStatus='draft'`),
   admin 只能看到自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
   (判定:`created_by='llm'` 且 `reviewStatus != 'reviewed'` 或 `published_to_id` 非空,

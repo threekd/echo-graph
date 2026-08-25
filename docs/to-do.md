@@ -234,3 +234,27 @@
       `llm_reuse` / `llm_reject` / `llm_reopen`
 - [x] 审核管道 CLI:`app/ai_assistant/tools/review_publish.py` 新增 `ingest` 子命令,
       批次条目单事务写入 system_llm 草稿区,增量跳过已处理条目
+
+## 最近变更(2026-08-26)
+
+- [x] 提示词统一维护到 `app/ai_assistant/prompts.py`:抽取共享字段块
+      (`_AUTHOR_FIELDS` / `_WORK_FIELDS`)消除 AUTHOR↔ENTITY_AUTHOR、
+      WORK↔ENTITY_WORK 重复;去重兜底确认提示词从 `dedupe_check.py` 内嵌
+      文案整合为 `DEDUPE_CONFIRM_SYSTEM_PROMPT` + 用户模板(补 system 角色、
+      变体识别、保守阈值与严格数字输出约束)
+- [x] 涟漪只取正文:代码层过滤(不依赖提示词)——`read_book.find_book_titles_with_context`
+      新增 `body_only=True`,在聚合前剔除前言/序言/尾记/附录等非正文章节;
+      RIPPLE 提示词 `mention_type` 改为 前言/正文/尾记/其它 四类,
+      `skipped` 新增 `out_of_body` 计数
+- [x] 修复三体导入「作者栏出现全部涟漪作者」:涟漪作者改存
+      `extract["ripple_authors"]`(不再混入源书作者 `extract["authors"]`),
+      `collect_candidates_from_extract` / `build_batch` 同步修正,
+      `build_batch` 对旧版污染数据容错(按元数据作者 + 涟漪作者键过滤)
+- [x] AI 草稿按上传者隔离:废除共享 `system_llm` 机器账号,草稿直接
+      `owner_id=上传者` + `created_by='llm'` 落库;admin 在「AI 草稿」页只能看到
+      自己上传的草稿;公共星云/策展/导出/去重读取统一排除 AI 草稿
+      (`db_sqlite.ai_draft_clause`);旧共享账号草稿由
+      `app/llm_account.migrate_legacy_llm_drafts()` 首次读取时一次性迁移到
+      引导管理员并删除空账号
+- [x] AI 草稿页交互:「清空」按钮(确认弹窗,软删除自己上传的草稿,审计留痕);
+      「导入」按钮在 AI 草稿页签同样显示,导入完成后草稿列表自动刷新

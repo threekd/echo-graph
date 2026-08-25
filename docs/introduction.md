@@ -13,15 +13,19 @@
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.6)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
-- **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`)→ 去重
-  校验(`dedupe_check.py`,基础匹配 + 阿里云百炼 qwen3.7-text-embedding 语义辅助)→
-  批次登记(`review_publish.py make-batch / ingest`)以 `created_by='llm'`、
-  `reviewStatus='draft'` 写入 `system_llm` 机器账号私有空间(草稿区,外界不可见);
-  admin 在管理端「AI 草稿」页逐条审核——批准(复制进公共星云)/ 复用(去重命中现有
-  记录)/ 驳回 / 重开 / 编辑,批准后回写 `published_to_id` 防重复发布。
+- **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
+  书内书名提及**仅取正文**,涟漪出处标注为 前言/正文/尾记/其它 四类;提示词统一
+  维护在 `app/ai_assistant/prompts.py`)→ 去重校验(`dedupe_check.py`,基础匹配 +
+  阿里云百炼 qwen3.7-text-embedding 语义辅助 + DeepSeek 兜底确认)→ 批次登记
+  (`review_publish.py make-batch / ingest`)以 `owner_id=上传者`、
+  `created_by='llm'`、`reviewStatus='draft'` 写入草稿区(已不再使用共享
+  `system_llm` 机器账号,历史草稿由 `migrate_legacy_llm_drafts()` 一次性迁移);
+  admin 在管理端「AI 草稿」页只能看到自己上传的草稿,逐条审核——批准(复制进
+  公共星云)/ 复用(去重命中现有记录)/ 驳回 / 重开 / 编辑,批准后回写
+  `published_to_id` 防重复发布。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式

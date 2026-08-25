@@ -744,16 +744,38 @@ def _work_candidate_from_result(
 def collect_candidates_from_extract(
     data: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """从 extract_source_book 的输出 JSON 收集待检查的作者/作品候选。"""
+    """从 extract_source_book 的输出 JSON 收集待检查的作者/作品候选。
+
+    作者候选 = 源书作者(extract["authors"]) + 涟漪作者
+    (extract["ripple_authors"],兼容旧版涟漪 work.author_info;同名去重)。
+    源书作品的作者串只取源书作者,避免涟漪作者干扰同名异书判定。
+    """
     work_cands: list[dict[str, Any]] = []
     author_cands: list[dict[str, Any]] = []
-    for a in data.get("authors") or []:
-        author_cands.append(
-            _pick(
-                a,
-                ("originalName", "Name_CN", "Name_EN", "nationality", "birthYear", "deathYear", "note"),
-            )
+    seen_author_keys: set[str] = set()
+
+    def add_author(raw: dict[str, Any]) -> None:
+        cand = _pick(
+            raw,
+            ("originalName", "Name_CN", "Name_EN", "nationality", "birthYear", "deathYear", "note"),
         )
+        key = normalize_title(cand.get("Name_CN")) or normalize_title(cand.get("originalName"))
+        if key and key in seen_author_keys:
+            return
+        if key:
+            seen_author_keys.add(key)
+        author_cands.append(cand)
+
+    for a in data.get("authors") or []:
+        add_author(a)
+    ripple_authors: list[dict[str, Any]] = list(data.get("ripple_authors") or [])
+    for r in data.get("ripples") or []:
+        info = (r.get("work") or {}).get("author_info")
+        if isinstance(info, dict):
+            ripple_authors.append(info)
+    for a in ripple_authors:
+        add_author(a)
+
     src_work = data.get("work")
     if src_work:
         src_author_names = [

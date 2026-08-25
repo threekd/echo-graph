@@ -17,7 +17,7 @@ from app.ai_assistant.tools import entity_extract
 
 
 class EnrichRippleAuthorsTest(unittest.TestCase):
-    """enrich_ripple_authors:涟漪作者补全并并入 extract["authors"] 候选。"""
+    """enrich_ripple_authors:涟漪作者补全并存入 extract["ripple_authors"] 候选。"""
 
     def setUp(self) -> None:
         self.extract = {
@@ -58,7 +58,7 @@ class EnrichRippleAuthorsTest(unittest.TestCase):
         }
 
     def test_enrich_writes_author_info_and_candidates(self) -> None:
-        """补全结果写回涟漪 author_info,并并入 extract["authors"] 候选(同名去重)。"""
+        """补全结果写回涟漪 author_info,并存入 extract["ripple_authors"] 候选(同名去重)。"""
         with patch.object(
             entity_extract, "extract_author", return_value=dict(self.enriched)
         ):
@@ -68,15 +68,16 @@ class EnrichRippleAuthorsTest(unittest.TestCase):
         # 第一个涟漪写入 author_info;第二个涟漪因同名作者已补全(跳过重复调用) -> 见下
         w0 = self.extract["ripples"][0]["work"]
         self.assertEqual(w0["author_info"]["nationality"], "US")
-        # extract["authors"] 追加补全作者(原源书作者 + 1 位涟漪作者)
-        names = [a["Name_CN"] for a in self.extract["authors"]]
+        # 涟漪作者单独存放,不再混入源书作者 extract["authors"]
+        self.assertEqual([a["Name_CN"] for a in self.extract["authors"]], ["源书作者"])
+        names = [a["Name_CN"] for a in self.extract["ripple_authors"]]
         self.assertEqual(names.count("赫尔曼·梅尔维尔"), 1)
 
     def test_skip_when_no_author_or_already_enriched(self) -> None:
         """空作者跳过;已补全(重复运行)不再调用 LLM。"""
-        # 模拟第一次 enrich 后的状态:author_info 已写回 + 补全作者已并入候选
+        # 模拟第一次 enrich 后的状态:author_info 已写回 + 补全作者已存入 ripple_authors
         self.extract["ripples"][0]["work"]["author_info"] = dict(self.enriched)
-        self.extract["authors"].append(dict(self.enriched))
+        self.extract.setdefault("ripple_authors", []).append(dict(self.enriched))
         with patch.object(entity_extract, "extract_author", return_value=dict(self.enriched)) as m:
             n = entity_extract.enrich_ripple_authors(self.extract)
         self.assertEqual(n, 0)

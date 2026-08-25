@@ -562,9 +562,39 @@ def build_batch(
     items: list[dict[str, Any]] = []
 
     # 1) 作者：源书作者优先，随后是涟漪提及作品的作者（拆中文名/英文名）
-    source_author_ids: list[str] = []
-    for a in extract.get("authors") or []:
-        source_author_ids.append(_add_author_item(items, _author_payload(a), report, public))
+    # 源书作者 = extract["authors"]（A1 阶段输出）。enrich_ripple_authors 把
+    # 涟漪作者单独存放在 extract["ripple_authors"] / work.author_info；对旧版
+    # 提取结果（涟漪作者曾混入 extract["authors"]）做容错:优先按 source_book
+    # 元数据作者匹配，匹配不到的再剔除与任一涟漪作者同名的条目，避免把全书
+    # 提及作者误挂到源书作品。
+    source_meta = [_norm(x) for x in (extract.get("source_book") or {}).get("authors") or [] if x]
+    ripple_author_keys: set[str] = set()
+    for r in extract.get("ripples") or []:
+        info = (r.get("work") or {}).get("author_info")
+        if isinstance(info, dict):
+            for key in ("Name_CN", "originalName", "Name_EN"):
+                if info.get(key):
+                    ripple_author_keys.add(_norm(info[key]))
+    for a in extract.get("ripple_authors") or []:
+        for key in ("Name_CN", "originalName", "Name_EN"):
+            if a.get(key):
+                ripple_author_keys.add(_norm(a[key]))
+
+    def _is_source_author(a: dict[str, Any]) -> bool:
+        norm_keys = {
+            _norm(a.get(key)) for key in ("Name_CN", "originalName", "Name_EN") if a.get(key)
+        }
+        norm_keys.discard("")
+        if source_meta and any(nk in meta or meta in nk for nk in norm_keys for meta in source_meta):
+            return True
+        if norm_keys & ripple_author_keys:
+            return False
+        return True
+
+    source_authors = [a for a in extract.get("authors") or [] if _is_source_author(a)]
+    source_author_ids = list(
+        dict.fromkeys(_add_author_item(items, _author_payload(a), report, public) for a in source_authors)
+    )
 
     for r in extract.get("ripples") or []:
         w = r.get("work") or {}
@@ -587,7 +617,7 @@ def build_batch(
     if src_work.get("Title_CN") or src_work.get("originalTitle"):
         source_author_names = [
             a.get("Name_CN") or a.get("Name_EN") or a.get("originalName")
-            for a in extract.get("authors") or []
+            for a in source_authors
         ]
         payload = _work_payload(src_work, " ".join(n for n in source_author_names if n) or None)
         source_work_id = _add_work_item(items, payload, source_author_ids, report, public)

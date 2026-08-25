@@ -209,6 +209,44 @@ def llm_drafts() -> dict:
 # ======================================================================
 # 草稿操作
 # ======================================================================
+@router.post("/drafts/clear")
+def clear_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
+    """清空 AI 草稿:软删除 system_llm 空间全部草稿行(作者/作品/涟漪)。
+
+    仅作用于 system_llm 私有空间的 AI 草稿,不影响公共星云已发布数据;
+    软删除保留行(带 deletedAt)可恢复,审计留痕。
+    """
+    owner = ensure_system_llm()
+    now = db_sqlite.now_iso()
+    counts: dict[str, int] = {"authors": 0, "works": 0, "edges": 0}
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        for kind in ("authors", "works", "edges"):
+            rows = conn.execute(
+                f"SELECT id FROM {KIND_TABLE[kind]}"
+                " WHERE owner_id = ? AND deletedAt IS NULL",
+                (owner,),
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+            if not ids:
+                continue
+            placeholders = ",".join("?" for _ in ids)
+            conn.execute(
+                f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ?"
+                f" WHERE id IN ({placeholders}) AND owner_id = ?",
+                (now, now, *ids, owner),
+            )
+            counts[kind] = len(ids)
+            db_sqlite.audit(
+                conn,
+                "delete",
+                kind,
+                None,
+                f"清空 AI 草稿:软删除 {len(ids)} 条",
+                actor=user["email"],
+            )
+    return {"ok": True, "counts": counts}
+
+
 def _staging_row(conn, kind: Kind, item_id: str, owner: str) -> dict:
     row = sqlite_store.get_row(conn, kind, item_id, owner)
     if row is None:

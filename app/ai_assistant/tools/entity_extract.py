@@ -202,8 +202,10 @@ def enrich_ripple_authors(
     对每个涟漪的 work.author 调用 extract_author 补全,结果:
     1) 写回该涟漪 work["author_info"],build_batch 建作者条目时优先使用,
        使进入草稿区的作者记录包含完整字段;
-    2) 追加到 extract["authors"](批内同名去重),使 collect_candidates_from_extract
-       把它们收集进去重管线——入草稿前与公共星云做基础+语义去重。
+    2) 追加到 extract["ripple_authors"]:与源书作者 extract["authors"] 分开存放,
+       避免 build_batch 把涟漪作者误当成源书作者挂到源书作品上;
+       collect_candidates_from_extract 会同时收集两处,入草稿前与公共星云
+       做基础+语义去重。
 
     返回本次补全的作者数(空名 / 已补全 / 同名已存在跳过)。
     """
@@ -213,9 +215,10 @@ def enrich_ripple_authors(
         author_name = (work.get("author") or "").strip()
         if not author_name or work.get("author_info"):
             continue
-        authors = extract.setdefault("authors", [])
+        authors = extract.setdefault("ripple_authors", [])
         name_key = _name_key({"Name_CN": author_name})
-        if name_key and any(_name_key(a) == name_key for a in authors):
+        all_authors = [*authors, *extract.get("authors", [])]
+        if name_key and any(_name_key(a) == name_key for a in all_authors):
             continue  # 同名作者已在候选(源书作者或另一涟漪已补全),不重复调用
         info = extract_author(name_cn=author_name, model=model, on_log=on_log)
         if not info:

@@ -643,6 +643,9 @@ th.sortable.active .sort-icon {
 
 /* AI 草稿审核面板 */
 .llm-drafts .llm-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.llm-drafts .llm-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.llm-drafts .llm-clear { margin-left: auto; color: #e06c6c; }
+.llm-drafts .llm-clear:disabled { opacity: 0.5; cursor: not-allowed; }
 .llm-drafts .llm-tip { margin: 4px 0; color: #8a93a6; font-size: 12px; line-height: 1.6; }
 .llm-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .llm-actions button.primary { font-weight: 600; }

@@ -18,6 +18,7 @@ from app import auth, data_store, db_sqlite
 from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from app.llm_review import (
     approve_draft,
+    clear_drafts,
     llm_drafts,
     reject_draft,
     reopen_draft,
@@ -199,9 +200,10 @@ class LlmPipelineTest(unittest.TestCase):
             "deathYear": 1891,
             "note": "美国小说家。",
         }
-        # 模拟 enrich_ripple_authors 的效果:author_info 写回涟漪 + 并入 extract["authors"]
+        # 模拟 enrich_ripple_authors 的效果:author_info 写回涟漪 + 涟漪作者存入
+        # extract["ripple_authors"](不再混入源书作者 extract["authors"])
         extract["ripples"][0]["work"]["author_info"] = ripple_author
-        extract["authors"].append(ripple_author)
+        extract.setdefault("ripple_authors", []).append(ripple_author)
 
         # 涟漪作者进入去重候选(基础匹配)
         work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
@@ -222,6 +224,15 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(mel["payload"]["nationality"], "US")
         self.assertEqual(mel["payload"]["birthYear"], 1819)
         self.assertEqual(mel["payload"]["deathYear"], 1891)
+        # 回归:源书作品只挂源书作者,不挂涟漪作者
+        src_item = next(
+            it for it in batch["items"] if it["kind"] == "work" and it["label"] == "测试之书"
+        )
+        src_author_labels = [
+            next(i["label"] for i in batch["items"] if i["item_id"] == ref)
+            for ref in src_item["author_refs"]
+        ]
+        self.assertEqual(src_author_labels, ["测试作者"])
 
         # 入库草稿:作者行带国籍/生卒年,涟漪作品仍正确关联该作者
         counts = review_publish.stage_batch(batch, self.owner)
@@ -244,6 +255,13 @@ class LlmPipelineTest(unittest.TestCase):
                 (self.owner, "白鲸"),
             ).fetchone()
             self.assertGreater(wa["c"], 0)
+            wa_src = conn.execute(
+                "SELECT count(*) c FROM work_authors wa"
+                " JOIN works w ON w.id = wa.work_id"
+                " WHERE w.owner_id = ? AND w.Title_CN = ?",
+                (self.owner, "测试之书"),
+            ).fetchone()
+            self.assertEqual(wa_src["c"], 1)  # 源书作品只关联源书作者
 
     def test_stage_marks_failed_item(self) -> None:
         """坏数据条目单条失败不中断整批(stage_batch 的容错)。"""
@@ -253,6 +271,65 @@ class LlmPipelineTest(unittest.TestCase):
         # 级联失败:坏作者 1 条 + 依赖它的源书作品 1 条 + 该作品涟漪 1 条
         self.assertEqual(counts["staged"], 2)
         self.assertEqual(counts["failed"], 3)
+
+    def test_legacy_polluted_authors_not_linked_to_source_work(self) -> None:
+        """旧版提取结果(涟漪作者曾混入 extract["authors"])容错:源书作品不挂涟漪作者。"""
+        extract = _synthetic_extract()
+        ripple_author = {
+            "originalName": "Herman Melville",
+            "Name_CN": "赫尔曼·梅尔维尔",
+            "Name_EN": "Herman Melville",
+            "nationality": "US",
+            "birthYear": 1819,
+            "deathYear": 1891,
+        }
+        # 旧版污染:涟漪作者既写回 author_info,又被追加进 extract["authors"]
+        extract["ripples"][0]["work"]["author_info"] = ripple_author
+        extract["authors"].append(ripple_author)
+
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
+        self.assertEqual(len(author_cands), 2)  # 源书作者 + 涟漪作者都进去重候选
+        report = dedupe_check.run_dedupe(
+            work_cands, author_cands, db_path=str(self.db_path), basic_only=True, llm_confirm=False
+        )
+        batch = review_publish.build_batch(
+            extract, report, db_path=str(self.db_path), owner_id=self.owner
+        )
+
+        src_item = next(
+            it for it in batch["items"] if it["kind"] == "work" and it["label"] == "测试之书"
+        )
+        src_author_labels = [
+            next(i["label"] for i in batch["items"] if i["item_id"] == ref)
+            for ref in src_item["author_refs"]
+        ]
+        self.assertEqual(src_author_labels, ["测试作者"])
+
+    def test_clear_drafts_soft_deletes_all(self) -> None:
+        """清空 AI 草稿:软删除 system_llm 空间全部草稿,公共数据不受影响,审计留痕。"""
+        batch = self._batch()
+        review_publish.stage_batch(batch, self.owner)
+        before = llm_drafts()["staging"]["counts"]
+        self.assertEqual((before["authors"], before["works"], before["edges"]), (2, 2, 1))
+
+        admin = {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"}
+        result = clear_drafts(admin)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["counts"], {"authors": 2, "works": 2, "edges": 1})
+
+        after = llm_drafts()["staging"]["counts"]
+        self.assertEqual((after["authors"], after["works"], after["edges"]), (0, 0, 0))
+        with db_sqlite._db() as conn:
+            deleted = conn.execute(
+                "SELECT count(*) c FROM works WHERE owner_id = ? AND deletedAt IS NOT NULL",
+                (self.owner,),
+            ).fetchone()["c"]
+            audit = conn.execute(
+                "SELECT count(*) c FROM audit_log"
+                " WHERE action = 'delete' AND detail LIKE '清空 AI 草稿%'",
+            ).fetchone()["c"]
+        self.assertEqual(deleted, 2)
+        self.assertGreater(audit, 0)
 
 
 if __name__ == "__main__":

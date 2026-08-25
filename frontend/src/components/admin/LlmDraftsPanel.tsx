@@ -52,6 +52,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>({ key: "updatedAt", dir: -1 });
   const [reloadKey, setReloadKey] = useState(0);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -101,6 +102,24 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const reopen = (row: AdminRow) => {
     call("/api/admin/llm/drafts/" + kind + "/" + encodeURIComponent(row.id) + "/reopen", { method: "POST" })
       .then(() => { onStatus("已重开为草稿"); setReloadKey((k) => k + 1); })
+      .catch((e: Error) => onStatus(e.message));
+  };
+
+  const clearDrafts = () => {
+    call("/api/admin/llm/drafts/clear", { method: "POST" })
+      .then((d: { counts?: Record<string, number> }) => {
+        const c = d.counts || {};
+        onStatus(
+          "AI 草稿已清空(作者 " + (c.authors ?? 0) +
+          " · 作品 " + (c.works ?? 0) +
+          " · 涟漪 " + (c.edges ?? 0) + ")"
+        );
+        setKind("authors");
+        setFilters({});
+        setTextFilters({});
+        setSort({ key: "updatedAt", dir: -1 });
+        setReloadKey((k) => k + 1);
+      })
       .catch((e: Error) => onStatus(e.message));
   };
 
@@ -190,16 +209,21 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
           公共星云现有：作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
           {counts ? `；草稿：作者 ${counts.authors} · 作品 ${counts.works} · 涟漪 ${counts.edges}` : ""}
         </p>
-        <div className="admin-tabs">
-          {SUB_KINDS.map((k) => (
-            <button
-              key={k.key}
-              className={"admin-tab" + (kind === k.key ? " active" : "")}
-              onClick={() => switchKind(k.key)}
-            >
-              {k.label}
-            </button>
-          ))}
+        <div className="llm-toolbar">
+          <div className="admin-tabs">
+            {SUB_KINDS.map((k) => (
+              <button
+                key={k.key}
+                className={"admin-tab" + (kind === k.key ? " active" : "")}
+                onClick={() => switchKind(k.key)}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+          <button className="llm-clear" onClick={() => setConfirmClear(true)} disabled={loading}>
+            清空
+          </button>
         </div>
       </div>
       {loading ? (
@@ -255,6 +279,30 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         />
       )}
       {publishedCount > 0 && <p className="llm-tip">本页已有 {publishedCount} 条发布/复用（草稿行保留映射，不会重复发布）。</p>}
+
+      {confirmClear && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>清空 AI 草稿</h3>
+            <p>
+              确定要清空当前 AI 草稿吗？将软删除 system_llm 空间中的全部草稿
+              （作者/作品/涟漪），公共星云已发布数据不受影响。
+            </p>
+            <div className="admin-modal-actions">
+              <button
+                className="del"
+                onClick={() => {
+                  setConfirmClear(false);
+                  clearDrafts();
+                }}
+              >
+                确认
+              </button>
+              <button onClick={() => setConfirmClear(false)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal && (
         <NodeFormModal

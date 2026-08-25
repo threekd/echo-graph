@@ -380,7 +380,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertNotIn("测试作者", labels_b)
 
     def test_approve_ripple_reuses_existing_target_work(self) -> None:
-        """涟漪批准支持复用现有公共作品(去重命中时),目标作品草稿映射到被复用行。"""
+        """涟漪批准自动复用精确命中的公共作品(无需手动传 reuse id)。"""
         batch = self._batch()
         review_publish.stage_batch(batch, self.owner)
         # 预置公共作品「白鲸」(admin 空间,reviewed)
@@ -396,10 +396,10 @@ class LlmPipelineTest(unittest.TestCase):
 
         drafts = llm_drafts(self.admin)
         ripple = drafts["batches"][0]["ripples"][0]
-        self.assertIsNotNone(ripple["hint"])  # 目标作品白鲸命中公共记录
+        self.assertEqual(ripple["hint"]["level"], "exact")  # 白鲸精确命中公共记录
         r = approve_ripple(
             ripple["edge"]["id"],
-            ApproveRippleBody(reuse_target_work_id=existing),
+            ApproveRippleBody(),
             {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"},
         )
         self.assertEqual(r["public_ids"]["target_work"], existing)
@@ -409,6 +409,41 @@ class LlmPipelineTest(unittest.TestCase):
                 (ripple["target"]["work"]["id"], self.owner),
             ).fetchone()
             self.assertEqual(row["published_to_id"], existing)
+
+    def test_approve_ripple_does_not_reuse_exact_diff_author(self) -> None:
+        """同名异书(exact 但作者不同)不自动复用,仍新建作品。"""
+        batch = self._batch()
+        review_publish.stage_batch(batch, self.owner)
+        with db_sqlite._db() as conn:
+            existing = db_sqlite.new_uuid()
+            now = db_sqlite.now_iso()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'en', 'Moby Dick', '白鲸', 'reviewed', 'curated', ?, ?, ?)",
+                (existing, self.admin["id"], now, now),
+            )
+            pub_author = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO authors (id, originalName, Name_CN, reviewStatus, created_by,"
+                " owner_id, createdAt, updatedAt) VALUES (?, 'Other Author', '另一位作者',"
+                " 'reviewed', 'curated', ?, ?, ?)",
+                (pub_author, self.admin["id"], now, now),
+            )
+            conn.execute(
+                "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+                (existing, pub_author),
+            )
+
+        drafts = llm_drafts(self.admin)
+        ripple = drafts["batches"][0]["ripples"][0]
+        self.assertEqual(ripple["hint"]["level"], "exact_diff_author")
+        r = approve_ripple(
+            ripple["edge"]["id"],
+            ApproveRippleBody(),
+            {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"},
+        )
+        self.assertNotEqual(r["public_ids"]["target_work"], existing)
 
     def test_approve_source_no_ripples(self) -> None:
         """无涟漪批次:批准源书(作者+作品)即可发布。"""

@@ -260,6 +260,8 @@
       「导入」按钮在 AI 草稿页签同样显示,导入完成后草稿列表自动刷新
 - [x] AI 草稿审核改版:去掉 作者/作品/涟漪 三个 Tab,改为按导入批次(源书)分组的
       卡片,每条涟漪按「点亮星空」字段展示并可单独批准(依赖按 源作者→源作品→
-      目标作者→目标作品→涟漪 顺序自动建库)/复用/驳回/重开;批准后进入
-      「已发布」折叠区;新增接口 `POST /api/admin/llm/ripples/{edge_id}/approve`
-      与 `POST /api/admin/llm/source/{work_id}/approve`(无涟漪批次的源书批准)
+      目标作者→目标作品→涟漪 顺序自动建库,与公共星云精确重复时自动复用
+      (exact/edge_duplicate,同名异书 exact_diff_author 不自动复用)/驳回/重开;
+      批准后进入「已发布」折叠区;新增接口
+      `POST /api/admin/llm/ripples/{edge_id}/approve` 与
+      `POST /api/admin/llm/source/{work_id}/approve`(无涟漪批次的源书批准)

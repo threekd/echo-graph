@@ -269,13 +269,26 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
             batch_works[r["target"]["work"]["id"]] = r["target"]["work"]
             for a in r["target"]["authors"]:
                 batch_authors[a["id"]] = a
-    staging_author_names = {
-        aid: (a.get("Name_CN") or a.get("Name_EN") or "")
-        for aid, a in batch_authors.items()
-    }
+    # 作品作者名按 work_authors 解析(works 表没有 author_id 列),
+    # 供同名异书(exact_diff_author)降级判断使用
+    work_author_names: dict[str, list[str]] = {}
+    for b in batches:
+        src_names = [
+            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
+            for a in b["source"]["authors"]
+        ]
+        work_author_names[b["source"]["work"]["id"]] = src_names
+        for r in b["ripples"]:
+            if not r["target"]:
+                continue
+            tgt_names = [
+                a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
+                for a in r["target"]["authors"]
+            ]
+            work_author_names[r["target"]["work"]["id"]] = tgt_names
     hints_a = {aid: _hint_author(a, public_authors) for aid, a in batch_authors.items()}
     hints_w = {
-        wid: _hint_work(w, public_works, [staging_author_names.get(x, "") for x in _author_id_list(w.get("author_id"))])
+        wid: _hint_work(w, public_works, work_author_names.get(wid) or [])
         for wid, w in batch_works.items()
     }
 
@@ -548,6 +561,28 @@ def _publish_draft_entity(
     return public_row["id"]
 
 
+def _exact_reuse_id(
+    kind: Kind,
+    draft_row: dict,
+    public_authors: list[dict],
+    public_works: list[dict],
+    author_names: list[str] | None = None,
+) -> str | None:
+    """精确命中公共星云(exact)时返回可复用的公共行 id,否则 None。
+
+    批准时自动复用:只有 level == 'exact' 才复用(同名异书 exact_diff_author
+    以及 contained/token 仍走新建,避免误复用)。
+    """
+    hint = (
+        _hint_author(draft_row, public_authors)
+        if kind == "authors"
+        else _hint_work(draft_row, public_works, author_names or [])
+    )
+    if hint and hint.get("level") == "exact":
+        return hint["existing_id"]
+    return None
+
+
 @router.post("/drafts/{kind}/{item_id}/approve")
 def approve_draft(
     kind: Kind,
@@ -580,6 +615,8 @@ def approve_ripple(
     admin_id = user["id"]
     owner = user["id"]
     body = body or ApproveRippleBody()
+    public = load_rows(public_only=True)
+    public_authors, public_works, public_edges = public["authors"], public["works"], public["edges"]
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         edge = _staging_row(conn, "edges", edge_id, owner)
         src_work = sqlite_store.get_row(conn, "works", edge["source_work_id"], owner)
@@ -591,31 +628,62 @@ def approve_ripple(
         if not src_authors:
             raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
 
+        src_author_names = [
+            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
+            for a in src_authors
+        ]
+        tgt_author_names = [
+            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
+            for a in tgt_authors
+        ]
+
         public_ids: dict[str, Any] = {}
         public_ids["source_authors"] = [
             _publish_draft_entity(
                 conn, "authors", a, owner, admin_id,
-                body.reuse_source_author_id if len(src_authors) == 1 else None,
+                body.reuse_source_author_id
+                if (len(src_authors) == 1 and body.reuse_source_author_id)
+                else _exact_reuse_id("authors", a, public_authors, public_works),
                 user["email"],
             )
             for a in src_authors
         ]
         public_ids["source_work"] = _publish_draft_entity(
-            conn, "works", src_work, owner, admin_id, body.reuse_source_work_id, user["email"]
+            conn, "works", src_work, owner, admin_id,
+            body.reuse_source_work_id
+            or _exact_reuse_id("works", src_work, public_authors, public_works, src_author_names),
+            user["email"],
         )
         public_ids["target_authors"] = [
             _publish_draft_entity(
                 conn, "authors", a, owner, admin_id,
-                body.reuse_target_author_id if len(tgt_authors) == 1 else None,
+                body.reuse_target_author_id
+                if (len(tgt_authors) == 1 and body.reuse_target_author_id)
+                else _exact_reuse_id("authors", a, public_authors, public_works),
                 user["email"],
             )
             for a in tgt_authors
         ]
         public_ids["target_work"] = _publish_draft_entity(
-            conn, "works", tgt_work, owner, admin_id, body.reuse_target_work_id, user["email"]
+            conn, "works", tgt_work, owner, admin_id,
+            body.reuse_target_work_id
+            or _exact_reuse_id("works", tgt_work, public_authors, public_works, tgt_author_names),
+            user["email"],
         )
+        # 涟漪本身:两端作品(可能已复用)在公共星云已有同对边时,直接复用该边
+        edge_reuse = None
+        if public_ids["source_work"] and public_ids["target_work"]:
+            dup = next(
+                (
+                    e for e in public_edges
+                    if e["source_work_id"] == public_ids["source_work"]
+                    and e["target_work_id"] == public_ids["target_work"]
+                ),
+                None,
+            )
+            edge_reuse = dup["id"] if dup else None
         public_ids["edge"] = _publish_draft_entity(
-            conn, "edges", edge, owner, admin_id, body.reuse_edge_id, user["email"]
+            conn, "edges", edge, owner, admin_id, body.reuse_edge_id or edge_reuse, user["email"]
         )
     after_write(admin_id)
     return {"ok": True, "public_ids": public_ids}
@@ -631,21 +699,32 @@ def approve_source(
     admin_id = user["id"]
     owner = user["id"]
     body = body or ApproveSourceBody()
+    public = load_rows(public_only=True)
+    public_authors, public_works, _ = public["authors"], public["works"], public["edges"]
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         work = _staging_row(conn, "works", work_id, owner)
         authors = _draft_work_authors(conn, work["id"], owner)
         if not authors:
             raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
+        author_names = [
+            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
+            for a in authors
+        ]
         author_ids = [
             _publish_draft_entity(
                 conn, "authors", a, owner, admin_id,
-                body.reuse_author_id if len(authors) == 1 else None,
+                body.reuse_author_id
+                if (len(authors) == 1 and body.reuse_author_id)
+                else _exact_reuse_id("authors", a, public_authors, public_works),
                 user["email"],
             )
             for a in authors
         ]
         work_public = _publish_draft_entity(
-            conn, "works", work, owner, admin_id, body.reuse_work_id, user["email"]
+            conn, "works", work, owner, admin_id,
+            body.reuse_work_id
+            or _exact_reuse_id("works", work, public_authors, public_works, author_names),
+            user["email"],
         )
     after_write(admin_id)
     return {

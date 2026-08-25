@@ -22,14 +22,11 @@ const shortId = (id: string): string => (id.length > 8 ? id.slice(0, 8) : id);
 
 function hintText(hint: DedupeHint | null | undefined): string {
   if (!hint) return "";
-  if (hint.level === "exact") return "疑似重复:" + hint.existing_label;
+  if (hint.level === "exact") return "将自动复用现有记录:" + hint.existing_label;
   if (hint.level === "exact_diff_author") return "同名异书:" + hint.existing_label;
-  if (hint.level === "edge_duplicate") return "该涟漪已存在:" + hint.existing_label;
+  if (hint.level === "edge_duplicate") return "将自动复用现有涟漪:" + hint.existing_label;
   return "可能重复:" + hint.existing_label;
 }
-
-const isExact = (h: DedupeHint | null | undefined): boolean =>
-  Boolean(h && (h.level === "exact" || h.level === "edge_duplicate"));
 
 interface EditModal {
   kind: NodeKind;
@@ -69,43 +66,28 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       return d;
     });
 
-  const approveRipple = (
-    edgeId: string,
-    reuse?: { sourceWork?: string; sourceAuthor?: string; targetWork?: string; targetAuthor?: string; edge?: string },
-  ) => {
+  const approveRipple = (edgeId: string) => {
     call("/api/admin/llm/ripples/" + encodeURIComponent(edgeId) + "/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        reuse_source_work_id: reuse?.sourceWork || null,
-        reuse_source_author_id: reuse?.sourceAuthor || null,
-        reuse_target_work_id: reuse?.targetWork || null,
-        reuse_target_author_id: reuse?.targetAuthor || null,
-        reuse_edge_id: reuse?.edge || null,
-      }),
+      body: JSON.stringify({}),
     })
       .then(() => {
-        onStatus(reuse ? "已复用现有记录并发布涟漪" : "涟漪已发布到公共星云");
+        onStatus("涟漪已发布到公共星云(精确命中时已自动复用)");
         onPublicChanged();
         reload();
       })
       .catch((e: Error) => onStatus(e.message));
   };
 
-  const approveSource = (
-    workId: string,
-    reuse?: { work?: string; author?: string },
-  ) => {
+  const approveSource = (workId: string) => {
     call("/api/admin/llm/source/" + encodeURIComponent(workId) + "/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        reuse_work_id: reuse?.work || null,
-        reuse_author_id: reuse?.author || null,
-      }),
+      body: JSON.stringify({}),
     })
       .then(() => {
-        onStatus(reuse ? "已复用现有记录并发布源书" : "源书已发布到公共星云");
+        onStatus("源书已发布到公共星云(精确命中时已自动复用)");
         onPublicChanged();
         reload();
       })
@@ -170,10 +152,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     : [];
   const edgesList = data ? data.batches.flatMap((b) => b.ripples.map((r) => r.edge)) : [];
 
-  const renderEntityActions = (
-    batch: LlmDraftBatch,
-    extra: { onSourceApprove?: (reuse?: { work?: string; author?: string }) => void },
-  ) => (
+  const renderEntityActions = (batch: LlmDraftBatch) => {
+    return (
     <span className="llm-actions">
       <button onClick={() => setModal({ kind: "works", row: batch.source.work as AdminRow })}>编辑作品</button>
       {batch.source.authors.map((a) => (
@@ -183,27 +163,12 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       ))}
       {batch.ripples.length === 0 && (
         <>
-          {isExact(batch.source.hint) && (
-            <button
-              onClick={() => extra.onSourceApprove?.({ work: batch.source.hint?.existing_id })}
-              title={"复用 " + batch.source.hint?.existing_label + " (免建新行)"}
-            >
-              复用源书
-            </button>
-          )}
-          {isExact(batch.source.author_hint) && (
-            <button
-              onClick={() => extra.onSourceApprove?.({ author: batch.source.author_hint?.existing_id })}
-              title={"复用 " + batch.source.author_hint?.existing_label}
-            >
-              复用作者
-            </button>
-          )}
-          <button className="primary" onClick={() => extra.onSourceApprove?.()}>批准源书</button>
+          <button className="primary" onClick={() => approveSource(batch.source.work.id)}>批准源书</button>
         </>
       )}
     </span>
-  );
+    );
+  };
 
   return (
     <div className="llm-drafts">
@@ -211,7 +176,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         <p className="llm-tip">
           AI 草稿仅上传者本人可见（owner_id=上传者、created_by=llm，公共星云不可见）。
           每条涟漪按 源作品 → 目标作品 独立批准，依赖的作者/作品会自动建库；
-          命中公共星云重复时可选择「复用」。公共星云现有：
+          与公共星云精确重复时批准将自动复用现有记录（提示见卡片），
+          如需修正可在发布后在「数据管理」中编辑。公共星云现有：
           作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
           {counts
             ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples} · 已发布 ${counts.published}`
@@ -238,7 +204,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                 作者:{b.source.authors.map(sourceAuthorLabel).join("、") || "未知"}
                 {b.created_at ? ` · 导入 ${new Date(b.created_at).toLocaleString()}` : ""}
               </span>
-              {renderEntityActions(b, { onSourceApprove: (reuse) => approveSource(b.source.work.id, reuse) })}
+              {renderEntityActions(b)}
             </div>
 
             <div className="llm-batch-body">
@@ -294,46 +260,6 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                       </>
                     ) : (
                       <>
-                        {isExact(b.source.hint) && (
-                          <button
-                            onClick={() => approveRipple(r.edge.id, { sourceWork: b.source.hint?.existing_id })}
-                            title={"复用源书 " + b.source.hint?.existing_label}
-                          >
-                            复用源书
-                          </button>
-                        )}
-                        {isExact(b.source.author_hint) && (
-                          <button
-                            onClick={() => approveRipple(r.edge.id, { sourceAuthor: b.source.author_hint?.existing_id })}
-                            title={"复用源作者 " + b.source.author_hint?.existing_label}
-                          >
-                            复用源作者
-                          </button>
-                        )}
-                        {isExact(r.hint) && (
-                          <button
-                            onClick={() => approveRipple(r.edge.id, { targetWork: r.hint?.existing_id })}
-                            title={"复用目标作品 " + r.hint?.existing_label + " (免建新行)"}
-                          >
-                            复用目标作品
-                          </button>
-                        )}
-                        {isExact(r.author_hint) && (
-                          <button
-                            onClick={() => approveRipple(r.edge.id, { targetAuthor: r.author_hint?.existing_id })}
-                            title={"复用目标作者 " + r.author_hint?.existing_label}
-                          >
-                            复用目标作者
-                          </button>
-                        )}
-                        {isExact(r.edge_hint) && (
-                          <button
-                            onClick={() => approveRipple(r.edge.id, { edge: r.edge_hint?.existing_id })}
-                            title={"复用现有涟漪 " + r.edge_hint?.existing_label}
-                          >
-                            复用涟漪
-                          </button>
-                        )}
                         <button className="primary" onClick={() => approveRipple(r.edge.id)}>批准</button>
                         <button onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}>编辑</button>
                         <button onClick={() => reject(r.edge.id)}>驳回</button>

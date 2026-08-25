@@ -300,6 +300,23 @@ def build_dedupe_info(
         if semantic and semantic.get("best_score"):
             reason += f"（语义最高 {semantic['best_score']}）"
 
+    # LLM 兜底确认(报告 confidence > 阈值且目标在公共空间)→ 直接按重复处理
+    llm = (report_entry or {}).get("llm") or {}
+    if (
+        llm.get("confidence") is not None
+        and llm["confidence"] > dedupe_check.LLM_CONFIRM_THRESHOLD
+        and llm.get("existing_id") in public_ids
+    ):
+        decision = "likely_duplicate"
+        reason = (
+            f"LLM 确认：与现有{'作品' if kind == 'work' else '作者'}为同一"
+            f"{'本书' if kind == 'work' else '作者'}"
+            f"（置信度 {llm['confidence']:.2f} > {dedupe_check.LLM_CONFIRM_THRESHOLD}）"
+        )
+        existing_id = llm["existing_id"]
+        if existing is None:
+            existing = {"id": existing_id}
+
     if existing and existing.get("id"):
         existing_id = existing["id"]
     return {

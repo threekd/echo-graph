@@ -87,6 +87,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="忽略 embeddings 缓存,全量重新嵌入库内作品/作者(换模型或阈值调整后重建)",
     )
+    parser.add_argument(
+        "--no-llm-confirm",
+        action="store_true",
+        help="对「可能重复」条目跳过 DeepSeek 兜底确认(默认开启)",
+    )
     parser.add_argument("--top", type=int, default=5, help="语义最高匹配展示条数(默认 5)")
     parser.add_argument("--model", default=None, help="覆盖解析用的 DeepSeek 模型名")
     parser.add_argument(
@@ -166,6 +171,7 @@ def main() -> None:
         basic_only=args.basic_only,
         force_semantic=args.force_semantic,
         rebuild_vectors=args.rebuild_vectors,
+        llm_confirm=not args.no_llm_confirm,
         top=args.top,
     )
     write_json(dedupe_out, report)

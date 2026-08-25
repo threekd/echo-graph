@@ -11,6 +11,10 @@
     - 库内条目向量落库缓存(embeddings 表):model + VECTOR_VERSION + 文本
       hash 命中即复用;仅新行/文本变更/换模型/--rebuild-vectors 时调接口
     - 高分提示疑似重复,供人工确认后决定是复用已有记录还是新增
+第三步:LLM 兜底确认(DeepSeek,需 DEEPSEEK_* 配置)
+    - 基础/语义判定为「可能重复」时,把候选与库内命中条目的描述交给
+      deepseek-v4-flash 判断是否同一实体,仅要求输出 0~1 置信度
+    - 置信度 > 0.8 直接按重复处理(无需人工确认);否则维持人工确认
 
 输入:
     - --input:extract_source_book.py 的输出 JSON(自动检查 authors / work / ripples)
@@ -36,12 +40,14 @@ from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from agent_temp.tools import llm_client  # noqa: E402
 from agent_temp.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
 from app import db_sqlite  # noqa: E402
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "output" / "dedupe_report.json"
 EMBED_BATCH = 16  # 阿里云百炼 embedding 单批上限为 20,留余量取 16
 VECTOR_VERSION = 1  # embeddings 缓存版本;嵌入文本格式或模型语义变化时 +1(配合 --rebuild-vectors)
+LLM_CONFIRM_THRESHOLD = 0.8  # LLM 兜底确认置信度 > 此值视为重复,无需人工确认
 # 阈值按 qwen3.7-text-embedding 实测标定(2026-08-24,"原文名|中文名|作者"
 # 三字段嵌入格式):
 #   真重复(圣经,production 三字段文本)≈ 0.735
@@ -562,6 +568,148 @@ def _author_embed_text(c: dict[str, Any]) -> str:
 
 
 # ======================================================================
+# 第三步:LLM 兜底确认(DeepSeek)
+# ======================================================================
+def _load_deepseek() -> tuple[OpenAI, str]:
+    """加载 DeepSeek 客户端与模型(作者/作品重复 LLM 确认)。"""
+    api_key, base_url = llm_client.load_environment()
+    return llm_client.create_client(api_key, base_url), llm_client.MODEL
+
+
+def _llm_prompt(kind: str, text_a: str, text_b: str) -> str:
+    """LLM 二选一提示词:仅输出 0~1 置信度数字。"""
+    question = "A和B是同一本书吗？" if kind == "作品" else "A和B是同一个作者吗？"
+    return (
+        f"{question}回答一个0到1之间的数字，可以是0，可以是1，可以是0到1之间的小数。"
+        "仅输出数字，不要输出其他内容。\n"
+        f"A:{text_a}\nB:{text_b}"
+    )
+
+
+def llm_duplicate_confidence(
+    client: OpenAI,
+    model: str,
+    kind: str,
+    text_a: str,
+    text_b: str,
+) -> float | None:
+    """询问 LLM 判断 A/B 是否为同一实体,返回 0~1 置信度;失败/无法解析返回 None。"""
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": _llm_prompt(kind, text_a, text_b)}],
+            temperature=0,
+            max_tokens=16,
+            # 数值判断题不需要深度思考;deepseek-v4-flash 默认会先推理,
+            # 小 max_tokens 下正文为空(finish_reason=length),故显式关闭
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+    except Exception as exc:
+        log(f"LLM 重复确认调用失败:{type(exc).__name__}: {exc}")
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?|\.\d+", raw)
+    if not match:
+        log(f"LLM 重复确认输出无法解析:{raw!r}")
+        return None
+    value = float(match.group())
+    if not 0.0 <= value <= 1.0:
+        log(f"LLM 重复确认输出越界:{raw!r}")
+        return None
+    return value
+
+
+def _work_compare_text(c: dict[str, Any]) -> str:
+    """LLM 比对用的作品描述:尽量带全可区分字段。"""
+    parts: list[str] = []
+    for label, key in (
+        ("中文名", "Title_CN"),
+        ("原名", "originalTitle"),
+        ("英文名", "Title_EN"),
+        ("其他译名", "Title_Other"),
+        ("语言", "language"),
+        ("年份", "publicationYear"),
+        ("体裁", "genre"),
+    ):
+        value = c.get(key)
+        if value:
+            parts.append(f"{label}:{value}")
+    author = c.get("author") or c.get("author_names") or c.get("_author_names")
+    if author:
+        parts.append(f"作者:{author}")
+    return "；".join(parts)
+
+
+def _author_compare_text(c: dict[str, Any]) -> str:
+    """LLM 比对用的作者描述。"""
+    parts: list[str] = []
+    for label, key in (
+        ("中文名", "Name_CN"),
+        ("英文名", "Name_EN"),
+        ("原名", "originalName"),
+        ("国籍", "nationality"),
+        ("生年", "birthYear"),
+        ("卒年", "deathYear"),
+    ):
+        value = c.get(key)
+        if value:
+            parts.append(f"{label}:{value}")
+    return "；".join(parts)
+
+
+def _semantic_top_existing(sem: dict[str, Any] | None) -> dict[str, Any] | None:
+    """语义最高匹配的库内条目(去重报告 summarize 形式);无则 None。"""
+    if not sem:
+        return None
+    top = sem.get("top_matches") or []
+    return top[0]["existing"] if top else None
+
+
+def _maybe_llm_confirm(
+    ds_client: OpenAI | None,
+    ds_model: str,
+    kind: str,
+    cand: dict[str, Any],
+    basic: dict[str, Any],
+    sem: dict[str, Any] | None,
+    compare_text: Any,
+    decision: str,
+    reason: str,
+) -> tuple[str, str, dict[str, Any] | None]:
+    """possible 判定时询问 LLM 是否同一实体;置信度 > 阈值升级为重复。
+
+    返回 (decision, reason, llm_info);llm_info 落报告供审核追溯。
+    """
+    if ds_client is None or decision != "possible":
+        return decision, reason, None
+    target = basic.get("existing") or _semantic_top_existing(sem)
+    if not target:
+        return decision, reason, None
+    text_a = compare_text(cand)
+    text_b = compare_text(target)
+    conf = llm_duplicate_confidence(ds_client, ds_model, kind, text_a, text_b)
+    entity = "本书" if kind == "作品" else "作者"
+    info: dict[str, Any] = {
+        "kind": kind,
+        "model": ds_model,
+        "confidence": conf,
+        "threshold": LLM_CONFIRM_THRESHOLD,
+        "existing_id": target.get("id"),
+        "compared": {"a": text_a, "b": text_b},
+    }
+    if conf is not None and conf > LLM_CONFIRM_THRESHOLD:
+        return (
+            "likely_duplicate",
+            f"LLM 确认:与现有{kind}为同一{entity}"
+            f"(置信度 {conf:.2f} > {LLM_CONFIRM_THRESHOLD})",
+            info,
+        )
+    if conf is not None:
+        reason = f"{reason};LLM 判定非重复(置信度 {conf:.2f})"
+    return decision, reason, info
+
+
+# ======================================================================
 # 判定与报告
 # ======================================================================
 def decide(
@@ -621,6 +769,14 @@ def _print_summary(report: dict[str, Any]) -> None:
             print(f"    语义最高: {top['score']} → {ex_label} (#{ex.get('id')})")
         elif sem and sem.get("error"):
             print(f"    语义: 失败({sem['error']})")
+        llm = item.get("llm")
+        if llm:
+            conf = llm.get("confidence")
+            if conf is not None:
+                verdict = "重复" if conf > LLM_CONFIRM_THRESHOLD else "非重复"
+                print(f"    LLM 确认({llm.get('model')}): {conf:.2f} → {verdict}")
+            else:
+                print("    LLM 确认: 调用失败/输出无法解析")
 
     for item in report.get("authors", []):
         line("作者", item)
@@ -748,14 +904,17 @@ def run_dedupe(
     basic_only: bool = False,
     force_semantic: bool = False,
     rebuild_vectors: bool = False,
+    llm_confirm: bool = True,
     top: int = 5,
     strong: float = SEMANTIC_STRONG,
     possible: float = SEMANTIC_POSSIBLE,
 ) -> dict[str, Any]:
-    """执行两步去重并返回报告 dict(CLI 与 pipeline_ingest 共用)。
+    """执行去重并返回报告 dict(CLI 与 pipeline_ingest 共用)。
 
     rebuild_vectors=True 时忽略 embeddings 缓存全量重嵌(换模型/阈值调整后重建)。
+    llm_confirm=True 时对「可能重复」条目调 DeepSeek 兜底确认,置信度 > 0.8 直接按重复处理。
     """
+    utf8_stdout()
     existing = load_existing(db_path)
     log(f"库内活跃数据:作品 {len(existing['works'])},作者 {len(existing['authors'])}")
     log(f"待检查:作品 {len(work_cands)},作者 {len(author_cands)},涟漪 {len(edge_cands or [])}")
@@ -769,6 +928,16 @@ def run_dedupe(
         except RuntimeError as exc:
             log(f"⚠ 未启用语义校验:{exc}")
             client = None
+
+    ds_client: OpenAI | None = None
+    ds_model = ""
+    if not basic_only and llm_confirm:
+        try:
+            ds_client, ds_model = _load_deepseek()
+            log(f"LLM 兜底确认启用:模型 {ds_model}")
+        except RuntimeError as exc:
+            log(f"⚠ 未启用 LLM 兜底确认:{exc}")
+            ds_client = None
 
     work_texts, work_vectors, author_texts, author_vectors = [], [], [], []
     if client is not None:
@@ -800,6 +969,11 @@ def run_dedupe(
             "vector_version": VECTOR_VERSION,
             "rebuild": rebuild_vectors,
         },
+        "llm_confirm": {
+            "enabled": ds_client is not None,
+            "model": ds_model,
+            "threshold": LLM_CONFIRM_THRESHOLD,
+        },
         "authors": [],
         "works": [],
         "edges": [],
@@ -820,11 +994,16 @@ def run_dedupe(
                 top,
             )
         decision, reason = decide(basic, sem, strong=strong, possible=possible)
+        decision, reason, llm = _maybe_llm_confirm(
+            ds_client, ds_model, "作者", cand, basic, sem, _author_compare_text,
+            decision, reason,
+        )
         report["authors"].append(
             {
                 "candidate": _clean_candidate(cand),
                 "basic": basic,
                 "semantic": sem,
+                "llm": llm,
                 "decision": decision,
                 "reason": reason,
             }
@@ -845,11 +1024,16 @@ def run_dedupe(
                 top,
             )
         decision, reason = decide(basic, sem, strong=strong, possible=possible)
+        decision, reason, llm = _maybe_llm_confirm(
+            ds_client, ds_model, "作品", cand, basic, sem, _work_compare_text,
+            decision, reason,
+        )
         report["works"].append(
             {
                 "candidate": _clean_candidate(cand),
                 "basic": basic,
                 "semantic": sem,
+                "llm": llm,
                 "decision": decision,
                 "reason": reason,
             }
@@ -863,6 +1047,7 @@ def run_dedupe(
                 "candidate": cand,
                 "basic": basic,
                 "semantic": None,
+                "llm": None,
                 "decision": decision,
                 "reason": reason,
             }
@@ -898,6 +1083,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="忽略 embeddings 缓存,全量重新嵌入库内作品/作者(换模型或阈值调整后重建)",
     )
+    parser.add_argument(
+        "--no-llm-confirm",
+        action="store_true",
+        help="对「可能重复」条目跳过 DeepSeek 兜底确认(默认开启)",
+    )
     parser.add_argument("--top", type=int, default=5, help="语义最高匹配展示条数(默认 5)")
     parser.add_argument("--threshold-strong", type=float, default=SEMANTIC_STRONG)
     parser.add_argument("--threshold-possible", type=float, default=SEMANTIC_POSSIBLE)
@@ -919,6 +1109,7 @@ def main() -> None:
         basic_only=args.basic_only,
         force_semantic=args.force_semantic,
         rebuild_vectors=args.rebuild_vectors,
+        llm_confirm=not args.no_llm_confirm,
         top=args.top,
         strong=args.threshold_strong,
         possible=args.threshold_possible,

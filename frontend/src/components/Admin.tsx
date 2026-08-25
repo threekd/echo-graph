@@ -113,6 +113,8 @@ export default function Admin() {
   // { mode: "add" | "edit", row: 表单初始值(编辑时为完整行) }
   const [modal, setModal] = useState<{ mode: "add" | "edit"; row: Partial<AdminRow> } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  // AI 草稿页导入完成后,通过更换 key 强制 LlmDraftsPanel 重新加载
+  const [llmReloadKey, setLlmReloadKey] = useState(0);
 
   // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
@@ -385,12 +387,12 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "audit" && kind !== "snapshots" && kind !== "llm" && (
-            <>
-              {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
-              <button onClick={openAdd}>＋ 新增</button>
-            </>
-          )}
+            {kind !== "audit" && kind !== "snapshots" && (
+              <>
+                {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
+                {kind !== "llm" && <button onClick={openAdd}>＋ 新增</button>}
+              </>
+            )}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -426,7 +428,12 @@ export default function Admin() {
         )}
         <div className="admin-body">
           {kind === "llm" ? (
-            <LlmDraftsPanel authFetch={authFetch} onStatus={setStatus} onPublicChanged={load} />
+            <LlmDraftsPanel
+              key={llmReloadKey}
+              authFetch={authFetch}
+              onStatus={setStatus}
+              onPublicChanged={load}
+            />
           ) : kind === "audit" ? (
             <AuditPanel
               authFetch={authFetch}
@@ -508,6 +515,7 @@ export default function Admin() {
           authFetch={authFetch}
           onClose={() => setImportOpen(false)}
           onStatus={setStatus}
+          onImported={() => setLlmReloadKey((k) => k + 1)}
         />
       )}
     </div>

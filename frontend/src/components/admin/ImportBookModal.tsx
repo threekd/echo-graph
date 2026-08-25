@@ -1,4 +1,4 @@
-/* 书籍导入弹窗:上传电子书 → 后端 AI 提取 → 推送到 AI 草稿(system_llm 空间)。
+/* 书籍导入弹窗:上传电子书 → 后端 AI 提取 → 推送到上传者的 AI 草稿。
    提交后轮询任务状态,展示阶段进度、日志与最终结果。 */
 
 import { useEffect, useRef, useState } from "react";
@@ -14,9 +14,10 @@ interface Props {
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
   onClose: () => void;
   onStatus: (msg: string) => void;
+  onImported?: () => void;
 }
 
-export default function ImportBookModal({ authFetch, onClose, onStatus }: Props) {
+export default function ImportBookModal({ authFetch, onClose, onStatus, onImported }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [authors, setAuthors] = useState("");
@@ -47,6 +48,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus }: Props)
         } else if (t.status === "done") {
           setPhase("done");
           onStatus("书籍导入完成,已推送 AI 草稿(批次 " + (t.result?.batch_id || "") + ")");
+          onImported?.();
         } else {
           setPhase("error");
           setMessage(t.error || "导入失败");
@@ -147,7 +149,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus }: Props)
               </span>
             </label>
             <p className="import-tip">
-              AI 解析后推送到「AI 草稿」(system_llm 空间),由管理员在 AI 草稿页按
+              AI 解析后推送到您的「AI 草稿」(仅上传者可见),由管理员在 AI 草稿页按
               作者 → 作品 → 涟漪 顺序审核/批准发布。解析可能需要数分钟。
             </p>
             <div className="admin-modal-actions">

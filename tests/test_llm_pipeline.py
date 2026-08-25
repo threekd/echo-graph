@@ -502,6 +502,40 @@ class LlmPipelineTest(unittest.TestCase):
         )
         self.assertEqual(r["public_ids"]["target_work"], existing)
 
+    def test_edge_duplicate_hint_resolves_endpoints_via_exact_match(self) -> None:
+        """端点作品未发布,但两端精确命中公共记录时,涟漪重复提示也应出现。"""
+        batch = self._batch()
+        review_publish.stage_batch(batch, self.owner)
+        with db_sqlite._db() as conn:
+            now = db_sqlite.now_iso()
+            pub_src = db_sqlite.new_uuid()
+            pub_tgt = db_sqlite.new_uuid()
+            pub_edge = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'zh', '测试之书', '测试之书', 'reviewed', 'curated', ?, ?, ?)",
+                (pub_src, self.admin["id"], now, now),
+            )
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, 'en', 'Moby Dick', '白鲸', 'reviewed', 'curated', ?, ?, ?)",
+                (pub_tgt, self.admin["id"], now, now),
+            )
+            conn.execute(
+                "INSERT INTO edges (id, source_work_id, target_work_id, evidence,"
+                " reviewStatus, created_by, owner_id, createdAt, updatedAt)"
+                " VALUES (?, ?, ?, '已有证据', 'reviewed', 'curated', ?, ?, ?)",
+                (pub_edge, pub_src, pub_tgt, self.admin["id"], now, now),
+            )
+
+        drafts = llm_drafts(self.admin)
+        ripple = drafts["batches"][0]["ripples"][0]
+        self.assertIsNotNone(ripple["edge_hint"])
+        self.assertEqual(ripple["edge_hint"]["level"], "edge_duplicate")
+        self.assertEqual(ripple["edge_hint"]["existing_id"], pub_edge)
+
     def test_approve_source_no_ripples(self) -> None:
         """无涟漪批次:批准源书(作者+作品)即可发布。"""
         extract = _synthetic_extract()

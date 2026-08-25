@@ -297,17 +297,35 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                 (*edge_ids, owner),
             ).fetchall()
             published_by_id = {r["id"]: r["published_to_id"] for r in pub_rows}
+
+        def resolve_public_work(wid: str | None) -> str | None:
+            """把草稿端点作品解析到公共作品 id:
+            已发布用 published_to_id,否则用精确去重命中的公共 id。"""
+            if not wid:
+                return None
+            pub = published_by_id.get(wid)
+            if pub:
+                return pub
+            hint = hints_w.get(wid)
+            if hint and hint.get("level") == "exact":
+                return hint.get("existing_id")
+            return None
+
         for b in batches:
             for r in b["ripples"]:
                 e = r["edge"]
-                src_id = published_by_id.get(e.get("source_work_id"))
-                tgt_id = published_by_id.get(e.get("target_work_id"))
+                src_id = resolve_public_work(e.get("source_work_id"))
+                tgt_id = resolve_public_work(e.get("target_work_id"))
                 if not (src_id and tgt_id):
                     continue
                 dup = conn.execute(
-                    "SELECT id, source_work_id, target_work_id FROM edges"
-                    " WHERE source_work_id = ? AND target_work_id = ? AND deletedAt IS NULL"
-                    " AND (owner_id = ? OR owner_id IS NULL)",
+                    "SELECT e.id, e.source_work_id, e.target_work_id,"
+                    " ws.Title_CN AS src_title, wt.Title_CN AS tgt_title"
+                    " FROM edges e"
+                    " LEFT JOIN works ws ON ws.id = e.source_work_id"
+                    " LEFT JOIN works wt ON wt.id = e.target_work_id"
+                    " WHERE e.source_work_id = ? AND e.target_work_id = ?"
+                    " AND e.deletedAt IS NULL AND (e.owner_id = ? OR e.owner_id IS NULL)",
                     (src_id, tgt_id, admin),
                 ).fetchone()
                 if dup:
@@ -316,7 +334,8 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                         "score": 1.0,
                         "existing_id": dup["id"],
                         "existing_label": (
-                            f"{dup['source_work_id']} → {dup['target_work_id']}"
+                            f"{dup['src_title'] or dup['source_work_id']}"
+                            f" → {dup['tgt_title'] or dup['target_work_id']}"
                         ),
                     }
         for b in batches:

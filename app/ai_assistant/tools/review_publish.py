@@ -122,6 +122,22 @@ def _split_author_name(raw: str | None) -> tuple[str, str | None]:
     return raw, None
 
 
+def _ripple_author_key(w: dict[str, Any]) -> str | None:
+    """涟漪作者在批内作者条目中的查找键(与建条目时的载荷来源一致)。
+
+    已补全(author_info)时用其 Name_CN/originalName;未补全时拆
+    「中文名（English Name）」后取中文名/英文名。返回 None 表示无作者。
+    """
+    info = w.get("author_info")
+    if isinstance(info, dict) and (info.get("Name_CN") or info.get("originalName")):
+        return _norm(info.get("Name_CN")) or _norm(info.get("originalName"))
+    name = (w.get("author") or "").strip()
+    if not name:
+        return None
+    cn, en = _split_author_name(name)
+    return _norm(cn) or _norm(en) or _norm(name)
+
+
 
 # ======================================================================
 # 去重结论合成（基础匹配 + 复用 dedupe_report 的语义结果）
@@ -596,6 +612,10 @@ def build_batch(
         dict.fromkeys(_add_author_item(items, _author_payload(a), report, public) for a in source_authors)
     )
 
+    # 涟漪作者条目注册表:键 = _ripple_author_key(work),值 = 批内作者条目 id。
+    # 作品阶段直接按键引用,避免用原文「中文名（English Name）」硬匹配失败
+    # (如文本写「蕾切尔·卡森（Rachel Carson）」而补全后的 Name_CN 是「蕾切尔·卡逊」)。
+    ripple_author_items: dict[str, str] = {}
     for r in extract.get("ripples") or []:
         w = r.get("work") or {}
         author_name = (w.get("author") or "").strip()
@@ -609,7 +629,10 @@ def build_batch(
             # 未补全(离线/兼容路径):仅拆中文名/英文名
             cn, en = _split_author_name(author_name)
             payload = {"originalName": author_name, "Name_CN": cn, "Name_EN": en}
-        _add_author_item(items, payload, report, public)
+        item_id = _add_author_item(items, payload, report, public)
+        key = _ripple_author_key(w)
+        if key:
+            ripple_author_items[key] = item_id
 
     # 2) 作品：源书 + 涟漪提及作品
     src_work = extract.get("work") or {}
@@ -632,15 +655,9 @@ def build_batch(
             continue
         author_name = (w.get("author") or "").strip()
         author_ref: list[str] = []
-        if author_name:
-            # 批内作者条目已按同名去重，这里直接按名找回
-            for it in items:
-                if it["kind"] == "author" and (
-                    _norm(it["payload"].get("Name_CN")) == _norm(author_name)
-                    or _norm(it["payload"].get("originalName")) == _norm(author_name)
-                ):
-                    author_ref = [it["item_id"]]
-                    break
+        key = _ripple_author_key(w)
+        if key and key in ripple_author_items:
+            author_ref = [ripple_author_items[key]]
         payload = _work_payload(w, author_name or None)
         wid = _add_work_item(items, payload, author_ref, report, public)
         # 涟漪目标与源书同名同作者时，直接复用源书作品条目

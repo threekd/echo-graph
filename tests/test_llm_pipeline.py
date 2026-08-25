@@ -442,6 +442,42 @@ class LlmPipelineTest(unittest.TestCase):
             ).fetchone()["c"]
         self.assertEqual(pub_w, 1)
 
+    def test_ripple_work_author_matches_enriched_author_info(self) -> None:
+        """涟漪原文作者「中文（English）」格式也能关联到补全作者条目(卡森 vs 卡逊)。"""
+        extract = _synthetic_extract()
+        ripple_author = {
+            "originalName": "Rachel Carson",
+            "Name_CN": "蕾切尔·卡逊",
+            "Name_EN": "Rachel Carson",
+            "nationality": "US",
+            "birthYear": 1907,
+            "deathYear": 1964,
+            "note": None,
+        }
+        extract["ripples"][0]["work"].update({
+            "Title_CN": "寂静的春天",
+            "originalTitle": "Silent Spring",
+            "author": "蕾切尔·卡森（Rachel Carson）",
+            "author_info": ripple_author,
+        })
+        extract.setdefault("ripple_authors", []).append(ripple_author)
+
+        work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extract)
+        report = dedupe_check.run_dedupe(
+            work_cands, author_cands, db_path=str(self.db_path), basic_only=True, llm_confirm=False
+        )
+        batch = review_publish.build_batch(
+            extract, report, db_path=str(self.db_path), owner_id=self.owner
+        )
+        ripple_work = next(
+            it for it in batch["items"] if it["kind"] == "work" and it["label"] == "寂静的春天"
+        )
+        author_labels = [
+            next(i["label"] for i in batch["items"] if i["item_id"] == ref)
+            for ref in ripple_work["author_refs"]
+        ]
+        self.assertEqual(author_labels, ["蕾切尔·卡逊"])
+
     def test_legacy_shared_drafts_migrated_to_bootstrap_admin(self) -> None:
         """旧 system_llm 共享草稿一次性迁移到引导管理员,并删除空账号。"""
         from app.llm_account import migrate_legacy_llm_drafts

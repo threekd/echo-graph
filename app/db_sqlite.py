@@ -614,6 +614,19 @@ def _migration_v25(conn: sqlite3.Connection) -> None:
         )
         """
     )
+def _migration_v26(conn: sqlite3.Connection) -> None:
+    """VIP 标记:users.vip(布尔,默认 0)。
+
+    VIP 用户拥有 AI 书籍导入权限(草稿仍由 admin 在「AI 草稿」页审核)。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "vip" not in cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN vip INTEGER NOT NULL DEFAULT 0"
+            " CHECK (vip IN (0, 1))"
+        )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -640,6 +653,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (23, _migration_v23),
     (24, _migration_v24),
     (25, _migration_v25),
+    (26, _migration_v26),
 ]
 
 

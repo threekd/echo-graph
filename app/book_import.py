@@ -1,4 +1,4 @@
-"""书籍导入 API(admin 角色):上传电子书 → AI 提取 → 去重 → system_llm AI 草稿区。
+"""书籍导入 API(admin / VIP 用户):上传电子书 → AI 提取 → 去重 → system_llm AI 草稿区。
 
 复用 ai_assistant 一键管线(pipeline_ingest.py)的三个阶段:
     1) extract_source_book.run_extract  读取书籍元信息 + LLM 提取 作者/作品/涟漪
@@ -38,12 +38,12 @@ from app.ai_assistant.tools import (
     llm_space,
     review_publish,
 )
-from app.auth import require_admin
+from app.auth import require_admin_or_vip
 
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin-import"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_vip)],
 )
 
 ROOT = Path(__file__).resolve().parent.parent

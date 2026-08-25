@@ -268,7 +268,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         return None
     row = conn.execute(
         "SELECT u.id, u.email, u.username, u.nickname, u.role, u.space_visibility,"
-        " u.bio, u.status, s.expires_at"
+        " u.bio, u.status, u.vip, s.expires_at"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ?",
         (_token_hash(token),),
@@ -288,6 +288,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
+        "vip": bool(row["vip"]),
     }
 
 
@@ -309,6 +310,14 @@ def require_admin(request: Request) -> dict:
     user = require_user(request)
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
+def require_admin_or_vip(request: Request) -> dict:
+    """FastAPI 依赖:管理员或 VIP 用户(未登录 401,普通用户 403)。"""
+    user = require_user(request)
+    if user["role"] != "admin" and not user.get("vip"):
+        raise HTTPException(status_code=403, detail="需要管理员或 VIP 权限")
     return user
 
 
@@ -360,6 +369,7 @@ def register(
         "bio": bio,
         "role": role,
         "space_visibility": "public",
+        "vip": False,
     }
 
 
@@ -385,6 +395,7 @@ def login(identifier: str, password: str) -> dict | None:
         "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
+        "vip": bool(row["vip"]),
     }
 
 

@@ -7,6 +7,7 @@ export interface AuthUser {
   nickname?: string | null; // 昵称(展示用,优先于用户名)
   bio?: string | null; // 简介(长文本,可选)
   role: string;
+  vip?: boolean; // VIP 标记(拥有 AI 书籍导入权限)
   space_visibility?: "public" | "private"; // 星云可见性(星际跃迁是否可访问)
 }
 

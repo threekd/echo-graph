@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app import sqlite_store
+from app import db_sqlite, sqlite_store
 from app.auth import admin_user_id, bootstrap_admin, bootstrap_email, require_admin
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
 from app.data_store import export_csv_files
@@ -105,6 +105,26 @@ def delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin))
 def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
     return restore_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
+
+
+@router.post("/users/{user_id}/vip")
+def admin_set_vip(
+    user_id: str,
+    body: dict,
+    user: dict | None = Depends(require_admin),  # noqa: B008
+) -> dict:
+    """标记/取消用户 VIP(admin)。VIP 用户拥有 AI 书籍导入权限。"""
+    admin = _admin_context(user)
+    vip = bool((body or {}).get("vip"))
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        conn.execute(
+            "UPDATE users SET vip = ?, updatedAt = ? WHERE id = ?",
+            (1 if vip else 0, db_sqlite.now_iso(), user_id),
+        )
+    return {"ok": True, "user_id": user_id, "vip": vip, "by": admin["id"]}
 
 
 @router.get("/audit")

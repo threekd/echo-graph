@@ -157,6 +157,40 @@ class BookImportTest(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("不支持的文件类型", r.json()["detail"])
 
+    def test_http_upload_allows_vip(self) -> None:
+        """VIP 用户可调用导入接口(200,任务正常完成)。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        vip_user = auth.register("vip@test.local", "password123", username="viptest")
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (vip_user["id"],))
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(vip_user["id"]))
+
+        with patch(
+            "app.ai_assistant.tools.extract_source_book.run_extract",
+            return_value=_synthetic_extract(),
+        ):
+            r = client.post(
+                "/api/admin/import-book?title=测试之书&basic_only=true",
+                content=b"fake epub bytes",
+                headers={"X-Filename": quote("测试之书.epub")},
+            )
+        self.assertEqual(r.status_code, 200, r.text)
+        task = self._wait_done(r.json()["task_id"])
+        self.assertEqual(task["status"], "done", task.get("error"))
+        self.assertEqual(task["result"]["counts"]["staged"], 5)
+
+    def test_http_upload_denies_normal_user(self) -> None:
+        """普通(非 VIP)用户调用导入接口被拒 403。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        plain = auth.register("plain@test.local", "password123", username="plaintest")
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(plain["id"]))
+        r = client.post(
+            "/api/admin/import-book",
+            content=b"x",
+            headers={"X-Filename": "book.epub"},
+        )
+        self.assertEqual(r.status_code, 403)
+
     def test_http_upload_requires_admin(self) -> None:
         client = TestClient(main.app, raise_server_exceptions=False)
         r = client.post(

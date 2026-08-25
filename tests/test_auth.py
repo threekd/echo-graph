@@ -58,6 +58,29 @@ class AuthStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             auth.register("DUP@example.com", "password123", username="dupper2")  # 邮箱大小写归一后判重
 
+    def test_vip_flag_roundtrip(self) -> None:
+        """users.vip:注册默认 False;标记后 login/me 返回 True;require_admin_or_vip 放行 VIP。"""
+        user = auth.register("vip@example.com", "password123", username="vipuser")
+        self.assertFalse(user["vip"])
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (user["id"],))
+        logged = auth.login("vip@example.com", "password123")
+        self.assertTrue(logged["vip"])
+        req = _FakeRequest(cookies={auth.SESSION_COOKIE: auth.create_session(user["id"])})
+        self.assertEqual(auth.require_admin_or_vip(req)["id"], user["id"])
+
+        # 普通用户 403
+        plain = auth.register("plain@example.com", "password123", username="plainuser")
+        req2 = _FakeRequest(cookies={auth.SESSION_COOKIE: auth.create_session(plain["id"])})
+        with self.assertRaises(HTTPException) as ctx:
+            auth.require_admin_or_vip(req2)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+        # 未登录 401
+        with self.assertRaises(HTTPException) as ctx2:
+            auth.require_admin_or_vip(_FakeRequest())
+        self.assertEqual(ctx2.exception.status_code, 401)
+
     def test_login(self) -> None:
         auth.register("user@example.com", "password123", username="user01")
         user = auth.login("USER@example.com", "password123")
@@ -76,7 +99,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertEqual(auth.current_user(token), {
             "id": user["id"], "email": "session@example.com",
             "username": "session", "nickname": None, "bio": None,
-            "role": "user", "space_visibility": "public",
+            "role": "user", "space_visibility": "public", "vip": False,
         })
         auth.delete_session(token)
         self.assertIsNone(auth.current_user(token))

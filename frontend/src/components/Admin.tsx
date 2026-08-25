@@ -93,6 +93,7 @@ export default function Admin() {
   // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
   // admin 管理公共星云(/api/admin,即其名下数据);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
+  const isVip = Boolean(state.user?.vip);
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
   const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["audit", "snapshots", "llm"].includes(k.key));
   const [kind, setKind] = useState<AdminTab>("authors");
@@ -386,7 +387,7 @@ export default function Admin() {
           <div className="admin-actions">
             {kind !== "audit" && kind !== "snapshots" && kind !== "llm" && (
             <>
-              {isAdmin && <button onClick={() => setImportOpen(true)}>导入</button>}
+              {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
               <button onClick={openAdd}>＋ 新增</button>
             </>
           )}

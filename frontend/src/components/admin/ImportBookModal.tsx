@@ -147,7 +147,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus }: Props)
               </span>
             </label>
             <p className="import-tip">
-              AI 解析后推送到「AI 草稿」(system_llm 空间),再到 AI 草稿页按
+              AI 解析后推送到「AI 草稿」(system_llm 空间),由管理员在 AI 草稿页按
               作者 → 作品 → 涟漪 顺序审核/批准发布。解析可能需要数分钟。
             </p>
             <div className="admin-modal-actions">

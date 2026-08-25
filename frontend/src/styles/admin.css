@@ -771,30 +771,6 @@ th.sortable.active .sort-icon {
 .llm-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .llm-actions button.primary { font-weight: 600; }
 .llm-published { color: #4caf7d; font-size: 12px; white-space: nowrap; }
-.llm-drafts .llm-published-section {
-  margin-top: 16px;
-  border-top: 1px solid rgba(138, 184, 255, 0.18);
-  padding-top: 10px;
-}
-.llm-drafts .llm-published-toggle {
-  background: none;
-  border: none;
-  color: #8a93a6;
-  cursor: pointer;
-  font-size: 13px;
-}
-.llm-drafts .llm-published-list {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.llm-drafts .llm-published-list li {
-  color: #9db4d6;
-  font-size: 12px;
-}
 
 
 /* 书籍导入弹窗 */

@@ -45,7 +45,6 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [modal, setModal] = useState<EditModal | null>(null);
-  const [publishedOpen, setPublishedOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -115,7 +114,6 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
           " · 作品 " + (c.works ?? 0) +
           " · 涟漪 " + (c.edges ?? 0) + ")"
         );
-        setPublishedOpen(false);
         reload();
       })
       .catch((e: Error) => onStatus(e.message));
@@ -188,7 +186,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
           公共星云现有：
           作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
           {counts
-            ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples} · 已发布 ${counts.published}`
+            ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples}`
             : ""}
         </p>
         <div className="llm-toolbar">
@@ -306,24 +304,6 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
             </div>
           </div>
         ))
-      )}
-
-      {data && data.published.length > 0 && (
-        <div className="llm-published-section">
-          <button className="llm-published-toggle" onClick={() => setPublishedOpen((v) => !v)}>
-            已发布 ({data.published.length}) {publishedOpen ? "▾" : "▸"}
-          </button>
-          {publishedOpen && (
-            <ul className="llm-published-list">
-              {data.published.map((p) => (
-                <li key={p.kind + ":" + p.id}>
-                  {p.kind === "authors" ? "作者" : p.kind === "works" ? "作品" : "涟漪"}
-                  「{p.label}」 → #{shortId(p.public_id)}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       )}
 
       {confirmClear && (

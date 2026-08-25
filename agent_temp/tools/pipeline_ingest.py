@@ -31,12 +31,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent_temp.tools import dedupe_check, extract_source_book, llm_space, review_publish  # noqa: E402
-from agent_temp.tools.common import log, write_json  # noqa: E402
+from agent_temp.tools.common import DEFAULT_BOOK, log, write_json  # noqa: E402
 from app import db_sqlite  # noqa: E402
 
 _TOOLS_DIR = Path(__file__).resolve().parent
 _AGENT_TEMP_DIR = _TOOLS_DIR.parent
-DEFAULT_BOOK = _AGENT_TEMP_DIR / "books" / "三体.epub"
 DEFAULT_WORK_DIR = _AGENT_TEMP_DIR / "output"
 
 # 批次 id 会作为文件名(agent_temp/output/batches/<id>.json),只允许安全字符

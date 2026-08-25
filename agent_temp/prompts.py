@@ -7,41 +7,6 @@
 便于单独维护、版本管理或后续接入 i18n。
 """
 
-# 提及书目分类提示词（精简版）：find_books.py 使用。
-# 与上方 SYSTEM_PROMPT（富版）输出结构不同：本版只输出 real_books，
-# 不含 non_books / ambiguous / summary 分节。统一存放在本文件以避免两份漂移。
-MENTION_CLASSIFIER_PROMPT = """
-You are an expert in Chinese literary bibliography. You will receive a JSON
-array of book-mention records, each with "title", "context", "chapter".
-Task: identify which "title" refers to a genuine published BOOK (real
-publication: novels, collections, scriptures, classics, nonfiction monographs,
-and the source text's own titles/sequels). Exclude everything that is NOT a
-book — songs/music, films, games, paintings, newspapers, journals, research
-papers, treaties, laws, short poems/essays, and works invented by the source
-text's fiction. Do NOT list them in the output.
-For each real book, extract from "context" a meaningful quote of about
-200–300 Chinese characters (may be a bit longer or shorter): preferably the
-complete paragraph in which the title appears; if the paragraph is shorter,
-include surrounding text so the quote stays informative. Do not invent text —
-only quote what is actually in the context.
-Output ONLY a single valid JSON object (UTF-8, no Markdown code fences, no
-text outside the JSON). Schema:
-{
-  "real_books": [
-    {
-      "title": "canonical book title",
-      "aliases": ["alternative/original names, if any; else []"],
-      "chapter": "chapter/section(s) where it appears (verbatim, keep all, split '；' into an array)",
-      "quote": "200-300 Chinese characters of meaningful context containing the title mention"
-    }
-  ]
-}
-Notes:
-- If the same book appears under several titles/records, merge into one entry
-  and combine their chapters.
-- Base every decision on the "context" snippet; when unsure, omit the entry.
-- Output ONLY the JSON object, nothing else.
-"""
 
 # 源书作者 + 作品提取提示词：extract_source_book.py 使用。
 # 输出字段对齐 Echo Graph 的 authors / works 表结构（见 docs/data_schema.md）。

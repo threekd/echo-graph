@@ -36,7 +36,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from agent_temp import prompts  # noqa: E402
-from agent_temp.tools.common import log, utf8_stdout, write_json  # noqa: E402
+from agent_temp.tools.common import DEFAULT_BOOK, log, utf8_stdout, write_json  # noqa: E402
 from agent_temp.tools.llm_client import (  # noqa: E402
     MODEL,
     THINKING,
@@ -48,7 +48,6 @@ from agent_temp.tools.llm_client import (  # noqa: E402
 from agent_temp.tools.read_book import ReadBook  # noqa: E402
 
 _AGENT_TEMP_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_BOOK = _AGENT_TEMP_DIR / "books" / "三体.epub"
 DEFAULT_OUTPUT = _AGENT_TEMP_DIR / "output" / "source_book_result.json"
 DEFAULT_CONTENT_CHARS = 1500  # 送入模型的正文样本字符数
 DEFAULT_CONTEXT_CHARS = 300  # 书内提及的上下文前后截取字符数

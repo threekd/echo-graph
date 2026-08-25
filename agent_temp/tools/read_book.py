@@ -34,6 +34,9 @@ except ImportError:
     print("缺少依赖库，请执行： pip install ebooklib beautifulsoup4 lxml")
     sys.exit(1)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from agent_temp.tools.common import DEFAULT_BOOK  # noqa: E402
 
 # ======================================================================
 # 常量：集中管理可调参数，避免代码中出现魔法数字
@@ -57,8 +60,6 @@ CALIBRE_CANDIDATES = (
     "/usr/local/bin/ebook-convert",                            # Linux 常见
 )
 
-# 无参数直接运行时使用的默认书籍（相对脚本位置推导，与运行目录无关）
-DEFAULT_BOOK = Path(__file__).resolve().parent.parent / "books" / "三体.epub"
 
 
 # ======================================================================

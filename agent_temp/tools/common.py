@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 AGENT_TEMP_DIR = REPO_ROOT / "agent_temp"
 TOOLS_DIR = AGENT_TEMP_DIR / "tools"
+# 无参数运行各 CLI 时的默认书籍
+DEFAULT_BOOK = AGENT_TEMP_DIR / "books" / "三体.epub"
 
 # 允许以「uv run python -m agent_temp.tools.<tool>」从仓库根目录运行
 if str(REPO_ROOT) not in sys.path:

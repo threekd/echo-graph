@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import re
 import secrets
-import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +44,7 @@ from agent_temp.tools.common import log, now_iso, read_json, utf8_stdout  # noqa
 from app import db_sqlite, sqlite_store  # noqa: E402
 from app.auth import admin_user_id  # noqa: E402
 from app.data_store import clean_row  # noqa: E402
+from app.dedupe_util import load_rows  # noqa: E402
 from app.space_crud import create_row, validate_row  # noqa: E402
 
 BATCH_DIR = llm_space.BATCH_DIR
@@ -62,6 +62,8 @@ FAILED = "failed"
 
 REVIEWABLE = (PENDING, REJECTED, SKIPPED, FAILED)
 DONE = (PUBLISHED, REUSED)
+
+KIND_CN = {"author": "作者", "work": "作品", "edge": "涟漪"}
 
 
 # ======================================================================
@@ -119,59 +121,6 @@ def _split_author_name(raw: str | None) -> tuple[str, str | None]:
         return first, None
     return raw, None
 
-# ======================================================================
-# 公共空间数据读取（去重 / 复用只认公共星云）
-# ======================================================================
-def load_public_rows(db_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """读取公共空间（admin 认领 + 尚未认领的历史行）内未软删除的作者/作品/涟漪。"""
-    path = Path(db_path) if db_path else db_sqlite.DB_PATH
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    admin_id = admin_user_id()
-    try:
-        if admin_id:
-            owner_scope = "owner_id IN (?, NULL)"
-            works_owner_scope = "w.owner_id IN (?, NULL)"
-            owner_params: tuple = (admin_id,)
-        else:
-            owner_scope = "owner_id IS NULL"
-            works_owner_scope = "w.owner_id IS NULL"
-            owner_params = ()
-        authors = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id, originalName, Name_CN, Name_EN, nationality, birthYear,"
-                " deathYear, note, owner_id, created_by"
-                " FROM authors WHERE deletedAt IS NULL AND " + owner_scope,
-                owner_params,
-            )
-        ]
-        works = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT w.id, w.language, w.originalTitle, w.Title_CN, w.Title_EN,"
-                " w.Title_Other, w.publicationYear, w.genre, w.note, w.owner_id,"
-                " w.created_by, COALESCE(GROUP_CONCAT(DISTINCT a.Name_CN), '')"
-                "   AS author_names"
-                " FROM works w"
-                " LEFT JOIN work_authors wa ON wa.work_id = w.id"
-                " LEFT JOIN authors a ON a.id = wa.author_id"
-                " WHERE w.deletedAt IS NULL AND " + works_owner_scope + " GROUP BY w.id",
-                owner_params,
-            )
-        ]
-        edges = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id, source_work_id, target_work_id, evidence, evidenceSource,"
-                " note, owner_id, created_by"
-                " FROM edges WHERE deletedAt IS NULL AND " + owner_scope,
-                owner_params,
-            )
-        ]
-    finally:
-        conn.close()
-    return {"authors": authors, "works": works, "edges": edges}
 
 
 # ======================================================================
@@ -356,6 +305,62 @@ def _work_payload(w: dict[str, Any], author_name: str | None = None) -> dict[str
     return payload
 
 
+def _dedupe_result(
+    decision: str,
+    existing_id: str | None,
+    existing_label: str | None,
+    default_action: str,
+    reason: str,
+    basic: dict[str, Any] | None = None,
+    semantic: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """构造去重结论块(批次条目 dedupe 字段的统一形状)。"""
+    return {
+        "decision": decision,
+        "existing_id": existing_id,
+        "existing_label": existing_label,
+        "default_action": default_action,
+        "reason": reason,
+        "basic": basic,
+        "semantic": semantic,
+    }
+
+
+def _new_item(
+    *,
+    item_id: str,
+    kind: str,
+    label: str,
+    payload: dict[str, Any],
+    dedupe: dict[str, Any],
+    status: str = PENDING,
+    author_refs: list[str] | None = None,
+    source_ref: str | None = None,
+    target_ref: str | None = None,
+    meta: dict[str, Any] | None = None,
+    review_note: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """构造批次条目(统一 13 字段结构,避免三处构造器各自维护)。"""
+    return {
+        "item_id": item_id,
+        "kind": kind,
+        "label": label,
+        "payload": payload,
+        "author_refs": author_refs or [],
+        "source_ref": source_ref,
+        "target_ref": target_ref,
+        "dedupe": dedupe,
+        "meta": meta,
+        "status": status,
+        "action": None,
+        "resolved_id": None,
+        "reviewed_at": None,
+        "review_note": review_note,
+        "error": error,
+    }
+
+
 def _add_author_item(
     items: list[dict[str, Any]],
     payload: dict[str, Any],
@@ -375,22 +380,13 @@ def _add_author_item(
     report_entry = _match_report_author(report, cand)
     dedupe = build_dedupe_info("author", cand, report_entry, public)
     items.append(
-        {
-            "item_id": item_id,
-            "kind": "author",
-            "label": payload.get("Name_CN") or payload.get("Name_EN") or payload.get("originalName") or "?",
-            "payload": payload,
-            "author_refs": [],
-            "source_ref": None,
-            "target_ref": None,
-            "dedupe": dedupe,
-            "status": PENDING,
-            "action": None,
-            "resolved_id": None,
-            "reviewed_at": None,
-            "review_note": None,
-            "error": None,
-        }
+        _new_item(
+            item_id=item_id,
+            kind="author",
+            label=payload.get("Name_CN") or payload.get("Name_EN") or payload.get("originalName") or "?",
+            payload=payload,
+            dedupe=dedupe,
+        )
     )
     return item_id
 
@@ -418,22 +414,14 @@ def _add_work_item(
     report_entry = _match_report_work(report, cand)
     dedupe = build_dedupe_info("work", cand, report_entry, public)
     items.append(
-        {
-            "item_id": item_id,
-            "kind": "work",
-            "label": payload.get("Title_CN") or payload.get("originalTitle") or "?",
-            "payload": payload,
-            "author_refs": author_refs,
-            "source_ref": None,
-            "target_ref": None,
-            "dedupe": dedupe,
-            "status": PENDING,
-            "action": None,
-            "resolved_id": None,
-            "reviewed_at": None,
-            "review_note": None,
-            "error": None,
-        }
+        _new_item(
+            item_id=item_id,
+            kind="work",
+            label=payload.get("Title_CN") or payload.get("originalTitle") or "?",
+            payload=payload,
+            author_refs=author_refs,
+            dedupe=dedupe,
+        )
     )
     return item_id
 
@@ -482,44 +470,29 @@ def _add_edge_item(
     # 自我提及:目标作品 == 源书作品 → DB 约束禁止自环,默认跳过(可复核后改判)
     if source_ref == target_ref:
         items.append(
-            {
-                "item_id": item_id,
-                "kind": "edge",
-                "label": label,
-                "payload": payload,
-                "author_refs": [],
-                "source_ref": source_ref,
-                "target_ref": target_ref,
-                "dedupe": {
-                    "decision": "possible",
-                    "existing_id": None,
-                    "existing_label": None,
-                    "default_action": "create",
-                    "reason": "涟漪目标与源书为同一作品（自我提及），无法建边",
-                    "basic": None,
-                    "semantic": None,
-                },
-                "meta": {"mention_type": evidence.get("mention_type")},
-                "status": SKIPPED,
-                "action": None,
-                "resolved_id": None,
-                "reviewed_at": None,
-                "review_note": "自动跳过:目标作品 == 源书作品",
-                "error": "涟漪目标与源书为同一作品，DB 约束禁止自环",
-            }
+            _new_item(
+                item_id=item_id,
+                kind="edge",
+                label=label,
+                payload=payload,
+                source_ref=source_ref,
+                target_ref=target_ref,
+                dedupe=_dedupe_result(
+                    "possible", None, None, "create",
+                    "涟漪目标与源书为同一作品（自我提及），无法建边",
+                ),
+                meta={"mention_type": evidence.get("mention_type")},
+                status=SKIPPED,
+                review_note="自动跳过:目标作品 == 源书作品",
+                error="涟漪目标与源书为同一作品，DB 约束禁止自环",
+            )
         )
         return item_id
 
     # 两端都判定为复用现有作品 → 查公共空间是否已有该涟漪
-    dedupe: dict[str, Any] = {
-        "decision": "new",
-        "existing_id": None,
-        "existing_label": None,
-        "default_action": "create",
-        "reason": "涟漪以证据内容创建，端点为新建作品",
-        "basic": None,
-        "semantic": None,
-    }
+    dedupe: dict[str, Any] = _dedupe_result(
+        "new", None, None, "create", "涟漪以证据内容创建，端点为新建作品"
+    )
     if src and tgt and src["dedupe"].get("existing_id") and tgt["dedupe"].get("existing_id"):
         sid = src["dedupe"]["existing_id"]
         tid = tgt["dedupe"]["existing_id"]
@@ -528,47 +501,37 @@ def _add_edge_item(
             None,
         )
         if dup:
-            dedupe = {
-                "decision": "likely_duplicate",
-                "existing_id": dup["id"],
-                "existing_label": f"{_existing_label(src['dedupe'])} → {_existing_label(tgt['dedupe'])}",
-                "default_action": "reuse",
-                "reason": "公共空间已存在相同源→目标涟漪",
-                "basic": None,
-                "semantic": None,
-            }
+            dedupe = _dedupe_result(
+                "likely_duplicate",
+                dup["id"],
+                f"{_existing_label(src['dedupe'])} → {_existing_label(tgt['dedupe'])}",
+                "reuse",
+                "公共空间已存在相同源→目标涟漪",
+            )
     # 未命中端点级检查时,回退到去重报告的涟漪命中作为提示
     if dedupe["decision"] == "new" and src and tgt:
         report_entry = _match_report_edge(report, src.get("payload") or {}, tgt.get("payload") or {})
         if report_entry and report_entry.get("decision") != "new":
             ex = (report_entry.get("basic") or {}).get("existing")
-            dedupe = {
-                "decision": "possible",
-                "existing_id": ex.get("id") if ex else None,
-                "existing_label": f"{ex.get('src_label')} → {ex.get('tgt_label')}" if ex else None,
-                "default_action": "create",
-                "reason": f"去重报告:公共空间已有相似涟漪({report_entry.get('reason')}),请确认端点后再决定复用",
-                "basic": report_entry.get("basic"),
-                "semantic": None,
-            }
+            dedupe = _dedupe_result(
+                "possible",
+                ex.get("id") if ex else None,
+                f"{ex.get('src_label')} → {ex.get('tgt_label')}" if ex else None,
+                "create",
+                f"去重报告:公共空间已有相似涟漪({report_entry.get('reason')}),请确认端点后再决定复用",
+                basic=report_entry.get("basic"),
+            )
     items.append(
-        {
-            "item_id": item_id,
-            "kind": "edge",
-            "label": label,
-            "payload": payload,
-            "author_refs": [],
-            "source_ref": source_ref,
-            "target_ref": target_ref,
-            "dedupe": dedupe,
-            "meta": {"mention_type": evidence.get("mention_type")},
-            "status": PENDING,
-            "action": None,
-            "resolved_id": None,
-            "reviewed_at": None,
-            "review_note": None,
-            "error": None,
-        }
+        _new_item(
+            item_id=item_id,
+            kind="edge",
+            label=label,
+            payload=payload,
+            source_ref=source_ref,
+            target_ref=target_ref,
+            dedupe=dedupe,
+            meta={"mention_type": evidence.get("mention_type")},
+        )
     )
     return item_id
 
@@ -584,7 +547,7 @@ def build_batch(
     本函数只读数据库（公共空间去重），不做任何写入；system_llm 账号的创建
     由 CLI 命令层（cmd_make_batch）负责，便于纯只读地生成/预览批次。
     """
-    public = load_public_rows(db_path)
+    public = load_rows(db_path, public_only=True)
     report = report or {"authors": [], "works": [], "edges": []}
 
     items: list[dict[str, Any]] = []
@@ -695,7 +658,7 @@ def _dep_status(item: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> str:
 
 
 def _show_item(item: dict[str, Any], idx: int = 0, total: int = 0) -> None:
-    kind_cn = {"author": "作者", "work": "作品", "edge": "涟漪"}.get(item["kind"], item["kind"])
+    kind_cn = KIND_CN.get(item["kind"], item["kind"])
     prefix = f"[{idx}/{total}] " if total else ""
     print(f"{prefix}{kind_cn}：{_label(item)}")
     p = item["payload"]
@@ -928,7 +891,7 @@ def _publish_work(
             raise RuntimeError(f"作者依赖 {ref} 未就绪（{dep.get('status') if dep else '未知'}）")
         author_ids.append(rid)
     # 安全网：批准为新建，但发布时公共空间已存在完全同名作品 → 拒绝并提示改为复用
-    public = load_public_rows()
+    public = load_rows(public_only=True)
     cand = {k: v for k, v in item["payload"].items() if v is not None}
     hit = dedupe_check.basic_match_work(cand, public["works"])
     if hit.get("level") == "exact":
@@ -1002,7 +965,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
         if item.get("status") != APPROVED:
             counts["not_approved"] += 1
             continue
-        kind_cn = {"author": "作者", "work": "作品", "edge": "涟漪"}[item["kind"]]
+        kind_cn = KIND_CN[item["kind"]]
         label = _label(item)
         action = item.get("action") or "create"
         if args.dry_run:

@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +25,7 @@ from pydantic import BaseModel
 from app import db_sqlite, sqlite_store
 from app.auth import admin_user_id, require_admin
 from app.data_store import clean_row
+from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title
 from app.llm_account import ensure_system_llm, get_system_llm_id
 from app.space_crud import (
     Kind,
@@ -56,66 +56,8 @@ def _label(kind: Kind, row: dict) -> str:
 
 
 # ======================================================================
-# 公共空间数据 + 去重提示(轻量基础匹配,不进 agent_temp 依赖)
+# 公共空间数据 + 去重提示(基础匹配原语与行读取共用 app/dedupe_util)
 # ======================================================================
-def _norm(text: str | None) -> str:
-    """标题/姓名规范化:全角→半角、去标点/空白、拉丁转小写。"""
-    if not text:
-        return ""
-    s = str(text).strip().lower()
-    s = s.translate(
-        str.maketrans(
-            "０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
-            "0123456789abcdefghijklmnopqrstuvwxyz",
-        )
-    )
-    return re.sub(r"[\W_]+", "", s, flags=re.UNICODE)
-
-
-def _bigrams(s: str) -> set[str]:
-    if not s:
-        return set()
-    if len(s) == 1:
-        return {s}
-    return {s[i : i + 2] for i in range(len(s) - 1)}
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def _public_rows(admin_id: str | None) -> tuple[list[dict], list[dict]]:
-    """公共空间未软删除的作者/作品(作品带作者中文名串,供同名异书消歧)。"""
-    with db_sqlite._db() as conn:
-        if admin_id:
-            owner_scope = "owner_id IN (?, NULL)"
-            owner_params: tuple = (admin_id,)
-        else:
-            owner_scope = "owner_id IS NULL"
-            owner_params = ()
-        authors = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id, originalName, Name_CN, Name_EN FROM authors"
-                " WHERE deletedAt IS NULL AND " + owner_scope,
-                owner_params,
-            )
-        ]
-        works = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT w.id, w.originalTitle, w.Title_CN, w.Title_EN, w.Title_Other,"
-                " COALESCE(GROUP_CONCAT(DISTINCT a.Name_CN), '') AS author_names"
-                " FROM works w"
-                " LEFT JOIN work_authors wa ON wa.work_id = w.id"
-                " LEFT JOIN authors a ON a.id = wa.author_id"
-                " WHERE w.deletedAt IS NULL AND w." + owner_scope + " GROUP BY w.id",
-                owner_params,
-            )
-        ]
-    return authors, works
 
 
 def _best_hit(
@@ -137,12 +79,12 @@ def _best_hit(
                     continue
                 if cv == rv:
                     level, score = "exact", 1.0
-                    if cand_author and row_author(row) and _norm(cand_author) != _norm(row_author(row)):
+                    if cand_author and row_author(row) and normalize_title(cand_author) != normalize_title(row_author(row)):
                         level, score = "exact_diff_author", 0.5
                 elif len(cv) >= 2 and len(rv) >= 2 and (cv in rv or rv in cv):
                     level, score = "contained", 0.7
                 else:
-                    sim = _jaccard(_bigrams(cv), _bigrams(rv))
+                    sim = jaccard(char_bigrams(cv), char_bigrams(rv))
                     if sim < 0.45:
                         continue
                     level, score = "token", round(sim, 3)
@@ -157,26 +99,26 @@ def _best_hit(
 
 
 def _hint_author(row: dict, public_authors: list[dict]) -> dict[str, Any] | None:
-    cand = [_norm(row.get("Name_CN")), _norm(row.get("Name_EN")), _norm(row.get("originalName"))]
+    cand = [normalize_title(row.get("Name_CN")), normalize_title(row.get("Name_EN")), normalize_title(row.get("originalName"))]
     hit = _best_hit(
         cand,
         public_authors,
-        lambda r: [_norm(r.get("Name_CN")), _norm(r.get("Name_EN")), _norm(r.get("originalName"))],
+        lambda r: [normalize_title(r.get("Name_CN")), normalize_title(r.get("Name_EN")), normalize_title(r.get("originalName"))],
         lambda r: r.get("Name_CN") or r.get("Name_EN") or r.get("originalName") or r["id"],
     )
     return hit
 
 
 def _hint_work(row: dict, public_works: list[dict], author_names: list[str]) -> dict[str, Any] | None:
-    cand = [_norm(row.get("Title_CN")), _norm(row.get("originalTitle")),
-            _norm(row.get("Title_EN")), _norm(row.get("Title_Other"))]
+    cand = [normalize_title(row.get("Title_CN")), normalize_title(row.get("originalTitle")),
+            normalize_title(row.get("Title_EN")), normalize_title(row.get("Title_Other"))]
     return _best_hit(
         cand,
         public_works,
-        lambda r: [_norm(r.get("Title_CN")), _norm(r.get("originalTitle")),
-                   _norm(r.get("Title_EN")), _norm(r.get("Title_Other"))],
+        lambda r: [normalize_title(r.get("Title_CN")), normalize_title(r.get("originalTitle")),
+                   normalize_title(r.get("Title_EN")), normalize_title(r.get("Title_Other"))],
         lambda r: r.get("Title_CN") or r.get("originalTitle") or r["id"],
-        cand_author=_norm(" ".join(n for n in author_names if n)),
+        cand_author=normalize_title(" ".join(n for n in author_names if n)),
     )
 
 
@@ -210,7 +152,8 @@ def llm_drafts() -> dict:
             "public_counts": {"authors": 0, "works": 0},
         }
     admin = admin_user_id()
-    public_authors, public_works = _public_rows(admin)
+    public = load_rows(public_only=True)
+    public_authors, public_works = public["authors"], public["works"]
     data = space_data(owner, include_deleted=False)
     staging_author_names = {
         a["id"]: (a.get("Name_CN") or a.get("Name_EN") or "")

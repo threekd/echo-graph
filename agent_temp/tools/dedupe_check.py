@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from agent_temp.tools import llm_client  # noqa: E402
 from agent_temp.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
 from app import db_sqlite  # noqa: E402
+from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title  # noqa: E402
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "output" / "dedupe_report.json"
 EMBED_BATCH = 16  # 阿里云百炼 embedding 单批上限为 20,留余量取 16
@@ -61,36 +62,6 @@ TOKEN_JACCARD = 0.45  # 基础层字符二元组相似阈值
 # ======================================================================
 # 基础工具
 # ======================================================================
-def normalize_title(text: str | None) -> str:
-    """标题/姓名规范化:全角→半角、去书名号/标点/空白、拉丁转小写。"""
-    if not text:
-        return ""
-    s = str(text).strip().lower()
-    s = s.translate(
-        str.maketrans(
-            "０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
-            "0123456789abcdefghijklmnopqrstuvwxyz",
-        )
-    )
-    return re.sub(r"[\W_]+", "", s, flags=re.UNICODE)
-
-
-def char_bigrams(s: str) -> set[str]:
-    """字符二元组集合;长度 1 时返回自身。"""
-    if not s:
-        return set()
-    if len(s) == 1:
-        return {s}
-    return {s[i : i + 2] for i in range(len(s) - 1)}
-
-
-def jaccard(a: set[str], b: set[str]) -> float:
-    """Jaccard 相似度。"""
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
 def cosine(a: list[float], b: list[float]) -> float:
     """余弦相似度。"""
     dot = sum(x * y for x, y in zip(a, b, strict=False))
@@ -110,50 +81,8 @@ def _pick(row: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
 # 数据库读取
 # ======================================================================
 def load_existing(db_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """读取库内全部活跃(未软删除)的作者与作品。"""
-    path = Path(db_path) if db_path else db_sqlite.DB_PATH
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    try:
-        authors = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id, originalName, Name_CN, Name_EN, nationality, birthYear,"
-                " deathYear, note, owner_id, created_by"
-                " FROM authors WHERE deletedAt IS NULL"
-            )
-        ]
-        works = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT w.id, w.language, w.originalTitle, w.Title_CN, w.Title_EN,"
-                " w.Title_Other, w.publicationYear, w.genre, w.note, w.owner_id,"
-                " w.created_by, COALESCE(GROUP_CONCAT(DISTINCT a.Name_CN), '')"
-                "   AS author_names"
-                " FROM works w"
-                " LEFT JOIN work_authors wa ON wa.work_id = w.id"
-                " LEFT JOIN authors a ON a.id = wa.author_id"
-                " WHERE w.deletedAt IS NULL"
-                " GROUP BY w.id"
-            )
-        ]
-        edges = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT e.id, e.source_work_id, e.target_work_id, e.evidenceSource,"
-                " ws.Title_CN AS src_Title_CN, ws.originalTitle AS src_originalTitle,"
-                " ws.Title_EN AS src_Title_EN, ws.Title_Other AS src_Title_Other,"
-                " wt.Title_CN AS tgt_Title_CN, wt.originalTitle AS tgt_originalTitle,"
-                " wt.Title_EN AS tgt_Title_EN, wt.Title_Other AS tgt_Title_Other"
-                " FROM edges e"
-                " JOIN works ws ON ws.id = e.source_work_id AND ws.deletedAt IS NULL"
-                " JOIN works wt ON wt.id = e.target_work_id AND wt.deletedAt IS NULL"
-                " WHERE e.deletedAt IS NULL"
-            )
-        ]
-    finally:
-        conn.close()
-    return {"authors": authors, "works": works, "edges": edges}
+    """读取库内全部活跃(未软删除)的作者/作品/涟漪(含个人空间)。"""
+    return load_rows(db_path)
 
 
 def _summarize_work(row: dict[str, Any]) -> dict[str, Any]:
@@ -223,15 +152,9 @@ def basic_match_work(
             for ev in _title_variants(row):
                 if not ev:
                     continue
-                if cv == ev:
-                    level, score = "exact", 1.0
-                elif len(cv) >= 2 and len(ev) >= 2 and (cv in ev or ev in cv):
-                    level, score = "contained", 0.7
-                else:
-                    sim = jaccard(char_bigrams(cv), char_bigrams(ev))
-                    if sim < TOKEN_JACCARD:
-                        continue
-                    level, score = "token", round(sim, 3)
+                level, score = _score_variant_pair(cv, ev)
+                if level == "none":
+                    continue
                 # 标题完全相同但作者明显不同 → 同名异书,降级提示人工确认
                 if level == "exact" and c_author and row_author and c_author != row_author:
                     level, score = "exact_diff_author", 0.5
@@ -272,15 +195,9 @@ def basic_match_author(
             for ev in e_variants:
                 if not ev:
                     continue
-                if cv == ev:
-                    level, score = "exact", 1.0
-                elif len(cv) >= 2 and len(ev) >= 2 and (cv in ev or ev in cv):
-                    level, score = "contained", 0.7
-                else:
-                    sim = jaccard(char_bigrams(cv), char_bigrams(ev))
-                    if sim < TOKEN_JACCARD:
-                        continue
-                    level, score = "token", round(sim, 3)
+                level, score = _score_variant_pair(cv, ev)
+                if level == "none":
+                    continue
                 if score > best["score"]:
                     best = {
                         "level": level,
@@ -289,6 +206,18 @@ def basic_match_author(
                         "matched": [cv, ev],
                     }
     return best
+
+
+def _score_variant_pair(cv: str, ev: str) -> tuple[str, float]:
+    """单对标题变体匹配级别:(exact|contained|token|none, score)。"""
+    if cv == ev:
+        return "exact", 1.0
+    if len(cv) >= 2 and len(ev) >= 2 and (cv in ev or ev in cv):
+        return "contained", 0.7
+    sim = jaccard(char_bigrams(cv), char_bigrams(ev))
+    if sim < TOKEN_JACCARD:
+        return "none", 0.0
+    return "token", round(sim, 3)
 
 
 def _variant_similarity(
@@ -302,15 +231,7 @@ def _variant_similarity(
         for ev in e_variants:
             if not ev:
                 continue
-            if cv == ev:
-                level, score = "exact", 1.0
-            elif len(cv) >= 2 and len(ev) >= 2 and (cv in ev or ev in cv):
-                level, score = "contained", 0.7
-            else:
-                sim = jaccard(char_bigrams(cv), char_bigrams(ev))
-                if sim < TOKEN_JACCARD:
-                    continue
-                level, score = "token", round(sim, 3)
+            level, score = _score_variant_pair(cv, ev)
             if score > best_score or (score == best_score and level == "exact"):
                 best_level, best_score = level, score
     return best_level, best_score
@@ -895,6 +816,57 @@ def _collect_candidates(
 # ======================================================================
 # 主流程
 # ======================================================================
+def _dedupe_candidate(
+    *,
+    kind: str,
+    cand: dict[str, Any],
+    basic: dict[str, Any],
+    client: OpenAI | None,
+    model: str,
+    embed_text: Any,
+    existing_rows: list[dict[str, Any]],
+    texts: list[str],
+    vectors: list[list[float] | None],
+    summarize: Any,
+    ds_client: OpenAI | None,
+    ds_model: str,
+    compare_text: Any,
+    force_semantic: bool,
+    top: int,
+    strong: float,
+    possible: float,
+    semantic_skip_levels: tuple[str, ...],
+) -> dict[str, Any]:
+    """单条候选去重:基础匹配 + 语义 + LLM 兜底,返回报告条目。"""
+    sem = None
+    if client is not None and (
+        basic.get("level") not in semantic_skip_levels or force_semantic
+    ):
+        sem = semantic_match(
+            client,
+            model,
+            embed_text(cand),
+            existing_rows,
+            texts,
+            vectors,
+            summarize,
+            top,
+        )
+    decision, reason = decide(basic, sem, strong=strong, possible=possible)
+    decision, reason, llm = _maybe_llm_confirm(
+        ds_client, ds_model, kind, cand, basic, sem, compare_text,
+        decision, reason,
+    )
+    return {
+        "candidate": _clean_candidate(cand),
+        "basic": basic,
+        "semantic": sem,
+        "llm": llm,
+        "decision": decision,
+        "reason": reason,
+    }
+
+
 def run_dedupe(
     work_cands: list[dict[str, Any]],
     author_cands: list[dict[str, Any]],
@@ -981,62 +953,52 @@ def run_dedupe(
 
     for cand in author_cands:
         basic = basic_match_author(cand, existing["authors"])
-        sem = None
-        if client is not None and (basic.get("level") != "exact" or force_semantic):
-            sem = semantic_match(
-                client,
-                model,
-                _author_embed_text(cand),
-                existing["authors"],
-                author_texts,
-                author_vectors,
-                _summarize_author,
-                top,
-            )
-        decision, reason = decide(basic, sem, strong=strong, possible=possible)
-        decision, reason, llm = _maybe_llm_confirm(
-            ds_client, ds_model, "作者", cand, basic, sem, _author_compare_text,
-            decision, reason,
-        )
         report["authors"].append(
-            {
-                "candidate": _clean_candidate(cand),
-                "basic": basic,
-                "semantic": sem,
-                "llm": llm,
-                "decision": decision,
-                "reason": reason,
-            }
+            _dedupe_candidate(
+                kind="作者",
+                cand=cand,
+                basic=basic,
+                client=client,
+                model=model,
+                embed_text=_author_embed_text,
+                existing_rows=existing["authors"],
+                texts=author_texts,
+                vectors=author_vectors,
+                summarize=_summarize_author,
+                ds_client=ds_client,
+                ds_model=ds_model,
+                compare_text=_author_compare_text,
+                force_semantic=force_semantic,
+                top=top,
+                strong=strong,
+                possible=possible,
+                semantic_skip_levels=("exact",),
+            )
         )
 
     for cand in work_cands:
         basic = basic_match_work(cand, existing["works"])
-        sem = None
-        if client is not None and (basic.get("level") not in ("exact", "exact_diff_author") or force_semantic):
-            sem = semantic_match(
-                client,
-                model,
-                _work_embed_text(cand),
-                existing["works"],
-                work_texts,
-                work_vectors,
-                _summarize_work,
-                top,
-            )
-        decision, reason = decide(basic, sem, strong=strong, possible=possible)
-        decision, reason, llm = _maybe_llm_confirm(
-            ds_client, ds_model, "作品", cand, basic, sem, _work_compare_text,
-            decision, reason,
-        )
         report["works"].append(
-            {
-                "candidate": _clean_candidate(cand),
-                "basic": basic,
-                "semantic": sem,
-                "llm": llm,
-                "decision": decision,
-                "reason": reason,
-            }
+            _dedupe_candidate(
+                kind="作品",
+                cand=cand,
+                basic=basic,
+                client=client,
+                model=model,
+                embed_text=_work_embed_text,
+                existing_rows=existing["works"],
+                texts=work_texts,
+                vectors=work_vectors,
+                summarize=_summarize_work,
+                ds_client=ds_client,
+                ds_model=ds_model,
+                compare_text=_work_compare_text,
+                force_semantic=force_semantic,
+                top=top,
+                strong=strong,
+                possible=possible,
+                semantic_skip_levels=("exact", "exact_diff_author"),
+            )
         )
 
     for cand in edge_cands or []:
@@ -1052,6 +1014,7 @@ def run_dedupe(
                 "reason": reason,
             }
         )
+
     return report
 
 

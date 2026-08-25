@@ -4,7 +4,7 @@
 
 - 账号本身(ensure_system_llm / get_system_llm_id)收敛在 app/llm_account.py,
   本模块仅为 CLI 实验脚本保留入口并继续提供批次登记簿:
-  - 每次 ingest 生成一个批次 JSON(agent_temp/output/batches/<id>.json),
+  - 每次 ingest 生成一个批次 JSON(app/ai_assistant/output/batches/<id>.json),
     记录该批的作者/作品/涟漪草稿与映射,供 review_publish.py 审核与发布。
 """
 
@@ -14,9 +14,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp.tools.common import AGENT_TEMP_DIR, read_json, write_json  # noqa: E402
+from app.ai_assistant.tools.common import AI_ASSISTANT_DIR, read_json, write_json  # noqa: E402
 from app.llm_account import (  # noqa: E402, F401 - 复用账号逻辑,CLI 旧调用不破坏
     SYSTEM_LLM_BIO,
     SYSTEM_LLM_EMAIL,
@@ -26,7 +26,7 @@ from app.llm_account import (  # noqa: E402, F401 - 复用账号逻辑,CLI 旧�
     get_system_llm_id,
 )
 
-BATCH_DIR = AGENT_TEMP_DIR / "output" / "batches"
+BATCH_DIR = AI_ASSISTANT_DIR / "output" / "batches"
 
 
 # ----------------------------------------------------------------------

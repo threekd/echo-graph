@@ -3,7 +3,7 @@
 - 邮箱/用户名固定,role='user'、status='active'、space_visibility='private';
 - 密码为随机值且不暴露:机器账号不用于登录,审核由 admin 在管理端完成
   (见 app/llm_review.py),避免共享凭证与审计失真。
-- 账号创建/查询收敛在本模块,CLI(agent_temp/tools/llm_space.py)与管理端共用。
+- 账号创建/查询收敛在本模块,CLI(app/ai_assistant/tools/llm_space.py)与管理端共用。
 """
 
 from __future__ import annotations

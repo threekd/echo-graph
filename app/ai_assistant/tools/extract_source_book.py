@@ -30,14 +30,15 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp import prompts  # noqa: E402
-from agent_temp.tools.common import DEFAULT_BOOK, log, utf8_stdout, write_json  # noqa: E402
-from agent_temp.tools.llm_client import (  # noqa: E402
+from app.ai_assistant import prompts  # noqa: E402
+from app.ai_assistant.tools.common import DEFAULT_BOOK, log, utf8_stdout, write_json  # noqa: E402
+from app.ai_assistant.tools.llm_client import (  # noqa: E402
     MODEL,
     THINKING,
     create_client,
@@ -45,10 +46,10 @@ from agent_temp.tools.llm_client import (  # noqa: E402
     parse_json,
     stream_completion,
 )
-from agent_temp.tools.read_book import ReadBook  # noqa: E402
+from app.ai_assistant.tools.read_book import ReadBook  # noqa: E402
 
-_AGENT_TEMP_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = _AGENT_TEMP_DIR / "output" / "source_book_result.json"
+_AI_ASSISTANT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT = _AI_ASSISTANT_DIR / "output" / "source_book_result.json"
 DEFAULT_CONTENT_CHARS = 1500  # 送入模型的正文样本字符数
 DEFAULT_CONTEXT_CHARS = 300  # 书内提及的上下文前后截取字符数
 # 非拉丁文字系统检测:用于核对「原文名/原著标题」是否使用了对应国籍/语言的文字。
@@ -158,10 +159,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="从源电子书提取作者/作品/涟漪(对齐 Echo Graph authors/works/edges 表结构)",
         epilog="示例:\n"
-               "  uv run python -m agent_temp.tools.extract_source_book agent_temp/books/三体.epub --dry-run\n"
-               "  uv run python -m agent_temp.tools.extract_source_book agent_temp/books/三体.epub\n"
-               "  uv run python -m agent_temp.tools.extract_source_book agent_temp/books/且听风吟.epub --no-ripples\n"
-               "  uv run python -m agent_temp.tools.extract_source_book agent_temp/books/1Q84.mobi --title 1Q84 --author 村上春树",
+               "  uv run python -m app.ai_assistant.tools.extract_source_book app/ai_assistant/books/三体.epub --dry-run\n"
+               "  uv run python -m app.ai_assistant.tools.extract_source_book app/ai_assistant/books/三体.epub\n"
+               "  uv run python -m app.ai_assistant.tools.extract_source_book app/ai_assistant/books/且听风吟.epub --no-ripples\n"
+               "  uv run python -m app.ai_assistant.tools.extract_source_book app/ai_assistant/books/1Q84.mobi --title 1Q84 --author 村上春树",
     )
     parser.add_argument(
         "input",

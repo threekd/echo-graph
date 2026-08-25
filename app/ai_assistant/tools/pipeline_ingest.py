@@ -15,9 +15,9 @@
     - ALIYUN_API_KEY / ALIYUN_BASE_URL(语义去重 embedding;未配置时自动降级为基础匹配)
 
 示例:
-    uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/三体.epub
-    uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/1Q84.mobi --title 1Q84 --author 村上春树
-    uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/某书.epub --basic-only --dry-run
+    uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/三体.epub
+    uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/1Q84.mobi --title 1Q84 --author 村上春树
+    uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/某书.epub --basic-only --dry-run
 """
 
 from __future__ import annotations
@@ -28,17 +28,17 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp.tools import dedupe_check, extract_source_book, llm_space, review_publish  # noqa: E402
-from agent_temp.tools.common import DEFAULT_BOOK, log, write_json  # noqa: E402
 from app import db_sqlite  # noqa: E402
+from app.ai_assistant.tools import dedupe_check, extract_source_book, llm_space, review_publish  # noqa: E402
+from app.ai_assistant.tools.common import DEFAULT_BOOK, log, write_json  # noqa: E402
 
 _TOOLS_DIR = Path(__file__).resolve().parent
-_AGENT_TEMP_DIR = _TOOLS_DIR.parent
-DEFAULT_WORK_DIR = _AGENT_TEMP_DIR / "output"
+_AI_ASSISTANT_DIR = _TOOLS_DIR.parent
+DEFAULT_WORK_DIR = _AI_ASSISTANT_DIR / "output"
 
-# 批次 id 会作为文件名(agent_temp/output/batches/<id>.json),只允许安全字符
+# 批次 id 会作为文件名(app/ai_assistant/output/batches/<id>.json),只允许安全字符
 _BATCH_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -46,10 +46,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="一键管线:书籍 → AI 提取(作者/作品/涟漪) → 去重 → 发布到 system_llm 草稿区",
         epilog="示例:\n"
-               "  uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/三体.epub\n"
-               "  uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/1Q84.mobi "
+               "  uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/三体.epub\n"
+               "  uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/1Q84.mobi "
                "--title 1Q84 --author 村上春树\n"
-               "  uv run python -m agent_temp.tools.pipeline_ingest agent_temp/books/某书.epub "
+               "  uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/某书.epub "
                "--basic-only --dry-run",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -100,7 +100,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--db", default=None,
-        help=f"SQLite 数据库路径(默认 {_AGENT_TEMP_DIR.parent / 'data' / 'echo-graph.db'})",
+        help=f"SQLite 数据库路径(默认 {_AI_ASSISTANT_DIR.parent.parent / 'data' / 'echo-graph.db'})",
     )
     parser.add_argument("--batch-id", default=None, help="自定义批次 id(仅字母/数字/_-;默认按时间自动生成)")
     parser.add_argument(
@@ -121,11 +121,11 @@ def main() -> None:
     book = Path(args.input)
     if not book.exists():
         hint = ""
-        books_dir = _AGENT_TEMP_DIR / "books"
+        books_dir = _AI_ASSISTANT_DIR / "books"
         if books_dir.is_dir():
             names = sorted(f.name for f in books_dir.iterdir() if f.is_file())
             if names:
-                hint = "\n可用书籍(agent_temp/books/):\n  " + "\n  ".join(names)
+                hint = "\n可用书籍(app/ai_assistant/books/):\n  " + "\n  ".join(names)
         raise SystemExit(f"电子书不存在:{book}{hint}")
 
     batch_id = args.batch_id or datetime.now(UTC).strftime("book-%Y%m%dT%H%M%S")
@@ -195,7 +195,7 @@ def main() -> None:
     # 4) 发布到 system_llm 空间(草稿区,待 admin 审核)
     if args.dry_run:
         print("\n[dry-run] 未 ingest;批次登记簿已生成,可随时执行:")
-        print(f"  uv run python -m agent_temp.tools.review_publish ingest {batch_id}")
+        print(f"  uv run python -m app.ai_assistant.tools.review_publish ingest {batch_id}")
         return
 
     log("4/4 发布到 system_llm 草稿区")

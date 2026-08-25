@@ -1,9 +1,9 @@
 """涟漪(edge)去重检查单测:候选收集、基础匹配、批内合并、自我提及跳过。
 
 对应:
-- agent_temp/tools/dedupe_check.py 的 collect_edge_candidates_from_extract /
+- app/ai_assistant/tools/dedupe_check.py 的 collect_edge_candidates_from_extract /
   basic_match_edge / run_dedupe(edge_cands)
-- agent_temp/tools/review_publish.py 的 _add_edge_item(批内去重 + SKIPPED)
+- app/ai_assistant/tools/review_publish.py 的 _add_edge_item(批内去重 + SKIPPED)
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_temp.tools import dedupe_check, llm_space, review_publish
 from app import auth, data_store, db_sqlite
+from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from tests._helpers import rewrite_all
 
 _ADMIN_EMAIL = "admin@echo.local"

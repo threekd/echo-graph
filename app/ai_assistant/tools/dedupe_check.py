@@ -38,11 +38,11 @@ from typing import Any
 
 from openai import OpenAI
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp.tools import llm_client  # noqa: E402
-from agent_temp.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
 from app import db_sqlite  # noqa: E402
+from app.ai_assistant.tools import llm_client  # noqa: E402
+from app.ai_assistant.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
 from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title  # noqa: E402
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "output" / "dedupe_report.json"
@@ -1022,10 +1022,10 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="新增数据前的去重查询(基础匹配 + 向量语义校验)",
         epilog="示例:\n"
-               "  uv run python -m agent_temp.tools.dedupe_check --input agent_temp/output/source_book_result.json\n"
-               "  uv run python -m agent_temp.tools.dedupe_check --input ... --basic-only\n"
-               "  uv run python -m agent_temp.tools.dedupe_check --title-cn 三体 --author 刘慈欣\n"
-               "  uv run python -m agent_temp.tools.dedupe_check --title-en \"The Stranger\" --author \"Albert Camus\"",
+               "  uv run python -m app.ai_assistant.tools.dedupe_check --input app/ai_assistant/output/source_book_result.json\n"
+               "  uv run python -m app.ai_assistant.tools.dedupe_check --input ... --basic-only\n"
+               "  uv run python -m app.ai_assistant.tools.dedupe_check --title-cn 三体 --author 刘慈欣\n"
+               "  uv run python -m app.ai_assistant.tools.dedupe_check --title-en \"The Stranger\" --author \"Albert Camus\"",
     )
     parser.add_argument("--input", help="extract_source_book.py 的输出 JSON 路径")
     parser.add_argument("--title-cn", help="候选作品中文名")

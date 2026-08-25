@@ -7,14 +7,14 @@
 README / 文档引用。新管线请走 pipeline_ingest(extract → dedupe → build_batch →
 stage_batch 写入 system_llm 草稿区)。
 
-职责链（agent_temp 实验管线）：
+职责链（ai_assistant 实验管线）：
     extract_source_book.py（提取 作者/作品/涟漪）
       → dedupe_check.py（基础 + 语义去重报告）
       → 本脚本 make-batch：把提取结果 + 去重报告合并为「批次登记簿」
       → 本脚本 review：批内逐条 批准新建 / 批准复用 / 驳回（rejected 保留）
       → 本脚本 publish：把 approved 条目写入公共星云（admin 空间，created_by=llm）
 
-批次文件：agent_temp/output/batches/<batch_id>.json（llm_space.BATCH_DIR）
+批次文件：app/ai_assistant/output/batches/<batch_id>.json（llm_space.BATCH_DIR）
 批次是审核的单一事实来源：驳回记录原样保留，可反复 review 改判；
 publish 幂等，已 published / reused 的条目不会重复写入。
 
@@ -37,11 +37,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp.tools import dedupe_check, llm_space  # noqa: E402
-from agent_temp.tools.common import log, now_iso, read_json, utf8_stdout  # noqa: E402
 from app import db_sqlite, sqlite_store  # noqa: E402
+from app.ai_assistant.tools import dedupe_check, llm_space  # noqa: E402
+from app.ai_assistant.tools.common import log, now_iso, read_json, utf8_stdout  # noqa: E402
 from app.auth import admin_user_id  # noqa: E402
 from app.data_store import clean_row  # noqa: E402
 from app.dedupe_util import load_rows  # noqa: E402
@@ -722,7 +722,7 @@ def _status_counts(batch: dict[str, Any]) -> dict[str, int]:
 def cmd_list(_args: argparse.Namespace) -> None:
     batches = llm_space.list_batches()
     if not batches:
-        print("暂无批次（agent_temp/output/batches/ 为空）")
+        print("暂无批次（app/ai_assistant/output/batches/ 为空）")
         return
     print(f"{'batch_id':<28} 总  待审  已批  驳回  已发  复用  跳过  失败")
     for b in batches:
@@ -1065,7 +1065,7 @@ def cmd_make_batch(args: argparse.Namespace) -> None:
         f"  去重：新建 {sum(1 for i in batch['items'] if i['dedupe'].get('default_action') == 'create')}"
         f" · 默认复用 {sum(1 for i in batch['items'] if i['dedupe'].get('default_action') == 'reuse')}"
     )
-    print("  下一步：python agent_temp/tools/review_publish.py review " + batch["batch_id"])
+    print("  下一步：python app/ai_assistant/tools/review_publish.py review " + batch["batch_id"])
 
 
 

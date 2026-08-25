@@ -16,7 +16,7 @@
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.6)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
-- **AI 数据管线与审核**：书籍解析(`agent_temp/tools/extract_source_book.py`)→ 去重
+- **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`)→ 去重
   校验(`dedupe_check.py`,基础匹配 + 阿里云百炼 qwen3.7-text-embedding 语义辅助)→
   批次登记(`review_publish.py make-batch / ingest`)以 `created_by='llm'`、
   `reviewStatus='draft'` 写入 `system_llm` 机器账号私有空间(草稿区,外界不可见);

@@ -1,6 +1,6 @@
 """dedupe_check LLM 兜底确认单测:置信度解析 / possible 升级 / 失败保底 / 管线传导。
 
-对应 agent_temp/tools/dedupe_check.py 的 llm_duplicate_confidence /
+对应 app/ai_assistant/tools/dedupe_check.py 的 llm_duplicate_confidence /
 _maybe_llm_confirm / run_dedupe(llm_confirm) 与
 review_publish.build_dedupe_info 的 LLM 升级传导。
 全部 mock 掉 LLM 与 embedding 接口,不发真实网络请求。
@@ -14,8 +14,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_temp.tools import dedupe_check, review_publish
 from app import db_sqlite
+from app.ai_assistant.tools import dedupe_check, review_publish
 
 
 class _FakeChoice:

@@ -1,6 +1,6 @@
 """llm_client 单测:stream_completion 的 on_log 推理进度回调。
 
-对应 agent_temp/tools/llm_client.py 的 stream_completion(on_log):
+对应 app/ai_assistant/tools/llm_client.py 的 stream_completion(on_log):
 推理内容每满 REASONING_PROGRESS_INTERVAL(1000)字符汇报一次,
 控制台打印的同时调用 on_log,供 app/book_import 写入任务日志在前端展示。
 不触网(client 为内存假对象)。
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import unittest
 
-from agent_temp.tools import llm_client
-from agent_temp.tools.common import utf8_stdout
+from app.ai_assistant.tools import llm_client
+from app.ai_assistant.tools.common import utf8_stdout
 
 
 class _FakeDelta:

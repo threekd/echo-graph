@@ -1,6 +1,6 @@
-"""agent_temp 实验管线共享工具:仓库根路径、日志、时间戳、JSON 读写与 .env 加载。
+"""ai_assistant 实验管线共享工具:仓库根路径、日志、时间戳、JSON 读写与 .env 加载。
 
-所有 agent_temp 下的 CLI 工具统一从这里取「项目根目录」与基础工具,
+所有 ai_assistant 下的 CLI 工具统一从这里取「项目根目录」与基础工具,
 避免每个脚本各自维护一份 sys.path 拼接 / log / now_iso / JSON 读写。
 """
 
@@ -14,14 +14,14 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-# 项目根目录:agent_temp/tools/common.py -> <root>/
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-AGENT_TEMP_DIR = REPO_ROOT / "agent_temp"
-TOOLS_DIR = AGENT_TEMP_DIR / "tools"
+# 项目根目录:app/ai_assistant/tools/common.py -> <root>/
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+AI_ASSISTANT_DIR = REPO_ROOT / "app" / "ai_assistant"
+TOOLS_DIR = AI_ASSISTANT_DIR / "tools"
 # 无参数运行各 CLI 时的默认书籍
-DEFAULT_BOOK = AGENT_TEMP_DIR / "books" / "三体.epub"
+DEFAULT_BOOK = AI_ASSISTANT_DIR / "books" / "三体.epub"
 
-# 允许以「uv run python -m agent_temp.tools.<tool>」从仓库根目录运行
+# 允许以「uv run python -m app.ai_assistant.tools.<tool>」从仓库根目录运行
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

@@ -1,6 +1,6 @@
 """去重共享原语:标题/姓名规范与相似度,以及库内活跃行读取。
 
-agent_temp 管线(dedupe_check)与 app 管理端(llm_review)共用,
+ai_assistant 管线(dedupe_check)与 app 管理端(llm_review)共用,
 避免各自维护一份 normalize/bigrams/jaccard 与行查询 SQL。
 """
 

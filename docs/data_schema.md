@@ -188,7 +188,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 ### embeddings AI 语义去重向量缓存
 
-由 `agent_temp/tools/dedupe_check.py` 使用:把库内作者/作品标题向量落库,
+由 `app/ai_assistant/tools/dedupe_check.py` 使用:把库内作者/作品标题向量落库,
 避免每次管线运行对全库重复调用阿里云百炼 embedding。不属于业务数据,不进 CSV,
 无 admin 维护入口。
 

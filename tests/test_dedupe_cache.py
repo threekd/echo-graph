@@ -1,6 +1,6 @@
 """dedupe_check 向量缓存单测:命中 / 失效 / 模型切换 / 重建 / 空文本。
 
-对应 agent_temp/tools/dedupe_check.py 的 _load_vectors_cached /
+对应 app/ai_assistant/tools/dedupe_check.py 的 _load_vectors_cached /
 _load_vector_cache / _save_vector_cache 与 run_dedupe(rebuild_vectors)。
 全部测试 mock 掉 embedding 接口,不发真实网络请求。
 """
@@ -14,8 +14,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_temp.tools import dedupe_check
 from app import db_sqlite
+from app.ai_assistant.tools import dedupe_check
 
 
 def _fake_embed(client, model, texts):

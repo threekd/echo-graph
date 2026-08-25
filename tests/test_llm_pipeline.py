@@ -1,6 +1,6 @@
 """AI 录入管线端到端测试:提取JSON → 去重 → make-batch → ingest → 审核 → 发布。
 
-原 agent_temp/tmp/e2e_llm_review.py 一次性脚本的自动化版本:用合成提取数据 +
+原 app/ai_assistant/tmp/e2e_llm_review.py 一次性脚本的自动化版本:用合成提取数据 +
 临时 SQLite 库,验证 system_llm 草稿区、依赖守卫与发布链路,不触碰真实
 data/echo-graph.db 与 data/export/*(CSV 导出目录已指向临时目录)。
 """
@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from agent_temp.tools import dedupe_check, llm_space, review_publish
 from app import auth, data_store, db_sqlite
+from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from app.llm_review import (
     approve_draft,
     llm_drafts,
@@ -86,7 +86,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.patch_export.start()
         self.addCleanup(self.patch_export.stop)
 
-        # 批次登记簿写入临时目录,避免污染 agent_temp/output/batches
+        # 批次登记簿写入临时目录,避免污染 app/ai_assistant/output/batches
         self.patch_batch_dir = patch.object(
             llm_space, "BATCH_DIR", Path(self.tmp.name) / "batches"
         )

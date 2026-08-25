@@ -34,9 +34,9 @@ except ImportError:
     print("缺少依赖库，请执行： pip install ebooklib beautifulsoup4 lxml")
     sys.exit(1)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from agent_temp.tools.common import DEFAULT_BOOK  # noqa: E402
+from app.ai_assistant.tools.common import DEFAULT_BOOK  # noqa: E402
 
 # ======================================================================
 # 常量：集中管理可调参数，避免代码中出现魔法数字

@@ -1,6 +1,6 @@
 """书籍导入 API(admin 角色):上传电子书 → AI 提取 → 去重 → system_llm AI 草稿区。
 
-复用 agent_temp 一键管线(pipeline_ingest.py)的三个阶段:
+复用 ai_assistant 一键管线(pipeline_ingest.py)的三个阶段:
     1) extract_source_book.run_extract  读取书籍元信息 + LLM 提取 作者/作品/涟漪
     2) dedupe_check.run_dedupe          与库内现有数据做基础 + 语义去重
     3) review_publish.build_batch → stage_batch  写入 system_llm 私有空间
@@ -31,7 +31,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from agent_temp.tools import dedupe_check, extract_source_book, llm_space, review_publish
+from app.ai_assistant.tools import dedupe_check, extract_source_book, llm_space, review_publish
 from app.auth import require_admin
 
 router = APIRouter(
@@ -41,7 +41,7 @@ router = APIRouter(
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-IMPORT_DIR = ROOT / "agent_temp" / "output" / "imports"
+IMPORT_DIR = ROOT / "app" / "ai_assistant" / "output" / "imports"
 MAX_BOOK_BYTES = 200 * 1024 * 1024  # 200MB 防滥用上限
 ALLOWED_SUFFIXES = {".epub", ".txt", ".mobi", ".azw", ".azw3", ".fb2", ".html", ".htm"}
 KEEP_TASKS = 100  # 内存中最多保留的任务数(最旧 done/error 先清理)

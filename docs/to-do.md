@@ -69,7 +69,7 @@
 - [x] 移除贡献收件箱(2026-08-24,schema v22):删除 `contributions` 表、`app/contributions.py`、
       `POST /api/contribute/echo`、admin「贡献」审核接口与前端「贡献」Tab/面板;
       「点亮星空」早已直写个人空间,不再需要自由文本收件箱;书籍解析管线后续以
-      专用用户空间承载(见 agent_temp 评估,暂缓实现)
+      专用用户空间承载(见 ai_assistant 评估,暂缓实现)
 - [x] 溯源列 `created_by`(2026-08-24,schema v23):作者/作品/涟漪三表新增
       `created_by`(curated 人工策展 / user 用户空间写入 / llm AI 提取预留);
       显式传值优先、缺省按 owner 推导(admin=curated,其他=user),创建后不可修改、
@@ -224,5 +224,5 @@
       批准后草稿行回写 `published_to_id` 防重复发布;依赖守卫保证作品依赖作者、
       涟漪依赖两端作品均已先批准;新增审计动作 `llm_ingest` / `llm_publish` /
       `llm_reuse` / `llm_reject` / `llm_reopen`
-- [x] 审核管道 CLI:`agent_temp/tools/review_publish.py` 新增 `ingest` 子命令,
+- [x] 审核管道 CLI:`app/ai_assistant/tools/review_publish.py` 新增 `ingest` 子命令,
       批次条目单事务写入 system_llm 草稿区,增量跳过已处理条目

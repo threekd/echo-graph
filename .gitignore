@@ -25,6 +25,5 @@ backups/
 Thumbs.db
 
 # other
-agent_temp/__pycache__
-agent_temp/output
-agent_temp/books
+app/ai_assistant/output
+app/ai_assistant/books

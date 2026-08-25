@@ -2,7 +2,7 @@
 
 流程:
     1) ingest(CLI)把 AI 提取的作者/作品/涟漪写入 system_llm 空间,
-       reviewStatus='draft'、created_by='llm'(见 agent_temp/tools/review_publish.py ingest)。
+       reviewStatus='draft'、created_by='llm'(见 app/ai_assistant/tools/review_publish.py ingest)。
     2) admin 在本页浏览草稿(附与公共星云的去重提示),可编辑/驳回/重开。
     3) 批准:默认复制进公共星云(created_by='llm'、reviewStatus='reviewed');
        或按去重提示选择「复用」现有公共记录。

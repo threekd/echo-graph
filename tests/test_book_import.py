@@ -83,7 +83,7 @@ class BookImportTest(unittest.TestCase):
         self.patch_export.start()
         self.addCleanup(self.patch_export.stop)
 
-        # 批次登记簿写入临时目录,避免污染 agent_temp/output/batches
+        # 批次登记簿写入临时目录,避免污染 app/ai_assistant/output/batches
         self.patch_batch_dir = patch.object(book_import.llm_space, "BATCH_DIR", Path(self.tmp.name) / "batches")
         self.patch_batch_dir.start()
         self.addCleanup(self.patch_batch_dir.stop)
@@ -116,7 +116,7 @@ class BookImportTest(unittest.TestCase):
         client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
 
         with patch(
-            "agent_temp.tools.extract_source_book.run_extract",
+            "app.ai_assistant.tools.extract_source_book.run_extract",
             return_value=_synthetic_extract(),
         ):
             r = client.post(
@@ -164,7 +164,7 @@ class BookImportTest(unittest.TestCase):
         book.write_bytes(b"fake epub bytes")  # run_extract 被 mock,不真读文件
 
         with patch(
-            "agent_temp.tools.extract_source_book.run_extract",
+            "app.ai_assistant.tools.extract_source_book.run_extract",
             return_value=_synthetic_extract(),
         ):
             resp = book_import.submit_import(book, title="测试之书", authors=["测试作者"], basic_only=True)
@@ -206,7 +206,7 @@ class BookImportTest(unittest.TestCase):
             return _synthetic_extract()
 
         with patch(
-            "agent_temp.tools.extract_source_book.run_extract",
+            "app.ai_assistant.tools.extract_source_book.run_extract",
             side_effect=fake_extract,
         ):
             task_id = book_import.submit_import(
@@ -229,7 +229,7 @@ class BookImportTest(unittest.TestCase):
         def boom(*_args, **_kwargs):
             raise RuntimeError("LLM 服务不可用")
 
-        with patch("agent_temp.tools.extract_source_book.run_extract", side_effect=boom):
+        with patch("app.ai_assistant.tools.extract_source_book.run_extract", side_effect=boom):
             task_id = book_import.submit_import(book)["task_id"]
 
         task = self._wait_done(task_id)

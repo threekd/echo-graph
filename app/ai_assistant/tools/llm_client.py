@@ -2,7 +2,7 @@
 
 """DeepSeek LLM 调用公共工具。
 
-供 agent_temp 下的实验脚本复用,避免各脚本各自维护一份 API 客户端代码:
+供 ai_assistant 下的实验脚本复用,避免各脚本各自维护一份 API 客户端代码:
 
 - 统一从项目根目录 .env 加载 DEEPSEEK_* 配置(见 tools/common.load_dotenv_once)
 - 模型名由 DEEPSEEK_MODEL 控制(默认 deepseek-v4-flash;官方另可选 deepseek-v4-pro)
@@ -15,11 +15,12 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from openai import OpenAI
 
-from agent_temp.tools.common import load_dotenv_once, utf8_stdout
+from app.ai_assistant.tools.common import load_dotenv_once, utf8_stdout
 
 # 导入即加载 .env,保证下面的 MODEL / THINKING 能读到项目配置覆盖
 load_dotenv_once()

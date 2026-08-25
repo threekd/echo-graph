@@ -174,4 +174,4 @@
 - 2026-08-24:移除贡献收件箱(schema v22)——删除 `contributions` 表、`app/contributions.py`、
   `POST /api/contribute/echo`、admin「贡献」审核接口与前端「贡献」Tab/面板;
   「点亮星空」早已直写个人空间(`/api/me/edges`),此前的"保留为兼容入口"说明作废;
-  书籍解析管线后续以专用用户空间承载(见 agent_temp 评估,暂缓)。
+  书籍解析管线后续以专用用户空间承载(见 ai_assistant 评估,暂缓)。

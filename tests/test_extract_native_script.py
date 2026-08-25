@@ -1,6 +1,6 @@
 """原文名/原著标题「对应国籍/语言」文字一致性检查的单测。
 
-对应 agent_temp/tools/extract_source_book.py 的 check_native_script:
+对应 app/ai_assistant/tools/extract_source_book.py 的 check_native_script:
 非拉丁文字系统的国籍/语言,原文名/原著标题应使用其原文字,拉丁转写应告警。
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent_temp.tools.extract_source_book import check_native_script
+from app.ai_assistant.tools.extract_source_book import check_native_script
 
 
 class NativeScriptCheckTest(unittest.TestCase):

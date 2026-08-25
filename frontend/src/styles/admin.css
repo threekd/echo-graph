@@ -694,6 +694,29 @@ th.sortable.active .sort-icon {
 }
 .llm-drafts .llm-batch button.primary,
 .llm-drafts .llm-ripple button.primary { font-weight: 600; }
+.llm-drafts .llm-batch button.approve,
+.llm-drafts .llm-ripple button.approve {
+  border-color: rgba(120, 220, 160, 0.55);
+  color: #a9f0c8;
+  background: rgba(30, 90, 60, 0.45);
+  font-weight: 600;
+}
+.llm-drafts .llm-batch button.approve:hover,
+.llm-drafts .llm-ripple button.approve:hover {
+  border-color: rgba(120, 220, 160, 0.9);
+  background: rgba(40, 110, 70, 0.55);
+}
+.llm-drafts .llm-batch button.reject,
+.llm-drafts .llm-ripple button.reject {
+  border-color: rgba(255, 120, 120, 0.5);
+  color: #ffb0b0;
+  background: rgba(120, 40, 40, 0.4);
+}
+.llm-drafts .llm-batch button.reject:hover,
+.llm-drafts .llm-ripple button.reject:hover {
+  border-color: rgba(255, 120, 120, 0.9);
+  background: rgba(140, 48, 48, 0.5);
+}
 .llm-drafts .llm-batch-body {
   max-height: 400px;
   overflow-y: auto;
@@ -736,6 +759,14 @@ th.sortable.active .sort-icon {
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+}
+.llm-drafts .llm-ripple-actions-left,
+.llm-drafts .llm-ripple-actions-right {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .llm-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .llm-actions button.primary { font-weight: 600; }
@@ -767,10 +798,60 @@ th.sortable.active .sort-icon {
 
 
 /* 书籍导入弹窗 */
-.import-card { width: min(460px, 94vw); }
+.import-card {
+  width: min(460px, 94vw);
+  color-scheme: dark; /* 原生控件(文件选择等)按深色主题渲染 */
+}
 .import-card .import-file { margin: 0; color: #9cc3ff; font-size: 12px; }
 .import-card .import-check { flex-direction: row; align-items: center; gap: 6px; }
-.import-card .import-check input[type="checkbox"] { accent-color: #7aa2ff; }
+.import-card .import-check span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.import-card .import-check input[type="checkbox"] {
+  vertical-align: middle;
+}
+.import-card input[type="file"] {
+  color: #c8d4f0;
+  font-size: 12px;
+}
+.import-card input[type="file"]::file-selector-button {
+  padding: 6px 12px;
+  margin-right: 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  background: rgba(30, 44, 90, 0.75);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.import-card input[type="file"]::file-selector-button:hover {
+  border-color: rgba(138, 184, 255, 0.8);
+}
+.import-card .import-check input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 4px;
+  border: 1px solid rgba(148, 163, 255, 0.45);
+  background: #0d1733;
+  cursor: pointer;
+}
+.import-card .import-check input[type="checkbox"]:checked {
+  border-color: #7aa2ff;
+  background-color: #2b5da8;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M3 8.5 6.5 12 13 4.5'/%3E%3C/svg%3E");
+  background-size: 11px 11px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.import-card .import-check input[type="checkbox"]:focus-visible {
+  outline: 1px solid rgba(138, 184, 255, 0.8);
+  outline-offset: 1px;
+}
 .import-card .import-tip {
   margin: 0;
   color: #8a93a6;

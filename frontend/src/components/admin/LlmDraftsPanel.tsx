@@ -163,7 +163,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       ))}
       {batch.ripples.length === 0 && (
         <>
-          <button className="primary" onClick={() => approveSource(batch.source.work.id)}>批准源书</button>
+          <button className="approve" onClick={() => approveSource(batch.source.work.id)}>批准源书</button>
         </>
       )}
     </span>
@@ -174,10 +174,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     <div className="llm-drafts">
       <div className="llm-head">
         <p className="llm-tip">
-          AI 草稿仅上传者本人可见（owner_id=上传者、created_by=llm，公共星云不可见）。
-          每条涟漪按 源作品 → 目标作品 独立批准，依赖的作者/作品会自动建库；
-          与公共星云精确重复时批准将自动复用现有记录（提示见卡片），
-          如需修正可在发布后在「数据管理」中编辑。公共星云现有：
+          公共星云现有：
           作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
           {counts
             ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples} · 已发布 ${counts.published}`
@@ -248,24 +245,47 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                     </p>
                   )}
                   <div className="llm-ripple-actions">
-                    {published ? (
-                      <span className="llm-published">
-                        已发布 #
-                        {shortId(String((r.edge as unknown as Record<string, unknown>).published_to_id))}
+                    {!published && r.target && (
+                      <span className="llm-ripple-actions-left">
+                        <button
+                          title={"编辑目标作品 " + workLabelOf(r.target.work)}
+                          onClick={() => setModal({ kind: "works", row: r.target!.work as AdminRow })}
+                        >
+                          编辑作品
+                        </button>
+                        {r.target.authors.map((a) => (
+                          <button
+                            key={a.id}
+                            title={"编辑目标作者 " + sourceAuthorLabel(a)}
+                            onClick={() => setModal({ kind: "authors", row: a as AdminRow })}
+                          >
+                            编辑作者
+                          </button>
+                        ))}
+                        <button
+                          title="编辑涟漪(原文片段/出处/备注)"
+                          onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}
+                        >
+                          编辑涟漪
+                        </button>
                       </span>
-                    ) : rejected ? (
-                      <>
-                        <button onClick={() => reopen(r.edge.id)}>重开</button>
-                        <button onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}>编辑</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="primary" onClick={() => approveRipple(r.edge.id)}>批准</button>
-                        <button onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}>编辑</button>
-                        <button onClick={() => reject(r.edge.id)}>驳回</button>
-                      </>
                     )}
-                    </div>
+                    <span className="llm-ripple-actions-right">
+                      {published ? (
+                        <span className="llm-published">
+                          已发布 #
+                          {shortId(String((r.edge as unknown as Record<string, unknown>).published_to_id))}
+                        </span>
+                      ) : rejected ? (
+                        <button onClick={() => reopen(r.edge.id)}>重开</button>
+                      ) : (
+                        <>
+                          <button className="approve" onClick={() => approveRipple(r.edge.id)}>批准</button>
+                          <button className="reject" onClick={() => reject(r.edge.id)}>驳回</button>
+                        </>
+                      )}
+                    </span>
+                  </div>
                   </div>
                 );
               })}

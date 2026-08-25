@@ -41,6 +41,7 @@ from openai import OpenAI
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from app import db_sqlite  # noqa: E402
+from app.ai_assistant import prompts  # noqa: E402
 from app.ai_assistant.tools import llm_client  # noqa: E402
 from app.ai_assistant.tools.common import load_dotenv_once, log, now_iso, utf8_stdout  # noqa: E402
 from app.dedupe_util import char_bigrams, jaccard, load_rows, normalize_title  # noqa: E402
@@ -497,14 +498,18 @@ def _load_deepseek() -> tuple[OpenAI, str]:
     return llm_client.create_client(api_key, base_url), llm_client.MODEL
 
 
-def _llm_prompt(kind: str, text_a: str, text_b: str) -> str:
-    """LLM 二选一提示词:仅输出 0~1 置信度数字。"""
-    question = "A和B是同一本书吗？" if kind == "作品" else "A和B是同一个作者吗？"
-    return (
-        f"{question}回答一个0到1之间的数字，可以是0，可以是1，可以是0到1之间的小数。"
-        "仅输出数字，不要输出其他内容。\n"
-        f"A:{text_a}\nB:{text_b}"
-    )
+def _llm_messages(kind: str, text_a: str, text_b: str) -> list[dict[str, str]]:
+    """构造 LLM 兜底确认消息:系统提示词(定义在 prompts.py)+ A/B 实体描述。"""
+    entity = "同一本书" if kind == "作品" else "同一个作者"
+    return [
+        {"role": "system", "content": prompts.DEDUPE_CONFIRM_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": prompts.DEDUPE_CONFIRM_USER_PROMPT.format(
+                entity=entity, text_a=text_a, text_b=text_b
+            ),
+        },
+    ]
 
 
 def llm_duplicate_confidence(
@@ -518,7 +523,7 @@ def llm_duplicate_confidence(
     try:
         resp = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": _llm_prompt(kind, text_a, text_b)}],
+            messages=_llm_messages(kind, text_a, text_b),
             temperature=0,
             max_tokens=16,
             # 数值判断题不需要深度思考;deepseek-v4-flash 默认会先推理,

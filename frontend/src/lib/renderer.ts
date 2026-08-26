@@ -16,6 +16,7 @@ import type { CameraState, GraphData } from "../store";
 import { el } from "./util";
 import { applyCamera, applyCameraState, setOnCameraChange } from "./renderer/camera";
 import { bindControls, onResize, pickNode, setHoveredNode } from "./renderer/controls";
+import { updateLabelCulling } from "./renderer/labels";
 import { autoFitViewRadius, forceLayoutChunked, layoutFor } from "./renderer/layout";
 import {
   addBackgroundStars,
@@ -238,4 +239,5 @@ function animate(): void {
   }
   R.renderer!.render(R.scene!, R.camera!);
   R.labelRenderer!.render(R.scene!, R.camera!);
+  updateLabelCulling(now);
 }

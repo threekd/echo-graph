@@ -62,6 +62,13 @@
   color: #ffffff;
   text-shadow: 0 0 8px rgba(138, 184, 255, 0.95), 0 0 18px rgba(138, 184, 255, 0.5);
 }
+/* 重叠剔除隐藏的标签:保留布局(opacity:0)以便持续测量,悬停时临时显示 */
+.nodelabel.culled {
+  opacity: 0;
+}
+.nodelabel.culled.active {
+  opacity: 1;
+}
 
 #panel {
   position: fixed;

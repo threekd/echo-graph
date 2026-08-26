@@ -204,7 +204,7 @@ def enrich_ripple_authors(
        使进入草稿区的作者记录包含完整字段;
     2) 追加到 extract["ripple_authors"]:与源书作者 extract["authors"] 分开存放,
        避免 build_batch 把涟漪作者误当成源书作者挂到源书作品上;
-       collect_candidates_from_extract 会同时收集两处,入草稿前与公共星云
+       collect_candidates_from_extract 会同时收集两处,入草稿前与上传者星云
        做基础+语义去重。
 
     返回本次补全的作者数(空名 / 已补全 / 同名已存在跳过)。

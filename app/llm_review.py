@@ -3,20 +3,21 @@
 流程:
     1) 导入(Web/CLI)把 AI 提取的作者/作品/涟漪写入上传者的空间,
        owner_id=上传者、reviewStatus='draft'、created_by='llm'
-       (见 app/ai_assistant/tools/review_publish.py ingest)。
+       (见 app/ai_assistant/tools/review_publish.py stage_batch)。
     2) 上传者(admin 或 VIP)在本页浏览自己上传的草稿(附与**自己星云**的
        去重提示),可编辑/驳回/重开;多 admin 各自独立、互不审核。
     3) 批准:默认复制进自己的星云(created_by='llm'、reviewStatus='reviewed';
-       引导管理员的星云即公共星云);或按去重提示选择「复用」自己星云中的
+       admin 的星云即官方图谱);或按去重提示选择「复用」自己星云中的
        现有记录。
        草稿行回写 published_to_id(公共行 id),同一草稿不可重复发布。
 
 隔离规则:
     - 草稿区 = 上传者的空间(owner_id=上传者 + created_by='llm'),上传者只能
-      看到/审核自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
+      看到/审核自己上传的草稿;官方图谱/策展读取统一排除 AI 草稿
       (见 db_sqlite.ai_draft_clause);
-    - 发布目标 = 上传者自己的星云(owner_id=上传者);引导管理员的星云即公共星云;
-      admin 审核后进入公共星云的统一通道为后续规划(见 docs/to-do.md);
+    - 发布目标 = 上传者自己的星云(owner_id=上传者);admin 的星云即官方图谱,
+      admin 发布即进入官方图谱;「admin 整合用户数据进官方图谱」的通道为后续
+      规划(见 docs/to-do.md);
     - 批准复制依赖先决条件:作品依赖的作者、涟漪依赖的两端作品必须已批准,
       依赖通过草稿行的 published_to_id 解析到公共行 id,保证引用不跨空间。
 """
@@ -30,7 +31,7 @@ from pydantic import BaseModel
 
 from app import db_sqlite, sqlite_store
 from app.ai_assistant.tools import dedupe_check
-from app.auth import admin_user_id, require_admin_or_vip
+from app.auth import require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
 from app.space_crud import Kind, after_write, validate_row
@@ -45,10 +46,8 @@ KIND_TABLE = sqlite_store.KIND_TABLE
 
 
 def _own_space_scope(owner_id: str, prefix: str = "") -> tuple[str, tuple]:
-    """上传者自己星云的 owner 过滤 SQL:引导管理员额外包含未认领历史行(公共星云)。"""
+    """上传者自己星云的 owner 过滤 SQL(所有用户一致,admin 无特殊口径)。"""
     col = f"{prefix}owner_id"
-    if owner_id == admin_user_id():
-        return f"({col} = ? OR {col} IS NULL)", (owner_id,)
     return f"{col} = ?", (owner_id,)
 
 
@@ -237,7 +236,7 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
     owner = user["id"]
     batches, published = _draft_batches(owner)
 
-    # 去重/复用判重目标 = 上传者自己的星云(引导管理员的星云即公共星云)
+    # 去重/复用判重目标 = 上传者自己的星云(admin 的星云即官方图谱)
     user_rows = load_user_rows(owner)
     space_authors, space_works = user_rows["authors"], user_rows["works"]
 
@@ -515,7 +514,7 @@ def _publish_draft_entity(
 ) -> str:
     """把单条草稿发布/复用到上传者自己的星云;已发布直接返回现有行 id。
 
-    发布目标 owner = admin_id(调用方传入的上传者 id;引导管理员即公共星云)。
+    发布目标 owner = admin_id(调用方传入的上传者 id;admin 的星云即官方图谱)。
     返回发布行 id;审计 create / llm_publish / llm_reuse 留痕。
     """
     existing = draft.get("published_to_id")
@@ -525,7 +524,7 @@ def _publish_draft_entity(
     reuse_id = (reuse_id or "").strip() or None
     if reuse_id:
         target = sqlite_store.get_row(conn, kind, reuse_id)
-        allowed_owners = (admin_id, None) if admin_id == admin_user_id() else (admin_id,)
+        allowed_owners = (admin_id,)
         if target is None or target.get("deletedAt") or target.get("owner_id") not in allowed_owners:
             raise HTTPException(status_code=404, detail="复用目标不在自己的星云或已删除")
         sqlite_store.update_row(

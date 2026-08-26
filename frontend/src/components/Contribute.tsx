@@ -362,7 +362,7 @@ export default function Contribute() {
       const fresh = await loadMyRows();
       setMyRows(fresh);
       try {
-        // 写入本人星云后刷新图谱(admin 的「我的星云」与公共星云同源)
+        // 写入本人星云后刷新图谱(admin 的「我的星云」即默认视图/官方图谱)
         if (state.space === "mine" || (state.user?.role === "admin" && state.space === "public")) {
           refreshSpaceGraph();
         }

@@ -78,7 +78,7 @@ class AdminUsersTest(unittest.TestCase):
         self.assertEqual(ctx2.exception.status_code, 400)
 
     def test_bootstrap_admin_protected(self) -> None:
-        """引导管理员(公共星云所有者)不可被禁用/降级(即使由其他管理员操作)。"""
+        """引导管理员(官方图谱所有者)不可被禁用/降级(即使由其他管理员操作)。"""
         self._patch(self.bob["id"], role="admin")
         with self.assertRaises(HTTPException) as ctx:
             self._patch(self.admin["id"], actor=self.bob, status="disabled")

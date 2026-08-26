@@ -1,10 +1,8 @@
-"""空间数据 CRUD:公共星云(admin)与个人空间(me)共用的行级写路径。
+"""空间数据 CRUD:admin 星云(官方图谱)与个人空间(me)共用的行级写路径。
 
-隔离规则:所有写操作必须带 owner_id。admin 空间 = admin 认领的数据
-(owner_id 为空的历史行在 admin 写入时自动认领);个人空间 = 精确匹配 owner_id。
-行不属于该空间一律视为不存在(404),不暴露存在性,防越权探测。
-
-CSV 导出只针对公共星云(admin 空间),用户私有数据不进 git 审计产物。
+隔离规则:所有写操作必须带 owner_id,精确匹配 owner_id;行不属于该空间一律
+视为不存在(404),不暴露存在性,防越权探测。公共星云/未认领行概念已于
+2026-08-27 移除,不再有 adopt_unowned 逻辑。
 """
 
 from __future__ import annotations
@@ -95,21 +93,12 @@ def _audit_changes(kind: Kind, before: dict, after: dict) -> str:
     return "；".join(parts)
 
 
-def _resolve_row(
-    conn, kind: Kind, row_id: str, owner_id: str, adopt_unowned: bool = False
-) -> dict | None:
-    """按空间取行:精确 owner 匹配;admin 空间额外接纳未认领历史行(认领后归 admin)。"""
+def _resolve_row(conn, kind: Kind, row_id: str, owner_id: str) -> dict | None:
+    """按空间取行:精确 owner 匹配,不属于该空间视为不存在。"""
     row = sqlite_store.get_row(conn, kind, row_id)
     if row is None:
         return None
     if row.get("owner_id") == owner_id:
-        return row
-    if adopt_unowned and owner_id is not None and row.get("owner_id") is None:
-        conn.execute(
-            f"UPDATE {KIND_TABLE[kind]} SET owner_id = ? WHERE id = ?",
-            (owner_id, row_id),
-        )
-        row["owner_id"] = owner_id
         return row
     return None
 
@@ -209,7 +198,7 @@ def space_data(owner_id: str, include_deleted: bool = True) -> dict:
     }
 
 
-def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: bool = False) -> dict:
+def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
@@ -264,7 +253,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
 
 
 def update_row(
-    kind: Kind, item_id: str, row: dict, owner_id: str, actor: str, adopt_unowned: bool = False
+    kind: Kind, item_id: str, row: dict, owner_id: str, actor: str
 ) -> dict:
     row = clean_row(row)
     row.pop("created_by", None)  # 溯源列创建后不可修改(与 createdAt 同策略)
@@ -287,7 +276,7 @@ def update_row(
         # 用户表单总会携带这两个字段:空值代表清除(显式写 NULL)
         extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        existing = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        existing = _resolve_row(conn, kind, item_id, owner_id)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         row["created_by"] = existing.get("created_by")  # 返回行携带库内真实溯源值
@@ -320,12 +309,12 @@ def update_row(
     return {"ok": True, "row": row}
 
 
-def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowned: bool = False) -> dict:
+def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) -> dict:
     """软删除。作品连带其涟漪边;作者连带其名下作品与这些作品的涟漪边。"""
     now = _now()
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        row = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        row = _resolve_row(conn, kind, item_id, owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
@@ -359,12 +348,12 @@ def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowne
 
 
 def restore_row(
-    kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowned: bool = False
+    kind: Kind, item_id: str, owner_id: str, actor: str
 ) -> dict:
     """恢复软删除。同一删除动作级联删除的作品/涟漪(相同 deletedAt)一并恢复。"""
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        row = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        row = _resolve_row(conn, kind, item_id, owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         ts = row.get("deletedAt")

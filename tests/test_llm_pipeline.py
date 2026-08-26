@@ -1,4 +1,4 @@
-"""AI 录入管线端到端测试:提取JSON → 去重 → make-batch → ingest → 审核 → 发布。
+"""AI 录入管线端到端测试:提取JSON → 去重 → build_batch → stage_batch → 审核 → 发布。
 
 原 app/ai_assistant/tmp/e2e_llm_review.py 一次性脚本的自动化版本:用合成提取数据 +
 临时 SQLite 库,验证 system_llm 草稿区、依赖守卫与发布链路,不触碰真实
@@ -153,7 +153,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(len(r["public_ids"]["target_authors"]), 1)
         self.assertIsNotNone(r["public_ids"]["edge"])
 
-        # 公共星云落库校验:2 作者 / 2 作品 / 1 涟漪;草稿行回写 published_to_id
+        # admin 星云(官方图谱)落库校验:2 作者 / 2 作品 / 1 涟漪;草稿行回写 published_to_id
         with db_sqlite._db() as conn:
             pub_a = conn.execute(
                 "SELECT count(*) c FROM authors WHERE owner_id = ? AND deletedAt IS NULL"

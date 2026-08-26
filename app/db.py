@@ -131,12 +131,14 @@ class SqliteStore:
     每次查询读取活跃(未软删除)数据;当前规模下开销可忽略,
     数据量增长后可在此层加进程内缓存(写入时失效)。
 
-    reviewed_only(公开视图):为 True 时所有公开接口只返回 reviewStatus=reviewed
-    的内容(草稿/驳回不可见)。默认读取环境变量 PUBLIC_REVIEWED_ONLY
-    (取值 1 / true / yes / on 开启),部署时在 .env 中配置。
+    reviewed_only(默认视图):为 True 时默认视图(官方图谱 = admin 星云)只返回
+    reviewStatus=reviewed 的内容(草稿/驳回不可见)。默认读取环境变量
+    PUBLIC_REVIEWED_ONLY(取值 1 / true / yes / on 开启),部署时在 .env 中配置;
+    后续将整合为用户级设置(见 docs/to-do.md)。
 
-    作者/作品的节点可见性(visibility)已于 schema v21 移除:公开星云内的数据
-    对所有访客一致可见,访客/owner 视图不再区分。
+    公共星云概念已于 2026-08-27 移除:默认视图 = admin 星云(官方图谱),
+    不再存在 owner_id 为空的「未认领历史行」。作者/作品的节点可见性
+    (visibility)已于 schema v21 移除,访客/owner 视图不再区分。
     """
 
     name = "sqlite"
@@ -150,25 +152,25 @@ class SqliteStore:
             reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
                 "1", "true", "yes", "on",
             )
-        # 审核过滤只约束公共视图:个人空间里用户必须能看到自己的草稿/驳回数据
+        # 审核过滤只约束默认视图:个人空间里用户必须能看到自己的草稿/驳回数据
         self.reviewed_only = reviewed_only and owner_id is None
-        # 空间过滤:None = 公共视图(admin 认领的数据 + 尚未认领的历史行);
-        # 具体用户 id = 该用户私有空间(仅本人可见)。
+        # 空间过滤:None = 默认视图(admin 星云,即官方图谱);
+        # 具体用户 id = 该用户的空间(仅本人可见)。
         self.owner_id = owner_id
 
     def _effective_status(self, status: str | None) -> str | None:
-        """公开视图强制 reviewed;内部/管理场景沿用显式 status。"""
+        """默认视图强制 reviewed;内部/管理场景沿用显式 status。"""
         return "reviewed" if self.reviewed_only else status
 
     def _owner_clause(self, prefix: str = "") -> tuple[str, tuple]:
-        """返回 owner 过滤 SQL 片段与参数;公共视图包含未认领行(认领前的过渡态)。"""
+        """返回 owner 过滤 SQL 片段与参数;默认视图 = admin 星云(官方图谱)。"""
         col = f"{prefix}owner_id"
         if self.owner_id is not None:
             return f"{col} = ?", (self.owner_id,)
         admin = admin_user_id()
         if admin is None:
-            return f"{col} IS NULL", ()
-        return f"({col} IS NULL OR {col} = ?)", (admin,)
+            return "1 = 0", ()  # 引导管理员未注册时默认视图无数据
+        return f"{col} = ?", (admin,)
 
     def close(self) -> None:
         """无连接池,无需清理。"""
@@ -180,7 +182,7 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        # 缓存键含空间与审核过滤:不同 owner/公共视图互不串缓存,
+        # 缓存键含空间与审核过滤:不同 owner/默认视图互不串缓存,
         # 同一 DB 路径下不同 reviewed_only 的 store 也不串缓存
         key = _cache_key() + (
             self.owner_id or "public",

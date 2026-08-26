@@ -3,9 +3,10 @@
 """AI 草稿归属与批次登记簿公共工具。
 
 - 草稿归属(draft_owner_id / migrate_legacy_llm_drafts)收敛在 app/llm_account.py,
-  本模块仅为 CLI 实验脚本保留入口并继续提供批次登记簿:
+  本模块供管线(pipeline_ingest / book_import)与管理端共用并继续提供批次登记簿:
   - 每次 ingest 生成一个批次 JSON(app/ai_assistant/output/batches/<id>.json),
-    记录该批的作者/作品/涟漪草稿与映射,供 review_publish.py 审核与发布。
+    记录该批的作者/作品/涟漪草稿与映射,供 review_publish.py build_batch /
+    stage_batch 与 Web 管理端「AI 草稿」审核使用。
 """
 
 from __future__ import annotations

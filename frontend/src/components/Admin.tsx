@@ -85,7 +85,7 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
 export default function Admin() {
   const { state, dispatch } = useApp();
   // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
-  // admin 管理公共星云(/api/admin,即其名下数据);日志/快照仅 admin。
+  // admin 管理官方图谱(/api/admin,即其名下星云);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
   const isVip = Boolean(state.user?.vip);
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
@@ -289,7 +289,7 @@ export default function Admin() {
   };
 
   // 数据写入后刷新星云图(仅当管理空间与当前浏览空间一致时才有意义:
-  // admin 管理公共星云,其「我的星云」同源;普通用户管理自己的星云)
+  // admin 管理官方图谱,其「我的星云」同源;普通用户管理自己的星云)
   const refreshGraphAfterWrite = () => {
     const relevant = isAdmin
       ? state.space === "public" || state.space === "mine"

@@ -14,7 +14,7 @@ export interface AuthorRow {
   deathYear?: number | null;
   note?: string | null;
   reviewStatus: ReviewStatus;
-  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
+  published_to_id?: string | null; // AI 草稿发布到官方图谱(admin 星云)后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;
@@ -36,7 +36,7 @@ export interface WorkRow {
   recommendation?: Recommendation | null; // 个人评分,仅用户空间语义,不进 CSV
   review?: string | null; // 个人评价(最多 2000 字),仅用户空间语义,不进 CSV
   reviewStatus: ReviewStatus;
-  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
+  published_to_id?: string | null; // AI 草稿发布到官方图谱(admin 星云)后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;
@@ -50,7 +50,7 @@ export interface EdgeRow {
   evidenceSource?: string | null;
   note?: string | null;
   reviewStatus: ReviewStatus;
-  published_to_id?: string | null; // AI 草稿发布到公共星云后的映射(仅草稿行有值)
+  published_to_id?: string | null; // AI 草稿发布到官方图谱(admin 星云)后的映射(仅草稿行有值)
   createdAt?: string | null;
   updatedAt?: string | null;
   deletedAt?: string | null;

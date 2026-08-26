@@ -1,4 +1,4 @@
-"""空间隔离测试:公共星云(admin)与个人空间互不可见、不可修改。"""
+"""空间隔离测试:admin 星云(官方图谱)与个人空间互不可见、不可修改。"""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ class SpaceIsolationTest(unittest.TestCase):
             "authors", {"originalName": "A", "Name_CN": "爱丽丝的作者"}, user=self.alice
         )
         aid = created["row"]["id"]
-        # 公共星云与第三方空间均不可见
+        # 默认视图(admin 星云)与第三方空间均不可见
         self.assertEqual(SqliteStore().graph()["nodes"], [])
         self.assertEqual(SqliteStore(owner_id=self.bob["id"]).graph()["nodes"], [])
         self.assertEqual(admin.get_data()["authors"], [])

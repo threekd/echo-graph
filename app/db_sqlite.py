@@ -52,8 +52,8 @@ def ai_draft_clause(alias: str = "", negate: bool = False) -> str:
     """AI 草稿判定 SQL 片段:created_by='llm' 且未发布(或已发布但保留映射)的行。
 
     negate=False 返回「是 AI 草稿」条件(草稿区读取用);
-    negate=True 返回「非 AI 草稿」条件(公共星云/策展/导出读取用,
-    保证草稿不会因为 owner_id=上传者(admin 空间即公共星云)而泄露)。
+    negate=True 返回「非 AI 草稿」条件(官方图谱/admin 星云与策展读取用,
+    保证草稿不会因为 owner_id=上传者(admin 空间即官方图谱)而泄露)。
     alias 为表别名(如 'w.'),用于联表查询。
     """
     prefix = f"{alias}." if alias else ""
@@ -595,10 +595,10 @@ def _migration_v23(conn: sqlite3.Connection) -> None:
 
 
 def _migration_v24(conn: sqlite3.Connection) -> None:
-    """AI 草稿审核:作者/作品/涟漪增加 published_to_id,记录草稿发布到公共星云后的映射。
+    """AI 草稿审核:作者/作品/涟漪增加 published_to_id,记录草稿发布到官方图谱后的映射。
 
     system_llm 私有空间存放 AI 提取草稿(reviewStatus='draft', created_by='llm'),
-    admin 审核批准后复制进公共星云(created_by='llm', reviewStatus='reviewed'),
+    admin 审核批准后复制进自己的星云(admin 即官方图谱;created_by='llm', reviewStatus='reviewed'),
     并在草稿行上回写 published_to_id(公共行 id),防止同一草稿重复发布;
     审核复用现有公共记录时,published_to_id 记被复用的公共行 id。
     仅草稿区行有值,公共行恒为 NULL;不进 CSV(导出表头显式枚举)。
@@ -635,7 +635,7 @@ def _migration_v26(conn: sqlite3.Connection) -> None:
     """VIP 标记:users.vip(布尔,默认 0)。
 
     VIP 用户拥有 AI 书籍导入权限,并在「AI 草稿」页审核自己上传的草稿,
-    批准后发布到自己的星云(admin→公共星云通道为后续规划)。
+    批准后发布到自己的星云(admin 整合用户数据进官方图谱的通道为后续规划)。
     """
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
     if "vip" not in cols:

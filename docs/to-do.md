@@ -45,16 +45,16 @@
       「无密码修改/重置、账号无法找回」两个问题:邮箱验证可确保引导管理员邮箱归属,
       并作为密码重置的找回通道)、OIDC 社交登录
 - [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
-      私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);公共星云 = admin 空间
-      (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 启动认领未归属数据);隔离测试
+      私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);默认视图 = admin 星云(官方图谱)
+      (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 旧库遗留数据一次性兼容认领);隔离测试
       (越权 404/403、跨空间引用拒绝)
 - [x] 角色迁移(阶段 2):移除 ADMIN_TOKEN / 管理令牌弹窗;管理接口只认 admin 角色
       登录态;前端「数据管理」按用户角色显隐,左侧栏新增「公共星云 / 我的星云」切换
 - [x] 阶段 2 后续:个人空间数据管理 UI(复用 Admin 组件按空间切换,非 admin
       经 `/api/me/*` 管理自己的星云——见下方「数据管理视图开放给所有登录用户」)
-- ⬜ 阶段 2 后续:发布/聚合到公共星云(阶段 4)
+- ⬜ 阶段 2 后续:发布/聚合到官方图谱(阶段 4)
 - ⬜ 后台发布管线(暂缓,已确认设计):用户星云数据 → 后台采集 →
-      AI 预审(查重/纠错) → 人工确认 → 复制进公共星云(owner=admin,内部留溯源);
+      AI 预审(查重/纠错) → 人工确认 → 复制进官方图谱(owner=admin,内部留溯源);
       公共行只取客观字段,不含用户隐私;不拆表、用户无需手动提交
 - [x] 数据管理视图开放给所有登录用户:非 admin 用 `/api/me/*` 管理自己的
       作者/作品/涟漪(日志/快照仅 admin 可见),新增 `/api/me/data`
@@ -62,7 +62,7 @@
       不再进贡献收件箱;下拉框搜不到时第一行提供「添加新作品 / 新作者」,
       弹出与数据管理共用的标准新增弹窗(NodeFormModal 抽取复用)
 - [x] 星际跃迁:左侧栏「公共星云 / 我的星云」下方新增跃迁按钮(随机访问公开星云);
-      数据源标签显示所在星云账号(公共星云显示 public);`/api/space/*` 附 displayName
+      数据源标签显示所在星云账号(默认视图显示 public);`/api/space/*` 附 displayName
 - [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
 - [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `migration/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 日志表;同步计数预检
@@ -167,6 +167,11 @@
    备份介质统一为**整库快照**(`backups/echo-graph-*.db`,`sqlite3 .backup` + 管理端
    「快照」恢复);待办:把 `backups/` 定期同步到异地(rsync / rclone / 对象存储)的
    自动化方案,以及「全新环境从整库备份引导」的操作文档与演练。
+9. **审核过滤用户级设置(2026-08-27 新增)**:`PUBLIC_REVIEWED_ONLY` 目前仍是全局
+   环境变量开关,只对默认视图(admin 星云/官方图谱)生效。规划整合进「设置」开放给
+   所有用户:**用户可自行选择是否显示自己星云的草稿/驳回内容**(默认视图保持
+   admin 侧设置);涉及后端 `SqliteStore.reviewed_only` 语义、个人空间读取过滤
+   与前端设置 UI。
 
 ## 最近变更(2026-08-21)
 
@@ -207,7 +212,7 @@
       个人资料编辑(昵称/简介)与关注/粉丝列表(点击条目定向跃迁到对方星云);
       「消息」Tab 为占位(第二阶段通知,后端未实现)
 - [x] 右侧详情栏「个人资料」卡片完善(星云所有者昵称/简介,不含邮箱)
-- [x] 随机跃迁排除自己与公共星云所有者;定向跃迁支持好友/粉丝列表入口
+- [x] 随机跃迁排除自己与默认视图所有者(admin);定向跃迁支持好友/粉丝列表入口
 - [x] URL 状态深化:hash 携带 `space` 参数(public/mine/<用户id>),刷新/分享后保持星云上下文;
       深链与空间切换在首载时按 space 路由
 - [x] 数据管理页面排序/布局调整;修复下拉框、自动填充、新增作者、刷新等问题
@@ -236,13 +241,15 @@
       旧 `POST /api/admin/users/{id}/vip` 接口保持兼容
 - [x] AI 草稿审核管道(schema v24):`system_llm` 机器账号私有空间承载 AI 提取草稿
       (`created_by='llm'`、`reviewStatus='draft'`、随机密码不可登录,不可人工登录);
-      admin 管理端新增「AI 草稿」Tab,作者/作品/涟漪分页浏览(附与公共星云的基础
-      去重提示),支持编辑/驳回/重开/批准(复制进公共星云)/复用(去重命中现有记录);
+      admin 管理端新增「AI 草稿」Tab,作者/作品/涟漪分页浏览(附与自己星云的基础
+      去重提示),支持编辑/驳回/重开/批准(复制进自己的星云,admin 即官方图谱)/复用(去重命中现有记录);
       批准后草稿行回写 `published_to_id` 防重复发布;依赖守卫保证作品依赖作者、
       涟漪依赖两端作品均已先批准;新增审计动作 `llm_ingest` / `llm_publish` /
       `llm_reuse` / `llm_reject` / `llm_reopen`
 - [x] 审核管道 CLI:`app/ai_assistant/tools/review_publish.py` 新增 `ingest` 子命令,
       批次条目单事务写入 system_llm 草稿区,增量跳过已处理条目
+      (2026-08-27 起 make-batch / review / publish 等 legacy CLI 已移除,
+      `ingest` 能力由 `stage_batch` 提供,见「最近变更(2026-08-27)」)
 
 ## 最近变更(2026-08-26)
 
@@ -261,7 +268,7 @@
       `build_batch` 对旧版污染数据容错(按元数据作者 + 涟漪作者键过滤)
 - [x] AI 草稿按上传者隔离:废除共享 `system_llm` 机器账号,草稿直接
       `owner_id=上传者` + `created_by='llm'` 落库;上传者(admin/VIP)在「AI 草稿」页
-      只能看到/审核自己上传的草稿;公共星云/策展/导出/去重读取统一排除 AI 草稿
+      只能看到/审核自己上传的草稿;官方图谱/策展/去重读取统一排除 AI 草稿
       (`db_sqlite.ai_draft_clause`);旧共享账号草稿由
       `app/llm_account.migrate_legacy_llm_drafts()` 在服务启动时一次性迁移到
       引导管理员并删除空账号
@@ -276,8 +283,8 @@
       `POST /api/admin/llm/source/{work_id}/approve`(无涟漪批次的源书批准)
 - [x] 去重逻辑统一:新增 `dedupe_check.dedupe_entity(kind, candidate, *, user_id, ...)`
       统一入口(author/work 走 基础+语义+LLM 三阶段,edge 只走端点对基础匹配);
-      判重目标**严格按用户个人空间**(admin 个人空间即公共星云,`load_user_rows`,
-      含未认领历史行、排除 AI 草稿);`run_dedupe`、AI 草稿提示/自动复用、
+      判重目标**严格按用户自己空间**(admin 即官方图谱,`load_user_rows`,
+      排除 AI 草稿);`run_dedupe`、AI 草稿提示/自动复用、
       个人空间新增全部改走统一入口;删除 llm_review 自写的 `_best_hit` 匹配
 - [x] 运维管理页:侧边栏新增 admin 专属「运维管理」入口(与数据管理/用户管理同款
       窗口),把数据管理里的「日志/快照」两个 Tab 迁入,窗口内子 Tab 切换;
@@ -285,13 +292,13 @@
       公共 id(已发布或精确命中)再查同对边,未发布也能提示 edge_duplicate
 - [x] AI 草稿模型定型(产品决策 2026-08-26):**导入者 = 审核者 = 发布到自己星云**——
       admin 与 VIP 均可导入书籍并在「AI 草稿」页审核**自己上传**的草稿,批准后
-      发布到自己的星云(owner_id=上传者;引导管理员的星云即公共星云);普通用户
+      发布到自己的星云(owner_id=上传者;admin 的星云即官方图谱);普通用户
       无 AI 导入/审核能力;多 admin 各自独立星云、互不审核;去重/复用判重目标
       改为上传者自己的星云(`llm_drafts` 的 `space_counts` 即本人星云数据量);
       修复涟漪去重提示误用边 id 查 works 表的映射 bug(按草稿作品 id 批量取
       `published_to_id`);`/api/admin/llm/*` 鉴权由 admin 放开为 admin/VIP。
-- ⬜ **admin 审核后进入公共星云通道(后续规划)**:目前批准发布的目标是上传者
-      自己的星云;待产品定稿后再建「admin 审核 → 复制进引导管理员公共星云」
+- ⬜ **admin 整合用户数据进官方图谱通道(后续规划)**:目前批准发布的目标是上传者
+      自己的星云;待产品定稿后再建「admin 审核 → 复制进官方图谱」
       的通道(涉及 `llm_review` 发布落点、去重判重目标)。
 
 ## 最近变更(2026-08-27)
@@ -320,3 +327,18 @@
       (作者/作品/涟漪)打包为 zip 下载;`GET /api/me/export`(admin 为
       `GET /api/admin/export`),与数据管理页同口径(仅本人空间、排除 AI 草稿、
       含软删除行、works 附带个人字段);前端按钮在作者/作品/涟漪三个 Tab 显示。
+- [x] **公共星云概念移除(架构变更)**:公共星云 ≡ admin 星云(官方图谱),admin 星云
+      不做特殊对待——
+  - 默认视图(功能栏「公共星云」标签)= admin 星云:公开接口 `/api/*` 直接读
+    `owner_id=引导管理员` 的空间,与用户星云同口径(`app/db.py` `_owner_clause`
+    删除 `owner_id IS NULL` 分支);点击「公共星云」与跃迁到 admin 星云效果一致;
+  - 移除「未认领历史行」支持:`adopt_unowned`、`load_rows(public_only=...)`、
+    `_own_space_scope` 的 admin 特判、`_publish_draft_entity` 复用目标 NULL 分支
+    全部删除;旧库遗留 NULL 行由启动/注册时 `claim_unowned_rows()` 一次性兼容认领;
+  - AI 草稿/去重/审核判重目标统一为「上传者自己的星云」(admin 即官方图谱),
+    VIP 与 admin 口径一致;「admin 整合用户数据进官方图谱」见上文 ⬜ 条目,
+    「审核过滤用户级设置」列入遗留第 9 条待办(见上);功能栏「公共星云」标签保留。
+- [x] **清理 legacy CLI 与一次性脚本**:`review_publish.py` 的 make-batch / list /
+      show / review / publish / ingest 子命令及配套展示/发布函数全部移除(约 500 行),
+      保留管线核心 `build_batch` / `stage_batch` / `build_dedupe_info`;
+      `scripts/backfill_ripple_work_authors.py` 一次性回填脚本删除(无任何引用)。

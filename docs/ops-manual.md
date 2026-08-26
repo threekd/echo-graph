@@ -16,14 +16,15 @@
 
 | 数据 | 位置 | 是否进 git | 说明 |
 |---|---|---|---|
-| 权威库(全部数据) | `data/echo-graph.db` | 否 | 公共星云 / 用户星云 / 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
+| 权威库(全部数据) | `data/echo-graph.db` | 否 | 官方图谱(admin 星云)/ 用户星云 / 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
 | 整库快照 | `backups/echo-graph-*.db` | 否 | 管理端快照 + `deploy.sh` 自动备份 |
 | 历史快照 | `data/versions/` | 否 | 只读恢复来源(旧机制遗留,新代码不再写入;**当前环境不存在此目录,仅有旧机器残留时才有内容**) |
 | 部署备份包 | `backups/data-*.tgz` | 否 | `deploy.sh` 对数据目录的打包 |
 
 关键语义:
 
-- **公共星云 = 引导管理员(`ADMIN_BOOTSTRAP_EMAIL`)的空间 + 未认领历史行**;启动时自动认领。
+- **默认视图(功能栏「公共星云」标签)= admin 星云(官方图谱)**:`owner_id = 引导管理员`
+  的行;公共星云/未认领行概念已于 2026-08-27 移除,启动时仅对旧库遗留 NULL 行做一次性兼容认领。
 - **用户星云 = `authors/works/edges` 中 `owner_id=用户id` 的行**,只存在 SQLite 中,不进 git。
 - 单 worker 是设计约束:限流(进程内滑动窗口)与写锁(`_write_lock`)都依赖单进程语义,不要增加 uvicorn worker。
 
@@ -108,7 +109,7 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 - 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 审计 / 会话一并回退);
 - 恢复前自动生成安全备份 `backups/echo-graph-pre-restore-<时间戳>.db`;
 - 恢复全程与所有写事务互斥,**恢复期间请勿编辑数据**;
-- 成功后自动重新认领未归属行、清空读缓存。
+- 成功后自动清空读缓存(旧库遗留未归属行由启动引导一次性认领)。
 
 ### 3.3 全新环境引导(不是恢复,谨慎!)
 
@@ -277,7 +278,7 @@ ls -lt backups | head -20
 
 | 变量 | 作用 | 运维注意 |
 |---|---|---|
-| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(公共星云所有者) | 必须配置 |
+| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(官方图谱/默认视图所有者) | 必须配置 |
 | `PUBLIC_REVIEWED_ONLY` | 公开视图只显示已审核数据 | 生产开启前需先完成数据审核 |
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
 | `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |

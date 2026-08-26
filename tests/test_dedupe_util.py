@@ -36,7 +36,7 @@ class AuthorsClearlyDifferentTest(unittest.TestCase):
         self.assertFalse(authors_clearly_different("", "蕾切尔·卡逊"))
 
 
-class LoadRowsPublicOnlyTest(unittest.TestCase):
+class LoadRowsOwnerScopeTest(unittest.TestCase):
     ADMIN = "boss@test.local"
 
     def setUp(self) -> None:
@@ -56,18 +56,18 @@ class LoadRowsPublicOnlyTest(unittest.TestCase):
             "owner_id": owner_id,
         }
 
-    def test_public_only_includes_claimed_and_unclaimed(self) -> None:
-        """admin 已注册:已认领行与未认领行(owner_id IS NULL)都应算公共数据。"""
+    def test_owner_scope_filters_by_owner(self) -> None:
+        """owner_id 精确匹配:只返回该用户的行,不含其他用户空间数据。"""
         rewrite_all(
             [
                 self._author("01", self.admin["id"]),
-                self._author("02", None),
-                self._author("03", self.alice["id"]),  # 他人私有空间,不应出现在公共口径
+                self._author("02", self.admin["id"]),
+                self._author("03", self.alice["id"]),  # 他人私有空间,不应出现在 admin 口径
             ],
             [],
             [],
         )
-        data = load_rows(public_only=True)
+        data = load_rows(owner_id=self.admin["id"])
         ids = {r["id"] for r in data["authors"]}
         self.assertEqual(
             ids,
@@ -77,20 +77,8 @@ class LoadRowsPublicOnlyTest(unittest.TestCase):
             },
         )
 
-    def test_public_only_without_admin_falls_back_to_unclaimed(self) -> None:
-        """admin 未注册时公共口径 = 未认领行(owner_id IS NULL)。"""
-        with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
-            rewrite_all(
-                [self._author("11", self.admin["id"]), self._author("12", None)],
-                [],
-                [],
-            )
-            data = load_rows(public_only=True)
-            ids = {r["id"] for r in data["authors"]}
-            self.assertEqual(ids, {"01a00000-0000-7000-8000-000000000012"})
-
-    def test_non_public_only_returns_everything(self) -> None:
-        """非公共口径(管线视角)返回全部活跃行。"""
+    def test_without_owner_returns_everything(self) -> None:
+        """不带 owner_id(管线视角)返回全部活跃行。"""
         rewrite_all(
             [self._author("21", self.admin["id"]), self._author("22", self.alice["id"])],
             [],

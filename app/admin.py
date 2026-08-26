@@ -1,7 +1,8 @@
-"""数据管理 API(admin 角色):公共星云三张表的增删改查、软删除、审计、快照。
+"""数据管理 API(admin 角色):admin 星云(官方图谱)三张表的增删改查、软删除、审计、快照。
 
 鉴权:admin 角色登录态(httpOnly Cookie),不再使用 ADMIN_TOKEN。
-写路径复用 app/space_crud(owner=引导管理员);每次公共星云写入自动导出 CSV(git 审计)。
+写路径复用 app/space_crud(owner=当前 admin);公共星云概念已于 2026-08-27
+移除,admin 星云与其他用户星云在数据语义上完全一致。
 """
 
 from __future__ import annotations
@@ -85,14 +86,14 @@ def admin_restore(body: dict) -> dict:
         raise HTTPException(status_code=400, detail=f"恢复失败:\n{exc}") from exc
     except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
         raise HTTPException(status_code=500, detail=f"恢复失败:{exc}") from exc
-    bootstrap_admin()  # 快照恢复后重新认领未归属数据到引导管理员
+    bootstrap_admin()  # 快照恢复后兜底迁移旧库遗留未归属数据
     invalidate_cache()
     return result
 
 
 @router.get("/export")
 def admin_export(user: dict | None = Depends(require_admin)) -> Response:  # noqa: B008
-    """导出公共星云(admin 空间)三张表为 CSV zip(数据管理页「导出 CSV」按钮)。"""
+    """导出 admin 星云(官方图谱)三张表为 CSV zip(数据管理页「导出 CSV」按钮)。"""
     admin = _admin_context(user)
     buf = data_store.space_csv_zip(admin["id"])
     filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
@@ -114,19 +115,19 @@ def update(
     kind: Kind, item_id: str, row: dict, user: dict | None = Depends(require_admin)  # noqa: B008
 ) -> dict:
     admin = _admin_context(user)
-    return update_row(kind, item_id, row, admin["id"], admin["email"], adopt_unowned=True)
+    return update_row(kind, item_id, row, admin["id"], admin["email"])
 
 
 @router.delete("/{kind}/{item_id}")
 def delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
-    return delete_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
+    return delete_row(kind, item_id, admin["id"], admin["email"])
 
 
 @router.post("/{kind}/{item_id}/restore")
 def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
-    return restore_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
+    return restore_row(kind, item_id, admin["id"], admin["email"])
 
 
 @router.post("/users/{user_id}/vip")
@@ -213,7 +214,7 @@ def admin_update_user(
 
     保护规则:
     - 不能修改自己的 role/status(防止最后一个管理员把自己锁出系统);
-    - 引导管理员(公共星云所有者)不能被禁用或降级;
+    - 引导管理员(官方图谱所有者)不能被禁用或降级;
     - 系统至少保留一名可用管理员(防御性兜底)。
     """
     admin = _admin_context(user)
@@ -230,7 +231,7 @@ def admin_update_user(
         if is_bootstrap_email(row["email"]) and (
             updates.get("status") == "disabled" or updates.get("role") == "user"
         ):
-            raise HTTPException(status_code=400, detail="不能禁用或降级引导管理员(公共星云所有者)")
+            raise HTTPException(status_code=400, detail="不能禁用或降级引导管理员(官方图谱所有者)")
         if row["role"] == "admin" and (
             updates.get("role") == "user" or updates.get("status") == "disabled"
         ):

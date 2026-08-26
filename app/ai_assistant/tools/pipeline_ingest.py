@@ -5,10 +5,10 @@
     1) extract_source_book.run_extract  读取书籍信息 + 调用 LLM 提取 作者/作品/涟漪
     2) dedupe_check.run_dedupe         与库内现有数据做基础 + 语义去重
     3) review_publish.build_batch      生成批次登记簿 → stage_batch 写入
-                                       system_llm 私有空间(reviewStatus=draft,
-                                       created_by='llm',公共星云不可见)
+                                       上传者空间(reviewStatus=draft,
+                                       created_by='llm',官方图谱不可见)
 
-发布后的审核在 admin 管理端「AI 草稿」页完成(批准 → 公共星云)。
+发布后的审核在 admin/VIP 管理端「AI 草稿」页完成(批准 → 自己的星云;admin 即官方图谱)。
 
 依赖(配置在项目根目录 .env):
     - DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(书籍解析 LLM,可选 DEEPSEEK_MODEL)
@@ -189,7 +189,7 @@ def main() -> None:
     write_json(dedupe_out, report)
     log(f"去重报告 → {dedupe_out}")
 
-    # 3) 生成批次登记簿(make-batch 内部会确保 system_llm 账号存在)
+    # 3) 生成批次登记簿(build_batch 只读库,不写数据库)
     log("3/4 生成批次登记簿")
     owner = llm_space.draft_owner_id()
     batch = review_publish.build_batch(result, report, db_path=db_path, owner_id=owner)
@@ -205,13 +205,13 @@ def main() -> None:
         f"· 作品 {kinds.get('work', 0)} · 涟漪 {kinds.get('edge', 0)}"
     )
 
-    # 4) 发布到 system_llm 空间(草稿区,待 admin 审核)
+    # 4) 写入上传者空间草稿区(待 admin/VIP 审核)
     if args.dry_run:
-        print("\n[dry-run] 未 ingest;批次登记簿已生成,可随时执行:")
-        print(f"  uv run python -m app.ai_assistant.tools.review_publish ingest {batch_id}")
+        print("\n[dry-run] 未 ingest;批次登记簿已生成。重新执行本管线(去掉 --dry-run)")
+        print("  即可写入草稿区;审核/批准在管理端「AI 草稿」页完成。")
         return
 
-    log("4/4 发布到 system_llm 草稿区")
+    log("4/4 写入草稿区(owner_id=上传者,待审核)")
     if db_path:
         db_sqlite.DB_PATH = Path(db_path).resolve()
     counts = review_publish.stage_batch(batch, owner)
@@ -225,7 +225,7 @@ def main() -> None:
 
     print("\n" + "=" * 70)
     print(f"完成:批次 {batch_id} 已进入 system_llm 私有空间(draft)")
-    print("下一步:admin 登录后在管理端「AI 草稿」页审核/批准(发布到公共星云)")
+    print("下一步:admin/VIP 登录后在管理端「AI 草稿」页审核/批准(发布到自己的星云)")
     print(f"  提取结果:{extract_out}")
     print(f"  去重报告:{dedupe_out}")
     print("=" * 70)

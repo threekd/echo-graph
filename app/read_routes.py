@@ -41,7 +41,7 @@ def register_read_routes(
     path_prefix:目标完整前缀(FastAPI 实例用 /api;APIRouter 自带前缀时传空串)。
     user_id_path:为 True 时路径为 {prefix}/{{user_id}}/graph 等(星际跃迁)。
     store_factory(request, user_id) 每次请求调用;owner_provider(request, user_id)
-    返回图谱附带的 owner 公开资料(公共星云 = 引导管理员,个人空间 = 本人,
+    返回图谱附带的 owner 公开资料(默认视图 = 引导管理员(admin 星云),个人空间 = 本人,
     他人星云 = 目标用户),为 None 时图谱响应不附 owner 字段;graph_extra(request, user_id)
     返回并入图谱响应的顶层字段(星际跃迁需要 spaceId / displayName)。
     """

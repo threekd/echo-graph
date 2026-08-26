@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import db_sqlite
+from app import auth, db_sqlite
 from app.ai_assistant.tools import dedupe_check
 
 
@@ -106,13 +106,27 @@ class RunDedupeCacheTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db_path = Path(self.tmp.name) / "llm.db"
+        patcher = patch.object(db_sqlite, "DB_PATH", self.db_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        email_patcher = patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local")
+        email_patcher.start()
+        self.addCleanup(email_patcher.stop)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             db_sqlite._migrate(conn)
+            admin_id = db_sqlite.new_uuid()
             conn.execute(
-                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus)"
-                " VALUES ('w-1', 'zh', '三体', '三体', 'reviewed')"
+                "INSERT INTO users (id, email, username, password_hash, role, status,"
+                " space_visibility) VALUES (?, 'admin@test.local', 'admin01', 'x',"
+                " 'admin', 'active', 'public')",
+                (admin_id,),
+            )
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus, owner_id)"
+                " VALUES ('w-1', 'zh', '三体', '三体', 'reviewed', ?)",
+                (admin_id,),
             )
             conn.commit()
         finally:

@@ -138,13 +138,27 @@ class RunDedupeLLMTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db_path = Path(self.tmp.name) / "llm.db"
+        patcher = patch.object(db_sqlite, "DB_PATH", self.db_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        email_patcher = patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local")
+        email_patcher.start()
+        self.addCleanup(email_patcher.stop)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             db_sqlite._migrate(conn)
+            admin_id = db_sqlite.new_uuid()
             conn.execute(
-                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus)"
-                " VALUES ('w-1', 'zh', '三体', '三体', 'reviewed')"
+                "INSERT INTO users (id, email, username, password_hash, role, status,"
+                " space_visibility) VALUES (?, 'admin@test.local', 'admin01', 'x',"
+                " 'admin', 'active', 'public')",
+                (admin_id,),
+            )
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus, owner_id)"
+                " VALUES ('w-1', 'zh', '三体', '三体', 'reviewed', ?)",
+                (admin_id,),
             )
             conn.commit()
         finally:
@@ -278,9 +292,9 @@ class UserScopeDedupeTest(unittest.TestCase):
         self.assertEqual(entry["basic"]["level"], "exact")
         self.assertEqual(entry["decision"], "likely_duplicate")
 
-    def test_dedupe_entity_admin_space_includes_unclaimed(self) -> None:
-        """admin 个人空间判重包含未认领(owner_id NULL)历史行。"""
-        self._seed_work(None)  # 未认领行 = 公共星云
+    def test_dedupe_entity_admin_space(self) -> None:
+        """admin 判重目标 = 自己空间(官方图谱),与普通用户口径一致。"""
+        self._seed_work(self.admin["id"])
         entry = dedupe_check.dedupe_entity(
             "work",
             {"Title_CN": "三体", "originalTitle": "三体"},

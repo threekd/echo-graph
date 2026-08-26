@@ -85,7 +85,8 @@ def random_space_graph(request: Request) -> dict:
     admin = admin_user_id()
     where = "space_visibility = 'public' AND status = 'active'"
     params: tuple = ()
-    # 排除公共星云所有者(与「公共星云」重复)与浏览者本人(避免跃迁到自己的星云)
+    # 排除默认视图(admin 星云/官方图谱)所有者,避免跃迁到与默认视图重复的星云;
+    # 同时排除浏览者本人(避免跃迁到自己的星云)
     excludes = [x for x in (admin, viewer["id"] if viewer else None) if x]
     if excludes:
         placeholders = ",".join("?" for _ in excludes)

@@ -14,20 +14,20 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**默认视图(功能栏「公共星云」标签)= admin 星云(官方图谱)**:公开接口(`/api/graph` 等)直接查 admin 星云,admin 星云与其他用户星云在数据语义上完全一致,无「未认领行」概念。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
   书内书名提及**仅取正文**,涟漪出处标注为 前言/正文/尾记/其它 四类;提示词统一
   维护在 `app/ai_assistant/prompts.py`)→ 去重校验(`dedupe_check.py`,基础匹配 +
   阿里云百炼 qwen3.7-text-embedding 语义辅助 + DeepSeek 兜底确认)→ 批次登记
-  (`review_publish.py make-batch / ingest`)以 `owner_id=上传者`、
+  (`review_publish.py build_batch / stage_batch`)以 `owner_id=上传者`、
   `created_by='llm'`、`reviewStatus='draft'` 写入草稿区(已不再使用共享
   `system_llm` 机器账号,历史草稿由 `migrate_legacy_llm_drafts()` 一次性迁移);
   上传者(admin 或 VIP)在管理端「AI 草稿」页只看到/审核自己上传的草稿,逐条
-  审核——批准(复制进**自己的星云**,引导管理员的星云即公共星云)/ 复用(去重
+  审核——批准(复制进**自己的星云**,admin 的星云即官方图谱)/ 复用(去重
   命中自己星云中的现有记录)/ 驳回 / 重开 / 编辑,批准后回写 `published_to_id`
-  防重复发布;多 admin 各自独立、互不审核;admin 审核后进入公共星云的统一
-  通道为后续规划(见 `docs/to-do.md`)。
+  防重复发布;多 admin 各自独立、互不审核;「admin 整合用户数据进官方图谱」
+  的统一通道为后续规划(见 `docs/to-do.md`)。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式
@@ -103,7 +103,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > 数据管理视图对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
 > (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
-> admin 角色,其「自己的星云」就是公共星云,并可额外使用「日志 / 快照 / 用户」
+> admin 角色,其「自己的星云」即官方图谱(默认视图),并可额外使用「日志 / 快照 / 用户」
 > 平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
 > 所有登录用户可在数据管理页导出自己星云的三张表为 CSV zip(「导出 CSV」按钮)。
 
@@ -124,7 +124,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   前端会提示组件加载失败并可重试;服务端 siteverify 仅对公网 IP 传 `remoteip`,避免本地回环地址导致校验失败
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录与关注写接口按 IP 滑动窗口限流(共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`)做同源校验——带 Origin 头的跨站请求一律 403
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
-  「公共星云 / 我的星云」切换。公共星云 = 引导管理员认领的数据,未登录游客可浏览。
+  「公共星云 / 我的星云」切换。「公共星云」标签 = admin 星云(官方图谱),
+  点击效果与跃迁到 admin 星云一致,未登录游客默认浏览该视图。
 - 左侧功能栏采用 **Tab 列**(类 VS Code 侧边栏):展开后左侧窄条为「星云 / 我的 / 消息 /
   设置」四个 Tab:
   - **星云**:图谱操作(搜索/路径/扩散/过滤/点亮星空/用户管理/数据管理;
@@ -145,7 +146,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   (作品/作者下拉列表来自你自己的星云数据,与数据管理页一致;
   搜不到时下拉框第一行可打开标准新增弹窗),数据直接进入本人星云。
 - 星际跃迁:左侧栏「公共星云 / 我的星云」下方「✦ 星际跃迁」按钮,随机访问一个
-  公开星云(排除自己与公共星云所有者);数据源标签显示所在星云账号,公共星云显示 public。
+  公开星云(排除自己与默认视图所有者 admin,避免与默认视图重复);数据源标签显示
+  所在星云账号,默认视图显示 public。
   接口:`GET /api/space/random/graph`(随机)、`GET /api/space/{user_id}/graph`(定向);
   跃迁后可继续在目标星云内完整交互(搜索 / 作品详情 / 扩散 / 路径),
   由 `GET /api/space/{user_id}/search|work/{id}|expansion/{id}|path` 提供,前端按空间上下文自动路由。
@@ -160,7 +162,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   作品另有个人阅读状态(已读/在读/未读)、评分(推荐/不推荐)与评价(长文本)字段;
   普通用户界面隐藏「备注」,admin 保持原样;阅读状态、评分与评价在右侧「书签」Tab 展示。
 - 新增作者/作品时,原文名/原著标题输入框会联想**当前空间已有数据**
-  (普通用户 = 自己的星云,admin = 公共星云,同等逻辑);选中已存在数据时提示
+  (普通用户 = 自己的星云,admin = 官方图谱,同等逻辑);选中已存在数据时提示
   「数据已存在,请勿重复新增」并**禁止保存**(命中本空间已有数据即拦截);
   涟漪与作品关联作者的选取同样基于当前空间已有数据。
 - 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
@@ -188,7 +190,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、
 `space=public|mine|<用户id>`(当前星云,刷新/分享后保持;他人星云按可见性访问,
-未登录访问 `mine` 或 private/无效星云时自动回退公共星云)、
+未登录访问 `mine` 或 private/无效星云时自动回退默认视图(公共星云标签))、
 `cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,仍兼容解析)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
 
 ### API

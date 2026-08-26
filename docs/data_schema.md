@@ -18,8 +18,8 @@
 |---|---|---|
 | `users` | 账号(邮箱 + 密码哈希 + 角色/状态/星云可见性/资料) | — |
 | `sessions` | 登录会话(只存 token 的 SHA-256 哈希) | 按 `user_id` 关联 |
-| `authors` | 作者节点(公共星云 + 用户空间) | `owner_id` |
-| `works` | 作品节点(公共星云 + 用户空间) | `owner_id` |
+| `authors` | 作者节点(所有星云,含 admin 官方图谱) | `owner_id` |
+| `works` | 作品节点(所有星云,含 admin 官方图谱) | `owner_id` |
 | `work_authors` | 作品-作者关联(合著 N:N) | 经 `works.owner_id` 派生 |
 | `edges` | 回声关系 `(Work)-[:ECHO]->(Work)` | `owner_id` |
 | `friendships` | 单向关注(模型好友) | `user_id` / `friend_id` |
@@ -32,8 +32,9 @@
 - **主键与 URL 标识**:`id` 使用 UUID(优先 UUID v7,时间有序),同时也是 URL 使用的
   标识;新增作者/作品/涟漪/用户/会话/关注时由后端自动生成。
 - **空间归属(多用户)**:`authors` / `works` / `edges` 各含 `owner_id`
-  (引用 `users.id`;空值 = 尚未认领的历史数据,启动时认领给引导管理员);公共星云 =
-  引导管理员空间,个人空间(`/api/me/*`)仅本人可见。
+  (引用 `users.id`,非空)。默认视图(功能栏「公共星云」标签)= admin 星云
+  (官方图谱);个人空间(`/api/me/*`)仅本人可见。公共星云/未认领行概念已于
+  2026-08-27 移除,启动时仅做旧库遗留 NULL 行的一次性兼容认领。
 - **溯源列**:`authors` / `works` / `edges` 含 `created_by`(默认 `curated`);
   取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,经 admin 审核发布)。
   显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
@@ -68,7 +69,7 @@
 | `bio` | TEXT | 否 | 简介(最多 500 字,应用层校验) |
 | `vip` | INTEGER | 是 | VIP 标记(0/1,默认 0):VIP 用户拥有 AI 书籍导入权限
   (导入的草稿按 owner_id=上传者 隔离,上传者(admin/VIP)在「AI 草稿」页审核
-  自己上传的草稿并发布到自己的星云;admin→公共星云通道为后续规划;
+  自己上传的草稿并发布到自己的星云;admin 整合用户数据进官方图谱通道为后续规划;
   VIP 标记由 admin 通过 `POST /api/admin/users/{id}/vip` 维护) |
 
 约束:`CHECK (role IN ('user','admin'))`、`CHECK (status IN ('active','disabled'))`、
@@ -100,7 +101,7 @@
 | `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;显式传值可覆盖;历史存量数据保持 `draft` 待审核 |
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
-| `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
+| `owner_id` | TEXT | 是 | 引用 `users.id`;默认视图 = admin 星云(官方图谱);旧库遗留 NULL 行由启动时一次性认领给引导管理员 |
 | `published_to_id` | TEXT | 否 | AI 草稿发布映射:上传者空间草稿(owner_id=上传者、created_by='llm')批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进公共导出 |
 
 约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
@@ -123,7 +124,7 @@
 | `reviewStatus` | TEXT | 是 | 同 authors 的审核状态语义 |
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
-| `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
+| `owner_id` | TEXT | 是 | 引用 `users.id`;默认视图 = admin 星云(官方图谱) |
 | `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
 | `review` | TEXT | 否 | 个人评价(应用层校验最多 2000 字);仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
 | `readingStatus` | TEXT | 否 | 个人阅读状态 `read` / `reading` / `unread`;仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
@@ -166,7 +167,7 @@
 | `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;历史存量保持 `draft` |
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
-| `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
+| `owner_id` | TEXT | 是 | 引用 `users.id`;默认视图 = admin 星云(官方图谱) |
 | `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进公共导出 |
 
 约束:`UNIQUE(source_work_id, target_work_id)`(同空间内边对唯一,应用层叠加 owner 判定)、
@@ -268,7 +269,7 @@
 - `works.csv` 在 `Title_Other` 之后插入 `author_id` 派生列(work_authors 按
   `works.id` 聚合为逗号分隔串),末尾附加 `readingStatus` / `recommendation` / `review`
   个人字段;
-- 导出仅含**导出者自己的星云**(admin 即公共星云),排除 AI 草稿,含软删除行
+- 导出仅含**导出者自己的星云**(admin 即官方图谱),排除 AI 草稿,含软删除行
   (`deletedAt` 列标注);内部列(owner_id / created_by / published_to_id)与
   sessions、audit_log 不进导出;
 - API 的 `Work.author_id` / `author_ids` 同样为 work_authors 的派生展示字段。
@@ -304,11 +305,11 @@
   (复用场景为被复用行 id),防重复发布;
 - 草稿区 = 上传者空间(`owner_id`=上传者、`created_by='llm'`、`reviewStatus='draft'`),
   上传者(admin/VIP)只能看到/审核自己上传的草稿,多 admin 各自独立、互不审核;
-  公共星云/策展/导出读取统一排除 AI 草稿
+  官方图谱/admin 星云与策展读取统一排除 AI 草稿
   (判定:`created_by='llm'` 且 `reviewStatus != 'reviewed'` 或 `published_to_id` 非空,
   见 `db_sqlite.ai_draft_clause`);批准后复制进**自己的星云**
-  (`created_by='llm'`、`reviewStatus='reviewed'`,引导管理员的星云即公共星云)
-  或按去重提示复用自己星云中的现有记录;admin 审核后进入公共星云的统一通道
+  (`created_by='llm'`、`reviewStatus='reviewed'`,admin 的星云即官方图谱)
+  或按去重提示复用自己星云中的现有记录;admin 整合用户数据进官方图谱的通道
   为后续规划;
 - 历史数据:2026-08 之前的草稿曾落在共享 `system_llm` 账号空间,
   `app/llm_account.migrate_legacy_llm_drafts()` 在首次读取草稿时一次性

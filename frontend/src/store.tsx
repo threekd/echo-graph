@@ -69,8 +69,8 @@ export interface AppState {
   contributeOpen: boolean; // "点亮星空(添加到我的星云)"弹窗
   authOpen: boolean; // 登录/注册弹窗
   user: AuthUser | null; // 当前登录用户(未登录为 null)
-  space: Space; // 当前浏览空间:public | mine | "space:<userId>"(星际跃迁)
-  spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
+  space: Space; // 当前浏览空间:public(默认视图=admin 星云) | mine | "space:<userId>"
+  spaceOwner: string; // 数据源显示:默认视图为 "public",个人/跃迁星云为账号
   pinLeft: boolean; // 左侧功能栏钉住(不再自动隐藏)
   pinRight: boolean; // 右侧详情栏钉住(不再自动隐藏)
   spaceProfile: { username?: string; nickname?: string | null; bio?: string | null } | null; // 当前星云所有者的公开资料

@@ -46,7 +46,8 @@ def _app_version() -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色并认领未归属数据(公共星云)
+    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色,
+    # 并兼容迁移旧库遗留未归属数据(公共星云概念已移除)
     bootstrap_admin()
     # 旧 system_llm 共享草稿一次性改挂到引导管理员(GET 端点保持只读,迁移只在启动执行)
     migrate_legacy_llm_drafts()

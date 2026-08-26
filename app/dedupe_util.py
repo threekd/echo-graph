@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from app import db_sqlite
-from app.auth import admin_user_id
 
 # 作者名相似度阈值:规范化后不相等,但二元组 Jaccard >= 此值视为同一人
 # (处理同人异译,如 蕾切尔·卡逊 vs 蕾切尔·卡森、村上春树 vs 村上春樹),
@@ -71,35 +70,19 @@ def jaccard(a: set[str], b: set[str]) -> float:
 def load_rows(
     db_path: str | None = None,
     *,
-    public_only: bool = False,
     owner_id: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """读取库内活跃(未软删除)的作者/作品/涟漪。
 
-    public_only=False:全部行(去重管线视角,含个人空间);
-    public_only=True:公共星云(admin 认领 + 未认领历史行),复用/发布只认公共空间。
-    owner_id=某用户:该用户个人空间的行(判重目标库),AI 草稿一律排除。
+    owner_id=某用户:该用户空间的行(判重目标库),AI 草稿一律排除;
+    owner_id=None:全部行(去重管线视角,含所有空间)。
     作品带 author_names(中文作者名串)用于同名异书消歧;涟漪同时带两端作品标题。
     """
     path = Path(db_path) if db_path else db_sqlite.DB_PATH
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     try:
-        if public_only:
-            admin_id = admin_user_id()
-            if admin_id:
-                # 注意:IN (?, NULL) 不匹配 owner_id IS NULL 的未认领行,
-                # 必须用 OR 形式显式包含(与 sqlite_store._owner_clause 等一致)
-                owner_scope = "(owner_id = ? OR owner_id IS NULL)"
-                works_owner_scope = "(w.owner_id = ? OR w.owner_id IS NULL)"
-                edges_owner_scope = "(e.owner_id = ? OR e.owner_id IS NULL)"
-                owner_params: tuple = (admin_id,)
-            else:
-                owner_scope = "owner_id IS NULL"
-                works_owner_scope = "w.owner_id IS NULL"
-                edges_owner_scope = "e.owner_id IS NULL"
-                owner_params = ()
-        elif owner_id is not None:
+        if owner_id is not None:
             owner_scope = "owner_id = ?"
             works_owner_scope = "w.owner_id = ?"
             edges_owner_scope = "e.owner_id = ?"
@@ -109,7 +92,7 @@ def load_rows(
             works_owner_scope = ""
             edges_owner_scope = ""
             owner_params = ()
-        # 判重目标(公共星云/个人空间):AI 草稿一律不参与
+        # 判重目标(某用户空间):AI 草稿一律不参与
         if owner_scope:
             owner_scope = owner_scope + f" AND {db_sqlite.ai_draft_clause(negate=True)}"
             works_owner_scope = works_owner_scope + f" AND {db_sqlite.ai_draft_clause('w', negate=True)}"
@@ -163,8 +146,5 @@ def load_rows(
 
 
 def load_user_rows(user_id: str, db_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """判重目标库:某用户个人空间的活跃行(admin 个人空间即公共星云)。"""
-    admin = admin_user_id()
-    if user_id == admin:
-        return load_rows(db_path, public_only=True)
+    """判重目标库:某用户自己空间的活跃行(admin 即官方图谱,口径一致)。"""
     return load_rows(db_path, owner_id=user_id)

@@ -122,7 +122,7 @@ def admin_set_vip(
     body: dict,
     user: dict | None = Depends(require_admin),  # noqa: B008
 ) -> dict:
-    """标记/取消用户 VIP(admin)。VIP 用户拥有 AI 书籍导入权限。"""
+    """标记/取消用户 VIP(admin)。VIP 用户拥有 AI 书籍导入与本人 AI 草稿审核权限。"""
     vip = bool((body or {}).get("vip"))
     return admin_update_user(user_id, UserPatchBody(vip=vip), user)
 

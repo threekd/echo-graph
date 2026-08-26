@@ -251,8 +251,8 @@
       `collect_candidates_from_extract` / `build_batch` 同步修正,
       `build_batch` 对旧版污染数据容错(按元数据作者 + 涟漪作者键过滤)
 - [x] AI 草稿按上传者隔离:废除共享 `system_llm` 机器账号,草稿直接
-      `owner_id=上传者` + `created_by='llm'` 落库;admin 在「AI 草稿」页只能看到
-      自己上传的草稿;公共星云/策展/导出/去重读取统一排除 AI 草稿
+      `owner_id=上传者` + `created_by='llm'` 落库;上传者(admin/VIP)在「AI 草稿」页
+      只能看到/审核自己上传的草稿;公共星云/策展/导出/去重读取统一排除 AI 草稿
       (`db_sqlite.ai_draft_clause`);旧共享账号草稿由
       `app/llm_account.migrate_legacy_llm_drafts()` 首次读取时一次性迁移到
       引导管理员并删除空账号
@@ -260,9 +260,9 @@
       「导入」按钮在 AI 草稿页签同样显示,导入完成后草稿列表自动刷新
 - [x] AI 草稿审核改版:去掉 作者/作品/涟漪 三个 Tab,改为按导入批次(源书)分组的
       卡片,每条涟漪按「点亮星空」字段展示并可单独批准(依赖按 源作者→源作品→
-      目标作者→目标作品→涟漪 顺序自动建库,与公共星云精确重复时自动复用
+      目标作者→目标作品→涟漪 顺序自动建库,与自己星云精确重复时自动复用
       (exact/edge_duplicate,同名异书 exact_diff_author 不自动复用)/驳回/重开;
-      批准后进入「已发布」折叠区;新增接口
+     批准后进入「已发布」折叠区;新增接口
       `POST /api/admin/llm/ripples/{edge_id}/approve` 与
       `POST /api/admin/llm/source/{work_id}/approve`(无涟漪批次的源书批准)
 - [x] 去重逻辑统一:新增 `dedupe_check.dedupe_entity(kind, candidate, *, user_id, ...)`
@@ -274,3 +274,13 @@
       窗口),把数据管理里的「日志/快照」两个 Tab 迁入,窗口内子 Tab 切换;
       数据管理窗口只保留 作者/作品/涟漪/AI草稿;涟漪重复提示改为端点先解析到
       公共 id(已发布或精确命中)再查同对边,未发布也能提示 edge_duplicate
+- [x] AI 草稿模型定型(产品决策 2026-08-26):**导入者 = 审核者 = 发布到自己星云**——
+      admin 与 VIP 均可导入书籍并在「AI 草稿」页审核**自己上传**的草稿,批准后
+      发布到自己的星云(owner_id=上传者;引导管理员的星云即公共星云);普通用户
+      无 AI 导入/审核能力;多 admin 各自独立星云、互不审核;去重/复用判重目标
+      改为上传者自己的星云(`llm_drafts` 的 `space_counts` 即本人星云数据量);
+      修复涟漪去重提示误用边 id 查 works 表的映射 bug(按草稿作品 id 批量取
+      `published_to_id`);`/api/admin/llm/*` 鉴权由 admin 放开为 admin/VIP。
+- ⬜ **admin 审核后进入公共星云通道(后续规划)**:目前批准发布的目标是上传者
+      自己的星云;待产品定稿后再建「admin 审核 → 复制进引导管理员公共星云」
+      的通道(涉及 `llm_review` 发布落点、去重判重目标与 CSV 导出触发条件)。

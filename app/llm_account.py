@@ -1,8 +1,9 @@
 """AI 草稿归属工具。
 
 AI 草稿不再使用共享 system_llm 账号:草稿行直接以 owner_id=上传者、
-created_by='llm' 落库,「admin 只能看到自己上传的草稿」按这两列筛选即可
-(见 app/llm_review.py)。CLI 管线没有登录用户,草稿归属引导管理员。
+created_by='llm' 落库;上传者(admin/VIP)只能看到/审核自己上传的草稿,
+按 owner_id + created_by 两列筛选即可(见 app/llm_review.py)。
+CLI 管线没有登录用户,草稿归属引导管理员。
 
 本模块还提供旧数据迁移:2026-08 之前草稿落在共享 system_llm 账号空间,
 migrate_legacy_llm_drafts() 把它们改挂到引导管理员并删除空账号。

@@ -634,7 +634,8 @@ def _migration_v25(conn: sqlite3.Connection) -> None:
 def _migration_v26(conn: sqlite3.Connection) -> None:
     """VIP 标记:users.vip(布尔,默认 0)。
 
-    VIP 用户拥有 AI 书籍导入权限(草稿仍由 admin 在「AI 草稿」页审核)。
+    VIP 用户拥有 AI 书籍导入权限,并在「AI 草稿」页审核自己上传的草稿,
+    批准后发布到自己的星云(admin→公共星云通道为后续规划)。
     """
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
     if "vip" not in cols:

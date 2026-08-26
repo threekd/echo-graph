@@ -1,19 +1,22 @@
-"""AI 草稿审核 API(admin 角色):按上传者隔离的 AI 草稿 → 公共星云。
+"""AI 草稿审核 API(admin / VIP 角色):上传者审核自己上传的 AI 草稿。
 
 流程:
     1) 导入(Web/CLI)把 AI 提取的作者/作品/涟漪写入上传者的空间,
        owner_id=上传者、reviewStatus='draft'、created_by='llm'
        (见 app/ai_assistant/tools/review_publish.py ingest)。
-    2) admin 在本页浏览草稿(附与公共星云的去重提示),可编辑/驳回/重开。
-    3) 批准:默认复制进公共星云(created_by='llm'、reviewStatus='reviewed');
-       或按去重提示选择「复用」现有公共记录。
+    2) 上传者(admin 或 VIP)在本页浏览自己上传的草稿(附与**自己星云**的
+       去重提示),可编辑/驳回/重开;多 admin 各自独立、互不审核。
+    3) 批准:默认复制进自己的星云(created_by='llm'、reviewStatus='reviewed';
+       引导管理员的星云即公共星云);或按去重提示选择「复用」自己星云中的
+       现有记录。
        草稿行回写 published_to_id(公共行 id),同一草稿不可重复发布。
 
 隔离规则:
-    - 草稿区 = 上传者的空间(owner_id=上传者 + created_by='llm'),admin 只能
-      看到自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
+    - 草稿区 = 上传者的空间(owner_id=上传者 + created_by='llm'),上传者只能
+      看到/审核自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
       (见 db_sqlite.ai_draft_clause);
-    - 公共星云 = 引导管理员(admin)空间;
+    - 发布目标 = 上传者自己的星云(owner_id=上传者);引导管理员的星云即公共星云;
+      admin 审核后进入公共星云的统一通道为后续规划(见 docs/to-do.md);
     - 批准复制依赖先决条件:作品依赖的作者、涟漪依赖的两端作品必须已批准,
       依赖通过草稿行的 published_to_id 解析到公共行 id,保证引用不跨空间。
 """
@@ -27,7 +30,7 @@ from pydantic import BaseModel
 
 from app import db_sqlite, sqlite_store
 from app.ai_assistant.tools import dedupe_check
-from app.auth import admin_user_id, require_admin
+from app.auth import admin_user_id, require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
 from app.llm_account import migrate_legacy_llm_drafts
@@ -36,10 +39,18 @@ from app.space_crud import Kind, after_write, validate_row
 router = APIRouter(
     prefix="/api/admin/llm",
     tags=["llm"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_vip)],
 )
 
 KIND_TABLE = sqlite_store.KIND_TABLE
+
+
+def _own_space_scope(owner_id: str, prefix: str = "") -> tuple[str, tuple]:
+    """上传者自己星云的 owner 过滤 SQL:引导管理员额外包含未认领历史行(公共星云)。"""
+    col = f"{prefix}owner_id"
+    if owner_id == admin_user_id():
+        return f"({col} = ? OR {col} IS NULL)", (owner_id,)
+    return f"{col} = ?", (owner_id,)
 
 
 def _author_id_list(value) -> list[str]:
@@ -222,15 +233,15 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
 
 
 @router.get("/drafts")
-def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
-    """当前 admin 上传的 AI 草稿,按导入批次(源书)分组 + 公共星云去重提示。"""
+def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
+    """当前上传者(admin/VIP)上传的 AI 草稿,按导入批次(源书)分组 + 自己星云去重提示。"""
     migrate_legacy_llm_drafts()  # 旧 system_llm 共享草稿一次性改挂到引导管理员
     owner = user["id"]
     batches, published = _draft_batches(owner)
 
-    admin = admin_user_id()
-    user_rows = load_user_rows(admin)
-    public_authors, public_works = user_rows["authors"], user_rows["works"]
+    # 去重/复用判重目标 = 上传者自己的星云(引导管理员的星云即公共星云)
+    user_rows = load_user_rows(owner)
+    space_authors, space_works = user_rows["authors"], user_rows["works"]
 
     # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
     batch_works: dict[str, dict] = {}
@@ -286,21 +297,22 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
 
     hints_e: dict[str, Any] = {}
     with db_sqlite._db() as conn:
-        # 批量取回草稿作品的发布映射,避免对每条涟漪重复查库(N+1)
-        edge_ids = [r["edge"]["id"] for b in batches for r in b["ripples"]]
+        # 批量取回草稿作品的发布映射,避免对每条涟漪重复查库(N+1);
+        # 注意:查询对象是草稿作品(涟漪两端)id,不是边 id;作品 id 全局唯一,
+        # 无需限定 owner。
+        draft_work_ids = sorted(batch_works)
         published_by_id: dict[str, Any] = {}
-        if edge_ids:
-            placeholders = ",".join("?" for _ in edge_ids)
+        if draft_work_ids:
+            placeholders = ",".join("?" for _ in draft_work_ids)
             pub_rows = conn.execute(
-                f"SELECT id, published_to_id FROM works WHERE id IN ({placeholders})"
-                " AND owner_id = ?",
-                (*edge_ids, owner),
+                f"SELECT id, published_to_id FROM works WHERE id IN ({placeholders})",
+                draft_work_ids,
             ).fetchall()
             published_by_id = {r["id"]: r["published_to_id"] for r in pub_rows}
 
         def resolve_public_work(wid: str | None) -> str | None:
-            """把草稿端点作品解析到公共作品 id:
-            已发布用 published_to_id,否则用精确去重命中的公共 id。"""
+            """把草稿端点作品解析到自己星云的作品 id:
+            已发布用 published_to_id,否则用精确去重命中的星云 id。"""
             if not wid:
                 return None
             pub = published_by_id.get(wid)
@@ -318,6 +330,7 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                 tgt_id = resolve_public_work(e.get("target_work_id"))
                 if not (src_id and tgt_id):
                     continue
+                owner_clause, owner_params = _own_space_scope(owner, "e.")
                 dup = conn.execute(
                     "SELECT e.id, e.source_work_id, e.target_work_id,"
                     " ws.Title_CN AS src_title, wt.Title_CN AS tgt_title"
@@ -325,8 +338,8 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
                     " LEFT JOIN works ws ON ws.id = e.source_work_id"
                     " LEFT JOIN works wt ON wt.id = e.target_work_id"
                     " WHERE e.source_work_id = ? AND e.target_work_id = ?"
-                    " AND e.deletedAt IS NULL AND (e.owner_id = ? OR e.owner_id IS NULL)",
-                    (src_id, tgt_id, admin),
+                    " AND e.deletedAt IS NULL AND " + owner_clause,
+                    (src_id, tgt_id) + owner_params,
                 ).fetchone()
                 if dup:
                     hints_e[e["id"]] = {
@@ -351,7 +364,7 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
         "batches": batches,
         "published": published,
         "counts": counts,
-        "public_counts": {"authors": len(public_authors), "works": len(public_works)},
+        "space_counts": {"authors": len(space_authors), "works": len(space_works)},
     }
 
 
@@ -359,10 +372,10 @@ def llm_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
 # 草稿操作
 # ======================================================================
 @router.post("/drafts/clear")
-def clear_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
-    """清空当前 admin 上传的 AI 草稿(owner_id=user + created_by='llm')。
+def clear_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
+    """清空当前上传者(admin/VIP)上传的 AI 草稿(owner_id=user + created_by='llm')。
 
-    不影响其他 admin 的草稿与公共星云已发布数据;软删除保留行
+    不影响其他上传者的草稿与已发布数据;软删除保留行
     (带 deletedAt)可恢复,审计留痕。
     """
     owner = user["id"]
@@ -399,7 +412,7 @@ def clear_drafts(user: dict = Depends(require_admin)) -> dict:  # noqa: B008
 
 def _staging_row(conn, kind: Kind, item_id: str, owner: str) -> dict:
     row = sqlite_store.get_row(conn, kind, item_id, owner)
-    if row is None:
+    if row is None or row.get("created_by") != "llm":
         raise HTTPException(status_code=404, detail=f"草稿不存在:{item_id}")
     if row.get("deletedAt"):
         raise HTTPException(status_code=409, detail="草稿已删除")
@@ -423,7 +436,7 @@ def _resolve_published(conn, kind: Kind, staging_id: str, owner: str) -> str:
 
 
 def _public_payload(conn, kind: Kind, staging: dict, staging_owner: str, admin_id: str) -> dict:
-    """由草稿构造公共行载荷(依赖解析到公共 id)。"""
+    """由草稿构造发布行载荷(发布到自己的星云,依赖解析到已发布 id)。"""
     now = db_sqlite.now_iso()
     if kind == "authors":
         row = {
@@ -502,9 +515,10 @@ def _publish_draft_entity(
     reuse_id: str | None,
     actor: str,
 ) -> str:
-    """把单条草稿发布/复用到公共星云;已发布直接返回现有公共 id。
+    """把单条草稿发布/复用到上传者自己的星云;已发布直接返回现有行 id。
 
-    返回公共行 id;审计 create / llm_publish / llm_reuse 留痕。
+    发布目标 owner = admin_id(调用方传入的上传者 id;引导管理员即公共星云)。
+    返回发布行 id;审计 create / llm_publish / llm_reuse 留痕。
     """
     existing = draft.get("published_to_id")
     if existing:
@@ -513,15 +527,16 @@ def _publish_draft_entity(
     reuse_id = (reuse_id or "").strip() or None
     if reuse_id:
         target = sqlite_store.get_row(conn, kind, reuse_id)
-        if target is None or target.get("deletedAt") or target.get("owner_id") not in (admin_id, None):
-            raise HTTPException(status_code=404, detail="复用目标在公共星云不存在或已删除")
+        allowed_owners = (admin_id, None) if admin_id == admin_user_id() else (admin_id,)
+        if target is None or target.get("deletedAt") or target.get("owner_id") not in allowed_owners:
+            raise HTTPException(status_code=404, detail="复用目标不在自己的星云或已删除")
         sqlite_store.update_row(
             conn, kind, draft["id"], draft, owner_id=owner,
             extra={"published_to_id": reuse_id, "reviewStatus": "reviewed", "updatedAt": now},
         )
         db_sqlite.audit(
             conn, "llm_reuse", kind, draft["id"],
-            f"复用公共记录发布「{_label(kind, draft)}」→ #{reuse_id}",
+            f"复用星云记录发布「{_label(kind, draft)}」→ #{reuse_id}",
             before=draft,
             after={**draft, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
             actor=actor,
@@ -549,7 +564,7 @@ def _publish_draft_entity(
     )
     db_sqlite.audit(
         conn, "llm_publish", kind, draft["id"],
-        f"草稿「{_label(kind, draft)}」发布到公共星云 → #{public_row['id']}",
+        f"草稿「{_label(kind, draft)}」发布到自己的星云 → #{public_row['id']}",
         before=draft,
         after={**draft, "published_to_id": public_row["id"], "reviewStatus": "reviewed"},
         actor=actor,
@@ -583,9 +598,9 @@ def approve_draft(
     kind: Kind,
     item_id: str,
     body: ApproveBody | None = None,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
-    """批准草稿:复制进公共星云(默认),或复用现有公共记录(reuse_id)。"""
+    """批准草稿:复制进自己的星云(默认),或复用自己星云中的现有记录(reuse_id)。"""
     admin_id = user["id"]
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         staging = _staging_row(conn, kind, item_id, user["id"])
@@ -601,7 +616,7 @@ def approve_draft(
 def approve_ripple(
     edge_id: str,
     body: ApproveRippleBody | None = None,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
     """批准一条涟漪:按 源作者→源作品→目标作者→目标作品→涟漪 依赖顺序建库。
 
@@ -665,7 +680,7 @@ def approve_ripple(
             or _exact_reuse_id("works", tgt_work, user_rows, tgt_author_names),
             user["email"],
         )
-        # 涟漪本身:两端作品(可能已复用)在公共星云已有同对边时,直接复用该边
+        # 涟漪本身:两端作品(可能已复用)在自己星云已有同对边时,直接复用该边
         edge_reuse = None
         if public_ids["source_work"] and public_ids["target_work"]:
             dup = next(
@@ -688,7 +703,7 @@ def approve_ripple(
 def approve_source(
     work_id: str,
     body: ApproveSourceBody | None = None,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
     """批准无涟漪批次的源书(作者+作品),--no-ripples 导入使用。"""
     admin_id = user["id"]
@@ -731,7 +746,7 @@ def approve_source(
 def reject_draft(
     kind: Kind,
     item_id: str,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
     """驳回草稿(reviewStatus='rejected',草稿保留可重开)。"""
     staging_owner = user["id"]
@@ -758,7 +773,7 @@ def reject_draft(
 def reopen_draft(
     kind: Kind,
     item_id: str,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
     """重开草稿:rejected → draft,重新进入审核队列。"""
     staging_owner = user["id"]
@@ -786,7 +801,7 @@ def edit_draft(
     kind: Kind,
     item_id: str,
     row: dict,
-    user: dict = Depends(require_admin),  # noqa: B008
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
     """编辑草稿内容(修正 AI 提取),审核状态保持不变;已发布的草稿不可再编辑。"""
     staging_owner = user["id"]

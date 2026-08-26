@@ -183,8 +183,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     <div className="llm-drafts">
       <div className="llm-head">
         <p className="llm-tip">
-          公共星云现有：
-          作者 {data?.public_counts.authors ?? 0} · 作品 {data?.public_counts.works ?? 0}
+          当前星云现有：
+          作者 {data?.space_counts.authors ?? 0} · 作品 {data?.space_counts.works ?? 0}
           {counts
             ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples}`
             : ""}

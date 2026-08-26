@@ -66,7 +66,8 @@
 | `nickname` | TEXT | 否 | 昵称(展示用,优先于用户名;为空时展示名回退用户名) |
 | `bio` | TEXT | 否 | 简介(最多 500 字,应用层校验) |
 | `vip` | INTEGER | 是 | VIP 标记(0/1,默认 0):VIP 用户拥有 AI 书籍导入权限
-  (导入的草稿按 owner_id=上传者 隔离,「AI 草稿」审核页仅展示当前 admin 自己上传的草稿;
+  (导入的草稿按 owner_id=上传者 隔离,上传者(admin/VIP)在「AI 草稿」页审核
+  自己上传的草稿并发布到自己的星云;admin→公共星云通道为后续规划;
   VIP 标记由 admin 通过 `POST /api/admin/users/{id}/vip` 维护) |
 
 约束:`CHECK (role IN ('user','admin'))`、`CHECK (status IN ('active','disabled'))`、
@@ -294,13 +295,16 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 `1.4 → 1.5` 变更(2026-08-25):
 
 - AI 草稿审核管道(schema v24 迁移):作者/作品/涟漪三表新增 `published_to_id`,
-  记录上传者空间草稿(owner_id=上传者、created_by='llm')批准后映射到的公共行 id
+  记录上传者空间草稿(owner_id=上传者、created_by='llm')批准后映射到的发布行 id
   (复用场景为被复用行 id),防重复发布;
 - 草稿区 = 上传者空间(`owner_id`=上传者、`created_by='llm'`、`reviewStatus='draft'`),
-  admin 只能看到自己上传的草稿;公共星云/策展/导出读取统一排除 AI 草稿
+  上传者(admin/VIP)只能看到/审核自己上传的草稿,多 admin 各自独立、互不审核;
+  公共星云/策展/导出读取统一排除 AI 草稿
   (判定:`created_by='llm'` 且 `reviewStatus != 'reviewed'` 或 `published_to_id` 非空,
-  见 `db_sqlite.ai_draft_clause`);admin 在管理端「AI 草稿」批准后复制进公共星云
-  (`created_by='llm'`、`reviewStatus='reviewed'`)或按去重提示复用现有公共记录;
+  见 `db_sqlite.ai_draft_clause`);批准后复制进**自己的星云**
+  (`created_by='llm'`、`reviewStatus='reviewed'`,引导管理员的星云即公共星云)
+  或按去重提示复用自己星云中的现有记录;admin 审核后进入公共星云的统一通道
+  为后续规划;
 - 历史数据:2026-08 之前的草稿曾落在共享 `system_llm` 账号空间,
   `app/llm_account.migrate_legacy_llm_drafts()` 在首次读取草稿时一次性
   改挂到引导管理员并删除空账号;

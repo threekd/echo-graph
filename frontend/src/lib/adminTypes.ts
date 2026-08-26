@@ -146,7 +146,7 @@ export interface LlmDraftsData {
     ripples: number;
     published: number;
   };
-  public_counts: { authors: number; works: number };
+  space_counts: { authors: number; works: number }; // 审核人(上传者)自己星云的数据量
 }
 
 export interface LlmDraftBatch {

@@ -23,9 +23,11 @@
   (`review_publish.py make-batch / ingest`)以 `owner_id=上传者`、
   `created_by='llm'`、`reviewStatus='draft'` 写入草稿区(已不再使用共享
   `system_llm` 机器账号,历史草稿由 `migrate_legacy_llm_drafts()` 一次性迁移);
-  admin 在管理端「AI 草稿」页只能看到自己上传的草稿,逐条审核——批准(复制进
-  公共星云)/ 复用(去重命中现有记录)/ 驳回 / 重开 / 编辑,批准后回写
-  `published_to_id` 防重复发布。
+  上传者(admin 或 VIP)在管理端「AI 草稿」页只看到/审核自己上传的草稿,逐条
+  审核——批准(复制进**自己的星云**,引导管理员的星云即公共星云)/ 复用(去重
+  命中自己星云中的现有记录)/ 驳回 / 重开 / 编辑,批准后回写 `published_to_id`
+  防重复发布;多 admin 各自独立、互不审核;admin 审核后进入公共星云的统一
+  通道为后续规划(见 `docs/to-do.md`)。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式

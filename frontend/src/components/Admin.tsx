@@ -89,7 +89,8 @@ export default function Admin() {
   const isAdmin = state.user?.role === "admin";
   const isVip = Boolean(state.user?.vip);
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
-  const tabs = isAdmin ? KINDS : KINDS.filter((k) => k.key !== "llm");
+  // AI 草稿页签:admin 与 VIP 均可审核自己上传的草稿
+  const tabs = isAdmin || isVip ? KINDS : KINDS.filter((k) => k.key !== "llm");
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);

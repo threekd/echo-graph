@@ -1,10 +1,11 @@
-"""书籍导入 API(admin / VIP 用户):上传电子书 → AI 提取 → 去重 → system_llm AI 草稿区。
+"""书籍导入 API(admin / VIP 用户):上传电子书 → AI 提取 → 去重 → 上传者 AI 草稿区。
 
 复用 ai_assistant 一键管线(pipeline_ingest.py)的三个阶段:
     1) extract_source_book.run_extract  读取书籍元信息 + LLM 提取 作者/作品/涟漪
     2) dedupe_check.run_dedupe          与库内现有数据做基础 + 语义去重
-    3) review_publish.build_batch → stage_batch  写入 system_llm 私有空间
-       (reviewStatus='draft'、created_by='llm',即「AI 草稿」,公共星云不可见)
+    3) review_publish.build_batch → stage_batch  写入上传者私有空间
+       (owner_id=上传者、reviewStatus='draft'、created_by='llm',即「AI 草稿」,
+       各读取视图均排除;上传者 admin/VIP 可在「AI 草稿」页审核自己上传的草稿)
 
 导入是耗时任务(DeepSeek LLM 提取 + 可选语义嵌入,单本书可能数分钟),
 采用「提交任务 + 轮询状态」模式:
@@ -207,7 +208,8 @@ def _run_import(
 
         # 3) 批次登记簿
         _update_task(task_id, stage="3/4 生成批次登记簿")
-        # 草稿归属上传者(owner_id=上传者、created_by='llm'),admin 只看到自己上传的草稿
+        # 草稿归属上传者(owner_id=上传者、created_by='llm'),上传者(admin/VIP)
+        # 审核自己上传的草稿,批准后发布到自己的星云
         owner = llm_space.draft_owner_id(uploader_id)
         batch = review_publish.build_batch(extracted, report, owner_id=owner)
         batch["batch_id"] = batch_id

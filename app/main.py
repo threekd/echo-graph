@@ -17,6 +17,7 @@ from app.auth import router as auth_router
 from app.book_import import router as book_import_router
 from app.db import get_store
 from app.follows import router as follows_router
+from app.llm_account import migrate_legacy_llm_drafts
 from app.llm_review import router as llm_review_router
 from app.me import router as me_router
 from app.read_routes import register_read_routes
@@ -47,6 +48,8 @@ def _app_version() -> str:
 async def lifespan(_: FastAPI):
     # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色并认领未归属数据(公共星云)
     bootstrap_admin()
+    # 旧 system_llm 共享草稿一次性改挂到引导管理员(GET 端点保持只读,迁移只在启动执行)
+    migrate_legacy_llm_drafts()
     if os.getenv("COOKIE_SECURE", "").strip().lower() not in ("1", "true", "yes", "on"):
         logger.warning(
             "COOKIE_SECURE 未开启:会话 Cookie 允许经非 HTTPS 连接传输,"

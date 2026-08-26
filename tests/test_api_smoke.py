@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 import app.main as main  # noqa: E402
 from app import auth, db_sqlite, sqlite_store  # noqa: E402
@@ -132,6 +133,17 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("authors", stats["reviewStatus"])
         self.assertIn("works", stats["reviewStatus"])
         self.assertIn("edges", stats["reviewStatus"])
+
+    def test_search_blank_returns_empty(self) -> None:
+        """路由层对纯空白 q 返回空结果,而不是全量命中。"""
+        client = TestClient(main.app)
+        for q in ("   ", "\t\n ", "a b"):
+            resp = client.get("/api/search", params={"q": q})
+            self.assertEqual(resp.status_code, 200, q)
+            if q.strip() == "":
+                self.assertEqual(resp.json(), {"hits": []}, q)
+            else:
+                self.assertIsInstance(resp.json()["hits"], list, q)
 
     def test_admin_create_sets_timestamps_and_reviewed_status(self) -> None:
         import app.admin as admin

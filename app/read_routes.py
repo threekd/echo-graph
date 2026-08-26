@@ -81,7 +81,11 @@ def register_read_routes(
         q: str = Query(..., min_length=1),
         limit: int = Query(20, ge=1, le=50),
     ) -> dict:
-        return {"hits": store_factory(request, _user_id(request)).search(q.strip(), limit)}
+        query = q.strip()
+        if not query:
+            # 纯空白查询不命中任何数据(避免空串子串匹配返回全量)
+            return {"hits": []}
+        return {"hits": store_factory(request, _user_id(request)).search(query, limit)}
 
     @_register("/work/{work_id}", "work_detail")
     def work_detail(request: Request, work_id: str) -> dict:

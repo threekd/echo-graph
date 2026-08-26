@@ -33,7 +33,6 @@ from app.ai_assistant.tools import dedupe_check
 from app.auth import admin_user_id, require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
-from app.llm_account import migrate_legacy_llm_drafts
 from app.space_crud import Kind, after_write, validate_row
 
 router = APIRouter(
@@ -235,7 +234,6 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
 @router.get("/drafts")
 def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
     """当前上传者(admin/VIP)上传的 AI 草稿,按导入批次(源书)分组 + 自己星云去重提示。"""
-    migrate_legacy_llm_drafts()  # 旧 system_llm 共享草稿一次性改挂到引导管理员
     owner = user["id"]
     batches, published = _draft_batches(owner)
 

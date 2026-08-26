@@ -87,6 +87,12 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertIn("加缪", work_hits[0]["sub"])
         self.assertEqual(self.store.search("不存在的关键词"), [])
 
+    def test_search_blank_returns_empty(self) -> None:
+        """空串 / 纯空白查询不应命中全量数据。"""
+        self.assertEqual(self.store.search(""), [])
+        self.assertEqual(self.store.search("   "), [])
+        self.assertEqual(self.store.search("\t\n "), [])
+
     def test_path_boundaries(self) -> None:
         self.assertIsNone(self.store.path(W1, W3, 1))
         r = self.store.path(W1, W3, 2)

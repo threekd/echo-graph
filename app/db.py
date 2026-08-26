@@ -272,6 +272,8 @@ class SqliteStore:
             authors = [a for a in authors if (a.get("reviewStatus") or "draft") == "reviewed"]
             works = [w for w in works if (w.get("reviewStatus") or "draft") == "reviewed"]
         ql = q.lower()
+        if not ql.strip():
+            return []  # 空/纯空白查询直接返回空,避免空串子串匹配命中全量
         authors_by_id = {a["id"]: a for a in authors}
         hits: list[dict] = []
         for a in authors:

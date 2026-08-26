@@ -37,6 +37,7 @@ class CreatedByTest(unittest.TestCase):
     def test_user_space_defaults_user(self) -> None:
         row = my_create("authors", {"originalName": "B", "Name_CN": "私人作者"}, user=self.alice)["row"]
         self.assertEqual(row["created_by"], "user")
+        self.assertEqual(row["reviewStatus"], "reviewed")  # created_by=user 默认已审核
 
     def test_explicit_llm_respected(self) -> None:
         row = my_create(
@@ -44,6 +45,16 @@ class CreatedByTest(unittest.TestCase):
             user=self.alice,
         )["row"]
         self.assertEqual(row["created_by"], "llm")
+        self.assertEqual(row["reviewStatus"], "draft")  # created_by=llm 默认草稿
+
+    def test_explicit_review_status_overrides_default(self) -> None:
+        """显式传 reviewStatus 时覆盖 created_by 推导的默认值。"""
+        row = my_create(
+            "authors", {"originalName": "D", "Name_CN": "显式状态", "reviewStatus": "rejected"},
+            user=self.alice,
+        )["row"]
+        self.assertEqual(row["created_by"], "user")
+        self.assertEqual(row["reviewStatus"], "rejected")
 
     def test_invalid_created_by_rejected(self) -> None:
         with self.assertRaises(HTTPException) as ctx:

@@ -96,7 +96,7 @@
 | `nationality` | TEXT | 否 | 国家(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` / `deathYear` | INTEGER | 否 | 出生/去世年份(应用层校验 -9999 ~ 9999 且出生早于去世) |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增(输入即确认)默认 `reviewed`,CSV 引导的存量数据保持 `draft` 待审核 |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;显式传值可覆盖;CSV 引导的存量数据保持 `draft` 待审核 |
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
@@ -159,10 +159,10 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `id` | TEXT(UUID) | 是(PK) | 唯一标识,新增时后端自动生成 UUID v7 |
 | `source_work_id` | TEXT | 是 | 当前作品(引用 `works.id`) |
 | `target_work_id` | TEXT | 是 | 被提及作品(引用 `works.id`) |
-| `evidence` | TEXT | 是 | 原文片段(摘抄文本);DB 层 CHECK 长度 ≤ 2000 |
+| `evidence` | TEXT | 是 | 原文片段(摘抄文本);DB 层 CHECK 长度 ≤ 2000,应用层 Pydantic 同上限校验(超长 400) |
 | `evidenceSource` | TEXT | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | TEXT | 否 | 备注或补充说明 |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增默认 `reviewed`,CSV 引导存量保持 `draft` |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;CSV 引导存量保持 `draft` |
 | `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |

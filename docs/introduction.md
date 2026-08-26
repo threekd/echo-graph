@@ -154,7 +154,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   接口:`POST/DELETE /api/follow/{user_id}`(关注/取关,幂等)、`GET /api/follow/following|followers`
   (我的关注 / 粉丝列表)、`GET /api/follow/relation/{user_id}`(我与该用户的关系)。
   关注/粉丝列表展示在左侧栏「我的」Tab,点击条目可直接跃迁到对方星云。
-- 用户数据语义:作者/作品/涟漪**新增即「已审核」**(输入即确认,含管理员手动新增;
+- 用户数据语义:作者/作品/涟漪**新增即「已审核」**(输入即确认,`created_by=user/curated`
+  默认 `reviewed`;`created_by=llm` 即 AI 提取,默认 `draft` 进入草稿态;显式传值可覆盖;
   普通用户管理界面不显示审核状态,admin 显式传 `draft` 仍可保留草稿);
   作品另有个人阅读状态(已读/在读/未读)、评分(推荐/不推荐)与评价(长文本)字段;
   普通用户界面隐藏「备注」,admin 保持原样;阅读状态、评分与评价在右侧「书签」Tab 展示。

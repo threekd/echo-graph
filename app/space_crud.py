@@ -212,11 +212,12 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
-    # 输入即确认:新增(含管理员手动新增)默认 reviewed;显式传 draft 仍可保留草稿
-    if not row.get("reviewStatus"):
-        row["reviewStatus"] = "reviewed"
     # 溯源列:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)
     row["created_by"] = _created_by_for(row, owner_id)
+    # 输入即确认:created_by=user/curated 默认 reviewed(用户手动新增即确认);
+    # created_by=llm 默认 draft(AI 提取进入草稿态);显式传 reviewStatus 仍可覆盖
+    if not row.get("reviewStatus"):
+        row["reviewStatus"] = "draft" if row["created_by"] == "llm" else "reviewed"
     extra: dict = {"created_by": row["created_by"]}
     if kind == "works":
         reading_status = row.get("readingStatus")

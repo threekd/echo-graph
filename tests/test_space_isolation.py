@@ -341,3 +341,41 @@ class SpaceIsolationTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             _space_work_detail(req, self.alice["id"], "no-such-id")
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_edge_evidence_too_long_returns_400(self) -> None:
+        """涟漪 evidence 超过 2000 字符返回 400(与 DB CHECK 对齐,不落 500)。"""
+        a1 = my_create(
+            "authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice
+        )["row"]
+        w1 = my_create(
+            "works", {
+                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        w2 = my_create(
+            "works", {
+                "language": "en", "originalTitle": "B书", "Title_CN": "乙书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        with self.assertRaises(HTTPException) as ctx:
+            my_create(
+                "edges", {
+                    "source_work_id": w1["id"], "target_work_id": w2["id"],
+                    "evidence": "x" * 2001, "evidenceSource": "c1",
+                },
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 恰好 2000 字符可通过
+        ok = my_create(
+            "edges", {
+                "source_work_id": w1["id"], "target_work_id": w2["id"],
+                "evidence": "x" * 2000, "evidenceSource": "c1",
+            },
+            user=self.alice,
+        )["row"]
+        self.assertEqual(len(ok["evidence"]), 2000)

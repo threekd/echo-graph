@@ -23,12 +23,17 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app import auth, db_sqlite, sqlite_store
 from app.llm_review import (
+    ApproveBody,
     approve_draft,
     approve_ripple,
     approve_source,
     clear_drafts,
+    edit_draft,
     llm_drafts,
+    reject_draft,
+    reopen_draft,
 )
+from app.me import my_create
 
 _ADMIN_EMAIL = "admin@echo.local"
 
@@ -247,6 +252,58 @@ class LlmReviewTest(unittest.TestCase):
 
         client3 = TestClient(main.app, raise_server_exceptions=False)
         self.assertEqual(client3.get("/api/admin/llm/drafts").status_code, 401)
+
+    def test_reject_reopen_edit_own_draft(self) -> None:
+        """驳回 → 重开 → 编辑:审核状态保留,内容可修正。"""
+        chain = _stage_chain(self.vip["id"], "A")
+
+        rejected = reject_draft("authors", chain["author_id"], self.vip)
+        self.assertEqual(rejected["reviewStatus"], "rejected")
+        reopened = reopen_draft("authors", chain["author_id"], self.vip)
+        self.assertEqual(reopened["reviewStatus"], "draft")
+        edited = edit_draft(
+            "authors", chain["author_id"], {"Name_CN": "改后作者"}, self.vip
+        )
+        self.assertEqual(edited["row"]["Name_CN"], "改后作者")
+        self.assertEqual(edited["row"]["reviewStatus"], "draft")  # 编辑不改变审核状态
+
+    def test_published_draft_not_editable(self) -> None:
+        """已批准发布的草稿不可再编辑(409)。"""
+        chain = _stage_chain(self.vip["id"], "A")
+        approve_draft("authors", chain["author_id"], None, self.vip)
+        with self.assertRaises(HTTPException) as ctx:
+            edit_draft("authors", chain["author_id"], {"Name_CN": "x"}, self.vip)
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_approve_with_reuse_own_space_row(self) -> None:
+        """批准时可复用自己星云中的现有行(llm_reuse,回写 published_to_id)。"""
+        chain = _stage_chain(self.vip["id"], "A")
+        existing = my_create(
+            "authors", {"originalName": "已有作者", "Name_CN": "已有作者"}, user=self.vip
+        )["row"]["id"]
+
+        result = approve_draft(
+            "authors", chain["author_id"], ApproveBody(reuse_id=existing), self.vip
+        )
+        self.assertEqual(result["mode"], "reuse")
+        self.assertEqual(result["public_id"], existing)
+        with db_sqlite._db() as conn:
+            draft = conn.execute(
+                "SELECT published_to_id FROM authors WHERE id = ?", (chain["author_id"],)
+            ).fetchone()
+            self.assertEqual(draft["published_to_id"], existing)
+
+    def test_reuse_other_uploader_row_rejected(self) -> None:
+        """不能复用其他上传者(admin)星云中的行作为发布目标(404)。"""
+        chain = _stage_chain(self.vip["id"], "A")
+        admin_author = my_create(
+            "authors", {"originalName": "管理员作者", "Name_CN": "管理员作者"}, user=self.admin
+        )["row"]["id"]
+        with self.assertRaises(HTTPException) as ctx:
+            approve_draft(
+                "authors", chain["author_id"], ApproveBody(reuse_id=admin_author), self.vip
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":

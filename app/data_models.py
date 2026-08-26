@@ -158,7 +158,7 @@ class EchoRow(BaseModel):
     id: str = Field(min_length=1)
     source_work_id: str = Field(min_length=1)
     target_work_id: str = Field(min_length=1)
-    evidence: str = Field(min_length=1)
+    evidence: str = Field(min_length=1, max_length=2000)  # 与 DB CHECK length(evidence) <= 2000 对齐
     evidenceSource: str | None = None
     note: str | None = None
     reviewStatus: Literal["draft", "reviewed", "rejected"] = "draft"

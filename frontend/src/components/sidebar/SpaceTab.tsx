@@ -271,6 +271,11 @@ export default function SpaceTab(props: SpaceTabProps) {
             用户管理
           </button>
         )}
+        {state.user && (
+          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>
+            数据管理
+          </button>
+        )}
         {state.user?.role === "admin" && (
           <button
             id="btn-ops"
@@ -279,11 +284,6 @@ export default function SpaceTab(props: SpaceTabProps) {
             onClick={() => dispatch({ type: "SET_OPS", open: true })}
           >
             运维管理
-          </button>
-        )}
-        {state.user && (
-          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>
-            数据管理
           </button>
         )}
       </div>

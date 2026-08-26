@@ -109,7 +109,7 @@ export interface AdminData {
 }
 
 export type AdminKind = "authors" | "works" | "edges";
-export type AdminTab = AdminKind | "audit" | "snapshots" | "llm";
+export type AdminTab = AdminKind | "llm";
 
 // AI 草稿审核页:/api/admin/llm/drafts 响应形状
 export interface DedupeHint {

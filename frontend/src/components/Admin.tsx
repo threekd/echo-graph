@@ -4,9 +4,7 @@ import type {
   AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, EdgeRow, WorkRow,
 } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
-import AuditPanel from "./admin/AuditPanel";
 import LlmDraftsPanel from "./admin/LlmDraftsPanel";
-import SnapshotsPanel from "./admin/SnapshotsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
 import ImportBookModal from "./admin/ImportBookModal";
 import { refreshSpaceGraph } from "../lib/graph";
@@ -30,8 +28,6 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
-  { key: "audit", label: "日志" },
-  { key: "snapshots", label: "快照" },
   { key: "llm", label: "AI草稿" },
 ];
 
@@ -82,8 +78,6 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "target_work_id", label: "目标作品" },
           { key: "evidenceSource", label: "出处" },
         ],
-    audit: [],
-    snapshots: [],
     llm: [],
   };
 }
@@ -95,7 +89,7 @@ export default function Admin() {
   const isAdmin = state.user?.role === "admin";
   const isVip = Boolean(state.user?.vip);
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
-  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["audit", "snapshots", "llm"].includes(k.key));
+  const tabs = isAdmin ? KINDS : KINDS.filter((k) => k.key !== "llm");
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -170,7 +164,7 @@ export default function Admin() {
 
   // Tab 角标计数:日志/快照为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
-    if (k === "audit" || k === "snapshots" || k === "llm") return "";
+    if (k === "llm") return "";
     const n = counts ? (counts as Record<AdminKind, number>)[k as AdminKind] : undefined;
     if (n != null) return String(n);
     return data ? String((data[k as AdminKind] || []).length) : "";
@@ -387,10 +381,10 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "audit" && kind !== "snapshots" && (
+            {kind !== "llm" && (
               <>
                 {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
-                {kind !== "llm" && <button onClick={openAdd}>＋ 新增</button>}
+                <button onClick={openAdd}>＋ 新增</button>
               </>
             )}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
@@ -434,18 +428,6 @@ export default function Admin() {
               onStatus={setStatus}
               onPublicChanged={load}
             />
-          ) : kind === "audit" ? (
-            <AuditPanel
-              authFetch={authFetch}
-              sort={sort}
-              filters={filters}
-              textFilters={textFilters}
-              onSort={toggleSort}
-              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
-              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
-            />
-          ) : kind === "snapshots" ? (
-            <SnapshotsPanel authFetch={authFetch} />
           ) : loading ? <p>加载中…</p> : (
             <AdminTable
               kind={kind}

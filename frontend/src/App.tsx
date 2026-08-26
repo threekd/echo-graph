@@ -30,6 +30,7 @@ import { setOnCameraChange } from "./lib/renderer";
 // 管理页与贡献弹窗按需加载(普通用户默认不可见,不打进首屏包)
 const Admin = lazy(() => import("./components/Admin"));
 const UserAdmin = lazy(() => import("./components/UserAdmin"));
+const OpsManagement = lazy(() => import("./components/OpsManagement"));
 const Contribute = lazy(() => import("./components/Contribute"));
 
 function AppContent() {
@@ -348,6 +349,15 @@ function AppContent() {
             <UserAdmin
               onClose={() => dispatch({ type: "SET_USER_ADMIN", open: false })}
               meId={state.user?.id || ""}
+            />
+          </Suspense>
+        </ChunkBoundary>
+      )}
+      {state.opsOpen && (
+        <ChunkBoundary>
+          <Suspense fallback={null}>
+            <OpsManagement
+              onClose={() => dispatch({ type: "SET_OPS", open: false })}
             />
           </Suspense>
         </ChunkBoundary>

@@ -17,7 +17,7 @@ let lastCheck = 0;
 
 // 迟滞双阈值:遮挡占比达到 HIDE 才隐藏,降到 SHOW 以下才恢复,
 // 中间区间保持原状态,避免标签在阈值附近反复切换
-export const LABEL_OCCLUSION_HIDE_RATIO = 0.1;
+export const LABEL_OCCLUSION_HIDE_RATIO = 0.5;
 export const LABEL_OCCLUSION_SHOW_RATIO = 0.01;
 
 interface LabelEntry {

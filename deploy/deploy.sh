@@ -10,11 +10,11 @@ cd "$APP_DIR"
 # 否则非登录 shell 下执行会报 uv: command not found
 export PATH="$HOME/.local/bin:$PATH"
 
-echo "==> 备份本地数据(data/export、历史目录、SQLite 权威库)"
+echo "==> 备份本地数据(历史目录、SQLite 权威库)"
 mkdir -p backups
 BK_FILE="backups/data-$(date +%Y%m%d-%H%M%S).tgz"
 BACKUP_DIRS=()
-for d in data/export data/versions data/snapshots; do
+for d in data/versions data/snapshots; do
   if [[ -d "$d" ]]; then BACKUP_DIRS+=("$d"); fi
 done
 if [[ ${#BACKUP_DIRS[@]} -gt 0 ]]; then
@@ -31,12 +31,8 @@ ls -1t backups/data-*.tgz 2>/dev/null | tail -n +15 | xargs -r rm -f
 ls -1t backups/echo-graph-*.db 2>/dev/null | tail -n +15 | xargs -r rm -f
 
 echo "==> 拉取最新代码"
-if [[ -n "$(git status --porcelain data/export)" ]]; then
-  echo "!! 注意:data/export 存在本地修改。请先按 DEPLOY.md「数据回传」提交并推送," >&2
-  echo "   否则 git pull 会因本地修改而失败。" >&2
-fi
 if ! git pull --ff-only; then
-  echo "!! 拉取失败(通常为 data/export 本地修改或本地未推送提交)。" >&2
+  echo "!! 拉取失败(通常为本地未推送提交或未提交改动)。" >&2
   echo "   如需回滚到拉取前数据: sudo -u echograph tar xzf '$BK_FILE'" >&2
   exit 1
 fi
@@ -44,8 +40,8 @@ fi
 echo "==> 后端依赖"
 uv sync --frozen
 
-echo "==> SQLite 为权威库,不再从 CSV 重建(避免清空用户星云数据)"
-echo "    schema 迁移由服务启动时自动执行;全新环境初始化仍走 setup-vps.sh 的 CSV 引导"
+echo "==> SQLite 为权威库,schema 迁移由服务启动时自动执行"
+echo "    备份/恢复一律走整库快照(backups/ 下 .db),不再有 CSV 导出层"
 
 echo "==> 构建前端"
 cd frontend

@@ -17,7 +17,7 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 
 import app.main as main  # noqa: E402
-from app import auth, book_import, data_store, db_sqlite, ratelimit
+from app import auth, book_import, db_sqlite, ratelimit
 from app.llm_review import llm_drafts
 
 _ADMIN_EMAIL = "admin@echo.local"
@@ -85,11 +85,6 @@ class BookImportTest(unittest.TestCase):
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)
         ratelimit.clear_rate_limits()
-
-        # 写入公共星云会触发 CSV 导出,重定向到临时目录避免污染仓库 data/export
-        self.patch_export = patch.object(data_store, "EXPORT_DIR", Path(self.tmp.name) / "export")
-        self.patch_export.start()
-        self.addCleanup(self.patch_export.stop)
 
         # 批次登记簿写入临时目录,避免污染 app/ai_assistant/output/batches
         self.patch_batch_dir = patch.object(book_import.llm_space, "BATCH_DIR", Path(self.tmp.name) / "batches")

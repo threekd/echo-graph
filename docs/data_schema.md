@@ -4,8 +4,9 @@
 - 对应数据库:`data/echo-graph.db`,`meta.schema_version = 26`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
-  `data/export/*.csv` 为确定性导出产物(git 审计 / 跨机器传输);Neo4j 查询层与
-  JSON 兜底已退役
+  备份为**整库快照**(`backups/` 下 `.db` + 管理端「快照」恢复);`data/export/*.csv`
+  自动导出层已于 2026-08-27 移除(数据管理页「导出 CSV」按钮为手动导出);Neo4j
+  查询层与 JSON 兜底已退役
 - 时间戳:所有时间字段(`createdAt` / `updatedAt` / `deletedAt` / `created_at` /
   `expires_at` / `ts`)均为 UTC 秒级 ISO-8601 字符串(统一 `+00:00`)
 
@@ -36,7 +37,7 @@
 - **溯源列**:`authors` / `works` / `edges` 含 `created_by`(默认 `curated`);
   取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,经 admin 审核发布)。
   显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
-  创建后不可修改,不进 CSV(与个人字段同策略)。
+  创建后不可修改,不进公共导出(与个人字段同策略)。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);
   中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),
   作为对外展示字段。
@@ -96,11 +97,11 @@
 | `nationality` | TEXT | 否 | 国家(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` / `deathYear` | INTEGER | 否 | 出生/去世年份(应用层校验 -9999 ~ 9999 且出生早于去世) |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;显式传值可覆盖;CSV 引导的存量数据保持 `draft` 待审核 |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;显式传值可覆盖;历史存量数据保持 `draft` 待审核 |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据,启动时认领给引导管理员 |
-| `published_to_id` | TEXT | 否 | AI 草稿发布映射:上传者空间草稿(owner_id=上传者、created_by='llm')批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进 CSV |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:上传者空间草稿(owner_id=上传者、created_by='llm')批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进公共导出 |
 
 约束:`CHECK (reviewStatus IN ('draft','reviewed','rejected'))`、
 `CHECK (created_by IN ('curated','user','llm'))`。
@@ -120,16 +121,16 @@
 | `genre` | TEXT | 否 | `Fiction` / `Non-fiction` / `Poetry` / `Drama` |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
 | `reviewStatus` | TEXT | 是 | 同 authors 的审核状态语义 |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
-| `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义,不进 CSV |
-| `review` | TEXT | 否 | 个人评价(应用层校验最多 2000 字);仅用户空间语义,不进 CSV |
-| `readingStatus` | TEXT | 否 | 个人阅读状态 `read` / `reading` / `unread`;仅用户空间语义,不进 CSV |
-| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进 CSV |
+| `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
+| `review` | TEXT | 否 | 个人评价(应用层校验最多 2000 字);仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
+| `readingStatus` | TEXT | 否 | 个人阅读状态 `read` / `reading` / `unread`;仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进公共导出 |
 
 **注意:`works` 表没有 `author_id` 列。** 作品-作者关联存于 `work_authors`;
-CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `work_authors`
+用户导出 CSV 与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `work_authors`
 派生的展示字段。
 
 约束:`CHECK (length(language) BETWEEN 2 AND 3)`、
@@ -162,11 +163,11 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `evidence` | TEXT | 是 | 原文片段(摘抄文本);DB 层 CHECK 长度 ≤ 2000,应用层 Pydantic 同上限校验(超长 400) |
 | `evidenceSource` | TEXT | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | TEXT | 否 | 备注或补充说明 |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;CSV 引导存量保持 `draft` |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进 CSV |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;历史存量保持 `draft` |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 否 | 引用 `users.id`;空 = 未认领历史数据 |
-| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进 CSV |
+| `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进公共导出 |
 
 约束:`UNIQUE(source_work_id, target_work_id)`(同空间内边对唯一,应用层叠加 owner 判定)、
 `CHECK (source_work_id <> target_work_id)`、`CHECK (length(evidence) <= 2000)`、
@@ -193,7 +194,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 ### embeddings AI 语义去重向量缓存
 
 由 `app/ai_assistant/tools/dedupe_check.py` 使用:把库内作者/作品标题向量落库,
-避免每次管线运行对全库重复调用阿里云百炼 embedding。不属于业务数据,不进 CSV,
+避免每次管线运行对全库重复调用阿里云百炼 embedding。不属于业务数据,不进公共导出,
 无 admin 维护入口。
 
 | 列 | 类型 | 必填 | 说明 |
@@ -259,13 +260,17 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 | `ECHO` | `edges`(source_work_id → target_work_id) | N:N | source 提及 target,方向 source → target |
 | 关注 | `friendships`(user_id → friend_id) | N:N(单向) | user 关注 friend,不影响星云可见性 |
 
-## 与 CSV 导出 / API 形状的对应
+## 与用户导出 CSV / API 形状的对应
+
+数据管理页「导出 CSV」按钮(所有登录用户)返回三张表的 zip:
 
 - `authors.csv` / `edges.csv` 的列与表列一一对应;
 - `works.csv` 在 `Title_Other` 之后插入 `author_id` 派生列(work_authors 按
-  `works.id` 聚合为逗号分隔串),其余列与表列一致;
-- CSV 只含**公共星云**(admin 认领的行 + 尚未认领的历史行),用户私有空间、
-  sessions、audit_log 均不进 CSV;
+  `works.id` 聚合为逗号分隔串),末尾附加 `readingStatus` / `recommendation` / `review`
+  个人字段;
+- 导出仅含**导出者自己的星云**(admin 即公共星云),排除 AI 草稿,含软删除行
+  (`deletedAt` 列标注);内部列(owner_id / created_by / published_to_id)与
+  sessions、audit_log 不进导出;
 - API 的 `Work.author_id` / `author_ids` 同样为 work_authors 的派生展示字段。
 
 ## 演进方向(未实现)
@@ -290,7 +295,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 
 - 新增 `embeddings` 向量缓存表(schema v25 迁移):AI 语义去重把库内作者/作品
   标题向量落库,缓存键 = entity_type + entity_id + model + version,
-  text_hash 感知标题/作者字段变更;不属于业务数据,不进 CSV,无管理入口。
+  text_hash 感知标题/作者字段变更;不属于业务数据,不进公共导出,无管理入口。
 
 `1.4 → 1.5` 变更(2026-08-25):
 
@@ -316,7 +321,7 @@ CSV 导出与 API 形状中的 `author_id`(逗号分隔的作者 id 串)是 `wor
 - 作者/作品/涟漪三表新增溯源列 `created_by`(schema v23 迁移),取值
   `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,预留);
 - 显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
-  创建后不可修改(与 `createdAt` 同策略),不进 CSV(与个人字段同策略);
+  创建后不可修改(与 `createdAt` 同策略),不进公共导出(与个人字段同策略);
 - 存量行经迁移默认回填 `curated`,无需逐行处理。
 
 `1.2 → 1.3` 变更(2026-08-24):

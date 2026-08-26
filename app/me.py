@@ -7,8 +7,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+import datetime as dt
 
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
+
+from app import data_store
 from app.auth import require_user
 from app.db import SqliteStore
 from app.read_routes import register_read_routes
@@ -53,6 +57,18 @@ def my_data(
 ) -> dict:
     """个人空间管理表格数据(仅本人数据 + 重复提醒)。"""
     return space_data(user["id"], include_deleted)
+
+
+@router.get("/export")
+def my_export(user: dict = Depends(require_user)) -> Response:  # noqa: B008
+    """导出自己星云的三张表为 CSV zip(数据管理页「导出 CSV」按钮,所有登录用户可用)。"""
+    buf = data_store.space_csv_zip(user["id"])
+    filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{kind}")

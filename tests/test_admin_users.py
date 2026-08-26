@@ -23,7 +23,6 @@ class AdminUsersTest(unittest.TestCase):
         patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "users.db").start()
         patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN).start()
         patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
-        patch("app.space_crud.export_csv_files", lambda: None).start()
         self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)
         self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")

@@ -14,8 +14,8 @@ from app.sqlite_store import AUTHOR_COLS, EDGE_COLS, WORK_COLS, _norm_row
 def rewrite_all(author_rows, work_rows, edge_rows) -> None:
     """单事务整库重写(测试造数 / 恢复用)。入参为与 load_rows 同形状的行 dict。
 
-    与 app.sqlite_store.replace_all 的分工:replace_all 接收 parse_rows 模型
-    (迁移/导入用);rewrite_all 接收行 dict(测试造数),内部自行拆分 author_id。
+    app.sqlite_store 已不再提供整库重写(CSV 迁移层随备份层移除);
+    本函数接收行 dict(测试造数),内部自行拆分 author_id。
     """
     author_rows = [_norm_row(r) for r in author_rows]
     work_rows = [_norm_row(r) for r in work_rows]

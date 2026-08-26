@@ -1,30 +1,23 @@
 """快照/备份的列举与恢复(管理端入口)。
 
-可恢复的快照来源(两种类型):
-- `db`:`backups/echo-graph-*.db`(deploy.sh 用 sqlite3 .backup 生成的权威库备份)
-  或 `data/versions/<dir>/echo-graph.db`(历史版本库副本)——直接原子替换当前库;
-- `csv`:`data/versions/<dir>/` 下含三份 CSV 的历史目录——校验后复制进 data/export
-  并重建 SQLite。
+可恢复的快照来源(db 类型):
+- `backups/echo-graph-*.db`(deploy.sh 用 sqlite3 .backup 生成的权威库备份)
+- `data/versions/<dir>/echo-graph.db`(历史版本库副本)
 
-恢复是危险操作:恢复前会自动为当前库先做一次安全备份;db 恢复通过 SQLite backup API
-覆盖当前库(不依赖文件替换与 WAL 清理);csv 恢复会重建策展表(贡献/审计表保留);
-成功后由调用方触发 CSV 重新导出。
-
-db 恢复通过 SQLite backup API 覆盖当前库(不依赖文件替换与 WAL 清理),恢复期间
-持有 db_sqlite._write_lock,与 admin 写事务/贡献提交互斥。
+恢复是危险操作:恢复前会自动为当前库先做一次安全备份;恢复通过 SQLite backup API
+覆盖当前库(不依赖文件替换与 WAL 清理)。2026-08-27 起 CSV 类型快照恢复随
+CSV 备份层一并移除(见 docs/to-do.md)。
+恢复期间持有 db_sqlite._write_lock,与 admin 写事务互斥。
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import shutil
 import sqlite3
 import threading
 from pathlib import Path
 
 from app import db_sqlite
-from app.data_models import parse_rows
-from app.data_store import EXPORT_DIR, load_csv_rows_from
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKUPS_DIR = ROOT / "backups"
@@ -46,8 +39,6 @@ def list_snapshots() -> list[dict]:
                 continue
             if (d / "echo-graph.db").is_file():
                 entries.append(_entry(d / "echo-graph.db", "db"))
-            elif all((d / n).is_file() for n in ("authors.csv", "works.csv", "edges.csv")):
-                entries.append(_entry(d, "csv"))
     return sorted(entries, key=lambda e: e["mtime"], reverse=True)
 
 
@@ -170,24 +161,7 @@ def _restore_snapshot_locked(name: str) -> dict:
     target = _resolve_allowed(name)
     safety = _safety_backup()
 
-    if target.is_file() and target.name.endswith(".db"):
-        _replace_db_from_file(target)
-        return {"ok": True, "restored": name, "safety_backup": safety, "kind": "db"}
-
-    if target.is_dir() and all((target / n).is_file() for n in ("authors.csv", "works.csv", "edges.csv")):
-        # 先校验再落盘:坏快照不污染 data/export;CSV 只含公共数据,恢复时保留用户星云
-        authors, works, edges = load_csv_rows_from(target)
-        models = parse_rows(authors, works, edges)
-        from app.auth import admin_user_id
-
-        admin = admin_user_id()
-        if admin is None:
-            raise ValueError("引导管理员尚未注册,无法执行 CSV 恢复(请先注册管理员账号)")
-        for csv_name in ("authors.csv", "works.csv", "edges.csv"):
-            shutil.copyfile(target / csv_name, EXPORT_DIR / csv_name)
-        from app.sqlite_store import replace_public_rows
-
-        replace_public_rows(*models, owner_id=admin)
-        return {"ok": True, "restored": name, "safety_backup": safety, "kind": "csv"}
-
-    raise ValueError("快照既不是 .db 文件,也不是含三份 CSV 的目录")
+    if not target.is_file() or not target.name.endswith(".db"):
+        raise ValueError("快照必须是 backups/ 或 data/versions/ 下的 .db 文件")
+    _replace_db_from_file(target)
+    return {"ok": True, "restored": name, "safety_backup": safety, "kind": "db"}

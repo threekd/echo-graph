@@ -2,7 +2,7 @@
 
 原 app/ai_assistant/tmp/e2e_llm_review.py 一次性脚本的自动化版本:用合成提取数据 +
 临时 SQLite 库,验证 system_llm 草稿区、依赖守卫与发布链路,不触碰真实
-data/echo-graph.db 与 data/export/*(CSV 导出目录已指向临时目录)。
+data/echo-graph.db。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app import auth, data_store, db_sqlite
+from app import auth, db_sqlite
 from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from app.llm_review import (
     ApproveRippleBody,
@@ -85,11 +85,6 @@ class LlmPipelineTest(unittest.TestCase):
         self.patch_email = patch.object(auth, "BOOTSTRAP_EMAIL", _ADMIN_EMAIL)
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)
-
-        # 批准会触发公共星云 CSV 导出,重定向到临时目录,避免污染仓库 data/export
-        self.patch_export = patch.object(data_store, "EXPORT_DIR", Path(self.tmp.name) / "export")
-        self.patch_export.start()
-        self.addCleanup(self.patch_export.stop)
 
         # 批次登记簿写入临时目录,避免污染 app/ai_assistant/output/batches
         self.patch_batch_dir = patch.object(

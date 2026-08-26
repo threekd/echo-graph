@@ -6,11 +6,12 @@
 用户浏览器 → nginx(80/443, HTTPS) → uvicorn(127.0.0.1:8000, 单 worker)
                                 └─ 静态资源直接由 nginx 托管(frontend/dist)
 数据:SQLite(data/echo-graph.db)为唯一权威,公开读取直接查 SQLite;
-data/export/*.csv 为确定性导出产物(git 审计 / 跨机器传输通道)。
+备份 = 整库快照(backups/ 下 sqlite3 .backup 产物 + 管理端「快照」恢复)。
 ```
 
 > 架构说明:曾使用 Neo4j Aura 作为查询层,现已退役——公开读取直接由 SQLite 提供,
-> 不再有手动「上传↑」、同步比对与兜底种子。小内存 VPS 上更省资源、无网络依赖。
+> 不再有手动「上传↑」、同步比对与兜底种子。`data/export/*.csv` 自动导出层
+> 已于 2026-08-27 移除(多设备/调试导致漂移),备份统一为整库快照。小内存 VPS 上更省资源、无网络依赖。
 
 ## 0. 上线前决策(请逐项确认)
 
@@ -40,8 +41,10 @@ sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 ```
 
 脚本会:装系统依赖 → Node 24 + pnpm → 建 `echograph` 用户 → 装 uv → 拉代码 →
-`uv sync --frozen` → 从仓库 CSV 重建 SQLite(`scripts/migrate_csv_to_sqlite.py`) →
-配置 `.env` → 构建前端 → 安装 systemd 服务 + nginx + HTTPS(certbot)。
+`uv sync --frozen` → 配置 `.env` → 构建前端 → 安装 systemd 服务 + nginx + HTTPS(certbot)。
+首次启动服务会自动创建并迁移 SQLite schema(**空库**);要恢复已有数据,请把
+整库快照(`backups/echo-graph-*.db`)放到目标机器后用管理端「快照」恢复
+(或停服直接替换 `data/echo-graph.db`),详见第 4 节。
 
 之后:
 
@@ -51,6 +54,10 @@ sudo nano /opt/echo-graph/.env          # 填入 ADMIN_BOOTSTRAP_EMAIL(及可选
 sudo systemctl start echo-graph
 curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"sqlite"}
 ```
+
+全新环境数据引导:启动后 `data/echo-graph.db` 为空库(仅 schema)。需要把生产数据
+带到新机器时,先在本机执行 `sqlite3 data/echo-graph.db ".backup 'backups/full.db'"`
+并把 `backups/full.db` 上传到新机器,再用管理端「快照」恢复(见第 4 节)。
 
 防火墙(可选但推荐):
 
@@ -68,46 +75,43 @@ sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh
 
 `deploy.sh` 会:备份 `data/`(SQLite 走 `sqlite3 .backup` 一致性快照,保留 14 份)→
 `git pull --ff-only` → `uv sync --frozen` → 构建前端 → 重启服务 → 等待健康检查。
-SQLite 为权威库,日常更新**不再从 CSV 重建**(避免清空用户星云);schema 迁移由服务启动时自动执行。
+SQLite 为权威库,schema 迁移由服务启动时自动执行;数据备份/恢复一律走整库快照。
 
-## 4. 数据回传(重要)
+## 4. 数据备份与恢复(重要)
 
-`data/echo-graph.db` 不在 git 中。`data/export/*.csv` 是**公共星云的确定性导出**
-(git 跟踪,审计/回滚通道),**只含公共数据,不含用户私有空间**:
+`data/echo-graph.db` 不在 git 中,**备份介质只有整库快照**(含公共星云、用户星云、
+审计日志、用户与会话):
 
-- 在 VPS 上通过「数据管理」编辑公共星云时,改动写入 SQLite 并自动导出公共 CSV(文件进 git)。
-- 每次在 VPS 上改完公共数据,请提交并推送 CSV:
+- **日常备份**:`deploy.sh` 每次部署前自动 `sqlite3 .backup` 到 `backups/`(保留 14 份);
+  也可手动:
 
   ```bash
   sudo -u echograph bash -lc "cd /opt/echo-graph && \
-    git config user.name 'echograph' && \
-    git config user.email 'echograph@localhost' && \
-    git add data/export && \
-    git commit -m 'data: update from VPS admin' && \
-    git push"
+    sqlite3 data/echo-graph.db \".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'\""
   ```
 
-- 新机器首次初始化仍走 `setup-vps.sh` 的 CSV 引导(公共星云)。
-- **用户私有空间不在 CSV 中**:跨机器迁移完整数据(含用户星云)需手动同步
-  `backups/echo-graph-*.db` 快照(部署时自动生成),不要依赖 git。
-- 若 VPS 本地有未提交的数据改动,`git pull --ff-only` 会失败——先按上面提交推送再部署。
-- 也可反向操作:本机改好数据 → 提交 CSV 推远端 → VPS 上跑 `deploy.sh` 同步。
+- **恢复**:把快照放到 VPS 后,在管理端「数据管理 → 快照」Tab 选择并恢复
+  (恢复前自动安全备份当前库,恢复后自动重新认领未归属行);或停服直接替换
+  `data/echo-graph.db`(先 `PRAGMA integrity_check`,并移除旧的 `-wal`/`-shm`)。
+- **跨机器迁移**:复制 `backups/echo-graph-*.db` 到目标机器后按上述恢复,完整包含
+  用户星云;不要依赖 git 或 CSV。
+- **异地备份**:建议把 `backups/` 定期同步到异地(rsync / rclone / 对象存储);
+  自动化方案见 `docs/to-do.md`「整库异地备份」待办。
 
-> 提示:建议把 VPS 当作**只读运行环境**,数据只在本机改好推上去,管理页仅在应急时使用。
+> 提示:单用户数据导出请用数据管理页「导出 CSV」按钮(`/api/me/export`,zip)。
 
 ## 5. 备份策略
 
 | 数据 | 位置 | 备份方式 |
 |---|---|---|
 | 策展数据 + 审计日志 + 用户与会话 `data/echo-graph.db` | VPS 本地 | `deploy.sh` 每次 `sqlite3 .backup` 到 `backups/`(保留 14 份);建议再 rsync 到异地 |
-| CSV 导出 `data/export/*.csv` | git 仓库 | push 到远端即备份 |
 | 编辑版本快照 `data/versions/` | VPS 本地 | `deploy.sh` 打包;建议 rsync(历史遗留,新代码不再写入) |
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
 | 审计日志 `audit_log` | SQLite 内 | 用 `scripts/prune_audit.py --days 90` 裁剪(可加 cron 定期执行) |
 
 > **快照恢复入口**:管理端「数据管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
-> `backups/` 的 SQLite 备份(`data/versions/` 的历史 CSV 目录仅在旧机器残留时可用);
-> 恢复前会自动为当前库做安全备份,恢复后自动重新导出 CSV。应用侧创建的快照保留最近 30 份(`backups/` 下),
+> `backups/` 的 SQLite 备份(`data/versions/` 的历史库快照仅在旧机器残留时可用);
+> 恢复前会自动为当前库做安全备份。应用侧创建的快照保留最近 30 份(`backups/` 下),
 > deploy.sh 自身的备份保留 14 份;**恢复期间请勿编辑数据**,后端在恢复与写事务之间
 > 做了进程内互斥,单 worker 下不会出现并发覆盖。
 
@@ -128,8 +132,8 @@ sudo crontab -e
 ## 6. 常见问题
 
 - **页面空图但 `/api/health` 返回 `store":"sqlite"`**:检查 `data/echo-graph.db` 是否存在、
-  `journalctl -u echo-graph -e` 是否有报错;全新机器请确认 `setup-vps.sh` 的重建 SQLite 步骤已执行。
-- **`git pull` 报本地修改冲突**:按第 4 节先提交推送,或从 `backups/` 恢复后再拉。
+  `journalctl -u echo-graph -e` 是否有报错;全新机器数据为空属正常,需从整库快照恢复(第 4 节)。
+- **`git pull` 报本地修改冲突**:本地有未推送提交或未提交改动,先提交推送,或从 `backups/` 恢复后再拉。
 - **uv/pnpm 安装慢或失败**:VPS 需要能访问 pypi.org / npm registry / astral.sh;国内 VPS 可配镜像
   (`UV_DEFAULT_INDEX`、`.npmrc` registry)后再跑 `deploy.sh`。
 - **证书续期**:certbot 自动续期,`sudo certbot renew --dry-run` 可验证。

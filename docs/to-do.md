@@ -161,6 +161,12 @@
    (管理员发码、用户兑换,1.5-3 天,绕开支付资质),到期只降级不删数据;
    需先定产品决策:「公开可见(可被跃迁)是会员权益」vs「私密是会员权益」,
    以及存量用户空间(当前默认 public)是否一次性翻为 private。详细评估见对话记录。
+8. **整库异地备份(2026-08-27 新增,承接已移除的 CSV 备份层)**:CSV 自动导出层
+   已移除(`data/export/*.csv`、`export_csv.py` / `check_public_sync.py` /
+   `migrate_csv_to_sqlite.py`、CI 新鲜度门禁、csv 类型快照恢复全部下线,2026-08-27)。
+   备份介质统一为**整库快照**(`backups/echo-graph-*.db`,`sqlite3 .backup` + 管理端
+   「快照」恢复);待办:把 `backups/` 定期同步到异地(rsync / rclone / 对象存储)的
+   自动化方案,以及「全新环境从整库备份引导」的操作文档与演练。
 
 ## 最近变更(2026-08-21)
 
@@ -286,7 +292,7 @@
       `published_to_id`);`/api/admin/llm/*` 鉴权由 admin 放开为 admin/VIP。
 - ⬜ **admin 审核后进入公共星云通道(后续规划)**:目前批准发布的目标是上传者
       自己的星云;待产品定稿后再建「admin 审核 → 复制进引导管理员公共星云」
-      的通道(涉及 `llm_review` 发布落点、去重判重目标与 CSV 导出触发条件)。
+      的通道(涉及 `llm_review` 发布落点、去重判重目标)。
 
 ## 最近变更(2026-08-27)
 
@@ -302,3 +308,15 @@
   - 文档不一致: `docs/ui.md` 扩散范围描述由「滑动条 1-8 级」修正为
     「输入框 + 步进器,上限 = 当前节点实际可达跳数(动态),后端 hops 无上限」,
     `docs/to-do.md` 同步更新。
+- [x] **CSV 备份层移除(审查 P1 跟进)**:多设备/调试导致 `data/export/*.csv` 与库漂移,
+      备份统一改为**整库快照**——
+  - 移除写入路径自动导出(`space_crud.after_write`)、快照恢复后导出(`admin_restore`)、
+    `data/export/*.csv` 与 `scripts/export_csv.py` / `check_public_sync.py` /
+    `migrate_csv_to_sqlite.py`、CI `csv-export` job、csv 类型快照恢复
+    (`backups.py` 只保留 `.db` 类型);
+  - 全新环境引导改为「启动自动建 schema(空库)+ 从整库备份恢复数据」;
+  - 异地整库备份自动化列入「遗留与下一步建议」第 8 条待办。
+- [x] **数据管理页「导出 CSV」按钮(所有登录用户)**:把当前星云三张表
+      (作者/作品/涟漪)打包为 zip 下载;`GET /api/me/export`(admin 为
+      `GET /api/admin/export`),与数据管理页同口径(仅本人空间、排除 AI 草稿、
+      含软删除行、works 附带个人字段);前端按钮在作者/作品/涟漪三个 Tab 显示。

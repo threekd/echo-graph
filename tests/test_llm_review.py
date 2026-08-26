@@ -97,11 +97,6 @@ class LlmReviewTest(unittest.TestCase):
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)
 
-        # 批准会触发 CSV 导出(仅引导管理员),测试中置空,避免污染仓库 data/export
-        self.patch_export = patch("app.space_crud.export_csv_files", lambda: None)
-        self.patch_export.start()
-        self.addCleanup(self.patch_export.stop)
-
         self.admin = auth.register(_ADMIN_EMAIL, "password123", username="admin01")
         self.assertEqual(self.admin["role"], "admin")
         self.vip = auth.register("vip@echo.local", "password123", username="viper01")

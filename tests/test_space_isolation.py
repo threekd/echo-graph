@@ -75,7 +75,6 @@ class SpaceIsolationTest(unittest.TestCase):
         patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN).start()
         # 隔离测试不依赖机器 .env 的审核过滤开关,新建草稿即可见
         patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
-        patch("app.space_crud.export_csv_files", lambda: None).start()
         self.addCleanup(patch.stopall)
         self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
         self.alice = auth.register(self.ALICE, "alice-password-123", username="alice")

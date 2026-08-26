@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import app.sqlite_store as store
 from app import db_sqlite
-from app.data_models import parse_rows
+from tests._helpers import rewrite_all
 
 
 def _fixture():
@@ -44,8 +44,7 @@ class SqliteStoreTest(unittest.TestCase):
 
     def _migrate(self):
         a, w, e = _fixture()
-        am, wm, em, wa = parse_rows(a, w, e)
-        store.replace_all(am, wm, em, wa)
+        rewrite_all(a, w, e)
         return a, w, e
 
     def test_replace_and_list(self) -> None:
@@ -64,18 +63,6 @@ class SqliteStoreTest(unittest.TestCase):
         # 软删除行保留
         deleted = [r for r in data["authors"] if r.get("deletedAt")]
         self.assertEqual(len(deleted), 1)
-
-    def test_roundtrip_payload(self) -> None:
-        a, w, e = self._migrate()
-        self.assertEqual(store.sync_payload(), store.canonical_payload(a, w, e))
-
-    def test_migrate_from_csv(self) -> None:
-        with patch("app.data_store.load_csv_rows", return_value=_fixture()):
-            stats = store.migrate_from_csv(self.db_path)
-        self.assertEqual(stats["authors"], 3)
-        self.assertEqual(stats["works"], 2)
-        self.assertEqual(stats["echoes"], 1)
-        self.assertEqual(stats["authored_links"], 3)
 
     def test_prune_audit(self) -> None:
         """按天裁剪审计记录:dry_run 只统计,实际删除后不可再查到。"""

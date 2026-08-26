@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app import db_sqlite, sqlite_store
+from app import data_store, db_sqlite, sqlite_store
 from app.auth import (
     admin_user_id,
     bootstrap_admin,
@@ -20,7 +22,6 @@ from app.auth import (
     require_admin,
 )
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
-from app.data_store import export_csv_files
 from app.db import invalidate_cache
 from app.space_crud import (
     Kind,
@@ -84,10 +85,22 @@ def admin_restore(body: dict) -> dict:
         raise HTTPException(status_code=400, detail=f"恢复失败:\n{exc}") from exc
     except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
         raise HTTPException(status_code=500, detail=f"恢复失败:{exc}") from exc
-    bootstrap_admin()  # CSV 恢复后重新认领未归属数据到引导管理员
-    export_csv_files()
+    bootstrap_admin()  # 快照恢复后重新认领未归属数据到引导管理员
     invalidate_cache()
     return result
+
+
+@router.get("/export")
+def admin_export(user: dict | None = Depends(require_admin)) -> Response:  # noqa: B008
+    """导出公共星云(admin 空间)三张表为 CSV zip(数据管理页「导出 CSV」按钮)。"""
+    admin = _admin_context(user)
+    buf = data_store.space_csv_zip(admin["id"])
+    filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{kind}")

@@ -128,6 +128,38 @@ export default function Admin() {
     return false;
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // 导出自己星云的三张表(作者/作品/涟漪)为 CSV zip
+  const exportCsv = () => {
+    setStatus("正在导出…");
+    authFetch(apiBase + "/export")
+      .then((r) => {
+        if (!r.ok) {
+          handleAuthError(r);
+          throw new Error("导出失败(" + r.status + ")");
+        }
+        const disposition = r.headers.get("Content-Disposition") || "";
+        const m = disposition.match(/filename="?([^";]+)"?/);
+        const name = m ? m[1] : "echo-graph-export.zip";
+        return r.blob().then((b) => ({ blob: b, name }));
+      })
+      .then(({ blob, name }) => {
+        downloadBlob(blob, name);
+        setStatus("已导出:" + name);
+      })
+      .catch(() => setStatus("导出失败,请重试"));
+  };
+
   // 关闭管理页;同时清理 URL 中的 admin 入口参数/片段
   const closeAdmin = () => {
     stripAdminFromUrl();
@@ -386,6 +418,7 @@ export default function Admin() {
               <>
                 {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
                 <button onClick={openAdd}>＋ 新增</button>
+                <button onClick={exportCsv}>导出 CSV</button>
               </>
             )}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>

@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import auth, data_store, db_sqlite
+from app import auth, db_sqlite
 from app.ai_assistant.tools import dedupe_check, llm_space, review_publish
 from tests._helpers import rewrite_all
 
@@ -133,9 +133,6 @@ class PipelineEdgeTest(unittest.TestCase):
         self.patch_email = patch.object(auth, "BOOTSTRAP_EMAIL", _ADMIN_EMAIL)
         self.patch_email.start()
         self.addCleanup(self.patch_email.stop)
-        self.patch_export = patch.object(data_store, "EXPORT_DIR", Path(self.tmp.name) / "export")
-        self.patch_export.start()
-        self.addCleanup(self.patch_export.stop)
         self.patch_batch_dir = patch.object(llm_space, "BATCH_DIR", Path(self.tmp.name) / "batches")
         self.patch_batch_dir.start()
         self.addCleanup(self.patch_batch_dir.stop)

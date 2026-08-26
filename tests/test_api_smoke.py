@@ -28,7 +28,6 @@ class ApiSmokeTest(unittest.TestCase):
         auth.register(self.admin_email, "admin-password-123", username="admin")
         self.admin_id = auth.admin_user_id()
         self.assertIsNotNone(self.admin_id)
-        patch("app.space_crud.export_csv_files", lambda: None).start()
         # 所有 setUp 补丁必须在测试结束时复原,避免泄漏影响后续模块(顺序无关)
         self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)

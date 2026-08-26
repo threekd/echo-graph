@@ -1,13 +1,14 @@
-"""策展数据的 SQLite 存储层(SQLite 为唯一权威,CSV 为确定性导出产物)。"""
+"""策展数据的 SQLite 存储层(SQLite 为唯一权威)。
+
+2026-08-27 起移除 CSV 自动导出/迁移层(数据/export 备份方式废弃,改为整库备份,
+见 docs/to-do.md);用户手动导出 CSV 由 app/data_store.space_csv_zip() 提供。
+"""
 
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path
-from typing import Any
 
 from app import db_sqlite
-from app.db import invalidate_cache
 
 AUTHOR_COLS = [
     "id", "originalName", "Name_CN", "Name_EN", "nationality",
@@ -282,78 +283,6 @@ def restore_edge_work_ids(
         )
     ]
 
-
-# ---- 整库重写(迁移 / 恢复工具;普通写入请用行级 CRUD) ----
-
-
-def replace_all(author_models, work_models, echo_models, work_authors: dict[str, list[str]]) -> None:
-    """单事务整库重建(迁移用)。入参为 parse_rows 产出的模型与作者关联。"""
-    def insert(table: str, cols: list[str], models: list[Any]) -> None:
-        placeholders = ",".join("?" for _ in cols)
-        rows = [{**m.model_dump(), "owner_id": None} for m in models]
-        conn.executemany(
-            f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
-            [tuple(r[c] for c in cols) for r in rows],
-        )
-
-    with db_sqlite._db() as conn:
-        conn.execute("DELETE FROM work_authors")
-        conn.execute("DELETE FROM edges")
-        conn.execute("DELETE FROM works")
-        conn.execute("DELETE FROM authors")
-        insert("authors", AUTHOR_COLS + ["owner_id"], author_models)
-        insert("works", WORK_COLS + ["owner_id"], work_models)
-        insert("edges", EDGE_COLS + ["owner_id"], echo_models)
-        conn.executemany(
-            "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
-            [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
-        )
-    invalidate_cache()
-
-
-def replace_public_rows(
-    author_models,
-    work_models,
-    echo_models,
-    work_authors: dict[str, list[str]],
-    owner_id: str | None,
-) -> None:
-    """单事务重建公共星云(admin 空间 + 未认领行),用户私有空间原样保留。
-
-    快照 CSV 恢复用:CSV 只含公共数据,恢复时不得清空用户星云。
-    """
-    def insert(table: str, cols: list[str], models: list[Any]) -> None:
-        placeholders = ",".join("?" for _ in cols)
-        rows = [{**m.model_dump(), "owner_id": owner_id} for m in models]
-        conn.executemany(
-            f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
-            [tuple(r[c] for c in cols) for r in rows],
-        )
-
-    with db_sqlite._db() as conn:
-        if owner_id is None:
-            scope = "owner_id IS NULL"
-            params: tuple = ()
-        else:
-            scope = "(owner_id IS NULL OR owner_id = ?)"
-            params = (owner_id,)
-        conn.execute(
-            f"DELETE FROM work_authors WHERE work_id IN (SELECT id FROM works WHERE {scope})",
-            params,
-        )
-        conn.execute(f"DELETE FROM edges WHERE {scope}", params)
-        conn.execute(f"DELETE FROM works WHERE {scope}", params)
-        conn.execute(f"DELETE FROM authors WHERE {scope}", params)
-        insert("authors", AUTHOR_COLS + ["owner_id"], author_models)
-        insert("works", WORK_COLS + ["owner_id"], work_models)
-        insert("edges", EDGE_COLS + ["owner_id"], echo_models)
-        conn.executemany(
-            "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
-            [(wid, aid) for wid, aids in work_authors.items() for aid in aids],
-        )
-    invalidate_cache()
-
-
 def list_all(owner_id: str | None = None) -> dict:
     """返回与 CSV load_rows 同形状的行(works 行重组 author_id 逗号串)。"""
     with db_sqlite._db() as conn:
@@ -440,103 +369,3 @@ def prune_audit(days: int = 90, dry_run: bool = False) -> int:
             ).fetchone()["c"]
         cur = conn.execute("DELETE FROM audit_log WHERE ts < ?", (cutoff,))
         return cur.rowcount
-
-
-# ---- 往返一致性校验规范化(SQLite <-> CSV 共用) ----
-
-
-def sync_norm(value):
-    """同步比对用的字段归一化:去空白、数值字符串转 int、空串统一为 None。"""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return None
-        try:
-            return int(s)
-        except ValueError:
-            return s
-    return value
-
-
-def canonical_payload(author_rows, work_rows, edge_rows) -> dict:
-    """规范化活跃数据载荷(忽略时间戳),用于 SQLite <-> CSV 往返一致性校验。"""
-    active_a = [r for r in author_rows if not r.get("deletedAt")]
-    active_w = [r for r in work_rows if not r.get("deletedAt")]
-    active_e = [r for r in edge_rows if not r.get("deletedAt")]
-
-    authors = []
-    for r in active_a:
-        authors.append({
-            "id": sync_norm(r.get("id")),
-            "originalName": sync_norm(r.get("originalName")),
-            "Name_CN": sync_norm(r.get("Name_CN")),
-            "Name_EN": sync_norm(r.get("Name_EN")),
-            "nationality": sync_norm((r.get("nationality") or "").upper()),
-            "birthYear": sync_norm(r.get("birthYear")),
-            "deathYear": sync_norm(r.get("deathYear")),
-            "note": sync_norm(r.get("note")),
-            "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),
-        })
-    works = []
-    for r in active_w:
-        works.append({
-            "id": sync_norm(r.get("id")),
-            "language": sync_norm((r.get("language") or "").lower()),
-            "originalTitle": sync_norm(r.get("originalTitle")),
-            "Title_CN": sync_norm(r.get("Title_CN")),
-            "Title_EN": sync_norm(r.get("Title_EN")),
-            "Title_Other": sync_norm(r.get("Title_Other")),
-            "publicationYear": sync_norm(r.get("publicationYear")),
-            "genre": sync_norm(r.get("genre")),
-            "note": sync_norm(r.get("note")),
-            "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),
-            "author_ids": sorted(
-                sync_norm(x) for x in (r.get("author_id") or "").split(",") if x.strip()
-            ),
-        })
-    echoes = []
-    for r in active_e:
-        echoes.append({
-            "id": sync_norm(r.get("id")),
-            "source": sync_norm(r.get("source_work_id")),
-            "target": sync_norm(r.get("target_work_id")),
-            "evidence": sync_norm(r.get("evidence")),
-            "evidenceSource": sync_norm(r.get("evidenceSource")),
-            "note": sync_norm(r.get("note")),
-            "reviewStatus": sync_norm(r.get("reviewStatus") or "draft"),
-        })
-    return {
-        "authors": sorted(authors, key=lambda x: x["id"]),
-        "works": sorted(works, key=lambda x: x["id"]),
-        "echoes": sorted(echoes, key=lambda x: x["id"]),
-    }
-
-
-def sync_payload() -> dict:
-    """SQLite 侧的规范化载荷(供迁移/恢复后的往返校验)。"""
-    data = list_all()
-    return canonical_payload(data["authors"], data["works"], data["edges"])
-
-
-def migrate_from_csv(db_path: Path | str, check: bool = True) -> dict:
-    """校验 data/export/*.csv 并整库重建 SQLite;校验失败抛 ValueError。"""
-    from app.data_models import parse_rows
-    from app.data_store import load_csv_rows
-
-    db_sqlite.DB_PATH = Path(db_path)
-    authors, works, edges = load_csv_rows()
-    author_models, work_models, echo_models, work_authors = parse_rows(authors, works, edges)
-    replace_all(author_models, work_models, echo_models, work_authors)
-    if check:
-        db_payload = sync_payload()
-        csv_payload = canonical_payload(authors, works, edges)
-        if db_payload != csv_payload:
-            raise RuntimeError("迁移后一致性校验失败:SQLite 与 CSV 规范化载荷不一致")
-    return {
-        "authors": len(author_models),
-        "works": len(work_models),
-        "echoes": len(echo_models),
-        "authored_links": sum(len(v) for v in work_authors.values()),
-    }

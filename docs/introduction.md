@@ -14,7 +14,7 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite;`data/export/*.csv` 为公共星云写入时自动导出的确定性产物(git 跟踪,审计/回滚/跨机器传输),**只含公共数据,不含用户私有空间**。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,公共星云与用户私有空间同库(`owner_id` 区分);公开接口(`/api/graph` 等)直接查 SQLite。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
   书内书名提及**仅取正文**,涟漪出处标注为 前言/正文/尾记/其它 四类;提示词统一
@@ -35,18 +35,18 @@
 ```bash
 uv sync               # 安装依赖(已在 pyproject.toml)
 cd frontend && pnpm install && pnpm typecheck && pnpm build   # 构建 React 前端(产物进入 frontend/dist)
-uv run python scripts/migrate_csv_to_sqlite.py   # 全新环境引导:从仓库 CSV 初始化 SQLite
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-SQLite 库缺失时执行 `scripts/migrate_csv_to_sqlite.py` 从 CSV 初始化(仅限全新环境;已有用户数据时
-不要执行——它会整库重建策展表,清空用户星云)。
+SQLite 库缺失时服务启动会自动创建并迁移 schema(空库);全新环境的**数据**需从
+整库备份恢复(`backups/echo-graph-*.db`,管理端「快照」恢复或直接替换库文件,
+见 `ops-manual.md` 与 `to-do.md` 的整库备份待办)。
 
 **Windows 本地环境提示**:若仓库/虚拟环境报"dubious ownership"或 `uv` 无法启动
 `.venv` 里的 Python(常见于 Windows 账户变更),先执行
 `git config --global --add safe.directory E:/Code/echo-graph` 放行仓库;随后备份并重建虚拟环境:
 `Rename-Item .venv .venv-broken`(或直接删除后)`uv sync --frozen`。`.venv` 为可再生构建产物,
-重建不影响 `data/echo-graph.db` 与 `data/export/*.csv`。
+重建不影响 `data/echo-graph.db`。
 
 质量检查(已在 CI 中自动执行):
 
@@ -99,13 +99,13 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 注意事项:国内机房绑域名对外提供 80/443 服务需要 ICP 备案,不想备案可选香港/新加坡 VPS;
 1核2G 即可运行(systemd 单 worker);`data/echo-graph.db` 是数据事实源(备份=用 `sqlite3 .backup`
-或 deploy.sh 自动备份),`data/export/*.csv` 为导出产物配合 git 完成版本审计与跨机器传输。
+或 deploy.sh 自动备份,异地备份方案见 `to-do.md` 待办)。
 
 > 数据管理视图对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
 > (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
 > admin 角色,其「自己的星云」就是公共星云,并可额外使用「日志 / 快照 / 用户」
 > 平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
-> 公共星云写入自动导出 CSV;用户私有数据不进 git 审计产物。
+> 所有登录用户可在数据管理页导出自己星云的三张表为 CSV zip(「导出 CSV」按钮)。
 
 ### 账号体系(注册 / 登录)
 
@@ -165,12 +165,15 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   涟漪与作品关联作者的选取同样基于当前空间已有数据。
 - 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
 
-**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照(`data/versions/` 历史 CSV 目录仅在旧机器残留时可用)——恢复前会自动为当前库做安全备份,恢复成功后自动重新导出 CSV。
+**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照——恢复前会自动为当前库做安全备份(CSV 类型历史快照已随 CSV 备份层于 2026-08-27 移除)。
 
 
-策展数据以 SQLite(`data/echo-graph.db`)为准,`data/export/*.csv` 为每次写入自动导出的确定性产物;授权后通过页面左侧「**数据管理**」入口编辑(表单校验、软删除/恢复、日志记录),字段说明见 `../data/export/README.md`;保存前自动校验(类型、枚举、交叉引用、作者 id 关联、重复 id),保存后自动导出 CSV,公开接口即时读到新数据。
+策展数据以 SQLite(`data/echo-graph.db`)为准;授权后通过页面左侧「**数据管理**」入口编辑
+(表单校验、软删除/恢复、日志记录),保存前自动校验(类型、枚举、交叉引用、作者 id 关联、
+重复 id),保存后公开接口即时读到新数据;「导出 CSV」按钮可把当前星云的三张表
+(作者/作品/涟漪)打包下载(zip),所有登录用户可用。
 
-**软删除设计**:`deletedAt` 仅在 SQLite/CSV 数据层表达——被删除的行保留在库中与 CSV 存档(`deletedAt` 非空),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
+**软删除设计**:`deletedAt` 在数据层表达——被删除的行保留在库中(`deletedAt` 非空,用户导出 CSV 亦含该列),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
 
 浏览器打开 <http://127.0.0.1:8000/>。
 

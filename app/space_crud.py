@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from app import db_sqlite, sqlite_store
 from app.auth import admin_user_id
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
-from app.data_store import clean_row, export_csv_files
+from app.data_store import clean_row
 from app.db import invalidate_cache
 
 Kind = Literal["authors", "works", "edges"]
@@ -159,10 +159,11 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None, owne
 
 
 def after_write(owner_id: str) -> None:
-    """写入后的收尾:任何空间都失效读缓存;只有公共星云(admin 空间)刷新 CSV 导出。"""
+    """写入后的收尾:失效读缓存,保证编辑保存后即时可读。
+
+    CSV 自动导出层已于 2026-08-27 移除(改为整库备份 + 用户手动导出,见 docs/to-do.md)。
+    """
     invalidate_cache()
-    if owner_id == admin_user_id():
-        export_csv_files()
 
 
 def space_data(owner_id: str, include_deleted: bool = True) -> dict:

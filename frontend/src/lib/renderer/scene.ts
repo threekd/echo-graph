@@ -101,9 +101,12 @@ function createNodeGroup(n: GraphNode, pos: THREE.Vector3): void {
   div.textContent = n.label;
   const label = new CSS2DObject(div);
   label.position.set(0, r + 12, 0);
+  label.userData = { type: n.type };
   if (R.hiddenLabelIds[n.id]) {
     label.visible = false; // 孤岛作品默认不显示文字(CSS2DRenderer 会强制改写 style.display,须用 visible)
-    label.userData = { hiddenByDefault: true };
+    label.userData.hiddenByDefault = true;
+  } else if (n.type === "work" && !R.showWorkLabels) {
+    label.visible = false; // 取消「显示作品节点」时隐藏作品文字标签(作者标签不受影响)
   }
   group.add(label);
 
@@ -299,6 +302,10 @@ export function syncScene(data: GraphData): void {
         } else if (label.userData && label.userData.hiddenByDefault) {
           label.visible = true;
           delete label.userData.hiddenByDefault;
+        } else if (n.type === "work" && !R.showWorkLabels) {
+          label.visible = false;
+        } else if (n.type === "work" && R.showWorkLabels) {
+          label.visible = true;
         }
       }
     } else {

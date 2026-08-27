@@ -44,6 +44,7 @@ export interface RenderState {
   pinchMidY: number;
   viewToken: number; // 防止异步布局的旧回调覆盖新视图
   hiddenLabelIds: Record<string, boolean>; // 主图谱中默认隐藏标签的孤岛作品
+  showWorkLabels: boolean; // 作品节点的文字标签是否显示
   currentKind: string | null; // 当前视图类型(用于同视图增量同步)
   glowTexture: THREE.CanvasTexture | null;
   backgroundStars: THREE.Points | null;
@@ -93,6 +94,7 @@ export const R: RenderState = {
   pinchMidY: 0,
   viewToken: 0,
   hiddenLabelIds: {},
+  showWorkLabels: true,
   currentKind: null,
   glowTexture: null,
   backgroundStars: null,

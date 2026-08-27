@@ -59,6 +59,7 @@ export interface AppState {
   storeName: string;
   hideIslands: boolean;
   showAuthors: boolean;
+  showWorkLabels: boolean; // 是否显示作品节点的文字标签
   expandHops: number;
   expandMax: number; // 当前节点视图的扩散上限(动态:该节点实际可达的最远跳数,无人工上限)
   panel: PanelState;
@@ -89,6 +90,7 @@ export type AppAction =
   | { type: "SET_CAMERA"; camera: CameraState }
   | { type: "SET_HIDE_ISLANDS"; value: boolean }
   | { type: "SET_SHOW_AUTHORS"; value: boolean }
+  | { type: "SET_SHOW_WORK_LABELS"; value: boolean }
   | { type: "SET_EXPAND"; value: number }
   | { type: "SET_EXPAND_MAX"; value: number }
   | { type: "SET_PANEL"; panel: PanelState }
@@ -120,6 +122,7 @@ export const initialState: AppState = {
   storeName: "",
   hideIslands: false,
   showAuthors: true,
+  showWorkLabels: true,
   expandHops: 1,
   expandMax: 8, // 初始兜底(数据未就绪/非节点视图时,进入视图后按实际可达跳数更新)
   panel: { type: "empty" },
@@ -162,6 +165,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, hideIslands: action.value };
     case "SET_SHOW_AUTHORS":
       return { ...state, showAuthors: action.value };
+    case "SET_SHOW_WORK_LABELS":
+      return { ...state, showWorkLabels: action.value };
     case "SET_EXPAND":
       return { ...state, expandHops: action.value };
     case "SET_EXPAND_MAX":

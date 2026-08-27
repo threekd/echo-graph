@@ -357,6 +357,13 @@ export default function Sidebar() {
     dispatch({ type: "SET_TOAST", msg: value ? "已显示作家节点" : "已隐藏作家节点", kind: "info" });
   };
 
+  const onToggleWorkLabels = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.checked;
+    dispatch({ type: "SET_SHOW_WORK_LABELS", value });
+    // 标签显隐由 GraphCanvas effect 直接驱动渲染器,无需重新布局
+    dispatch({ type: "SET_TOAST", msg: value ? "已显示作品名称" : "已隐藏作品名称", kind: "info" });
+  };
+
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.checked;
     dispatch({ type: "SET_HIDE_ISLANDS", value });
@@ -485,6 +492,7 @@ export default function Sidebar() {
               onExpandInputChange={onExpandInputChange}
               commitExpandInput={commitExpandInput}
               onToggleAuthors={onToggleAuthors}
+              onToggleWorkLabels={onToggleWorkLabels}
               onToggleIslands={onToggleIslands}
               switchSpace={switchSpace}
             />

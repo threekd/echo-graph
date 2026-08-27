@@ -35,6 +35,7 @@ interface SpaceTabProps {
   onExpandInputChange: (raw: string) => void;
   commitExpandInput: () => void;
   onToggleAuthors: (e: ChangeEvent<HTMLInputElement>) => void;
+  onToggleWorkLabels: (e: ChangeEvent<HTMLInputElement>) => void;
   onToggleIslands: (e: ChangeEvent<HTMLInputElement>) => void;
   switchSpace: (space: Space) => void;
 }
@@ -50,7 +51,7 @@ export default function SpaceTab(props: SpaceTabProps) {
     from, setFrom, to, setTo, fromOpen, setFromOpen, toOpen, setToOpen,
     expandInput, filterOptions, chooseHit, onSearchKeyDown,
     doPath, doJump, backMain, stepExpand, onExpandInputChange, commitExpandInput,
-    onToggleAuthors, onToggleIslands, switchSpace,
+    onToggleAuthors, onToggleWorkLabels, onToggleIslands, switchSpace,
   } = props;
 
   return (
@@ -239,6 +240,13 @@ export default function SpaceTab(props: SpaceTabProps) {
             onChange={onToggleAuthors}
           />
           <span>显示作家节点</span>
+        </label>
+        <label className="opt">
+          <input
+            type="checkbox" id="show-work-labels" checked={state.showWorkLabels}
+            onChange={onToggleWorkLabels}
+          />
+          <span>显示作品名称</span>
         </label>
         <label className="opt">
           <input

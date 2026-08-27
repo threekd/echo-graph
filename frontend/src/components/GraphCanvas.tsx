@@ -1,7 +1,14 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { useApp } from "../store";
 import { LONG_PRESS_MS } from "../lib/mobileGestures";
-import { initThree, update as rendererUpdate, pickNode, setHoveredNode, disposeThree } from "../lib/renderer";
+import {
+  initThree,
+  update as rendererUpdate,
+  pickNode,
+  setHoveredNode,
+  setShowWorkLabels,
+  disposeThree,
+} from "../lib/renderer";
 import { selectNode, showNodeDetail } from "../lib/graph";
 
 export default function GraphCanvas() {
@@ -84,6 +91,11 @@ export default function GraphCanvas() {
   useEffect(() => {
     rendererUpdate(state.currentView, state.viewData);
   }, [state.currentView, state.viewData]);
+
+  // 作品文字标签显隐开关
+  useEffect(() => {
+    setShowWorkLabels(state.showWorkLabels);
+  }, [state.showWorkLabels]);
 
   useEffect(() => {
     return () => {

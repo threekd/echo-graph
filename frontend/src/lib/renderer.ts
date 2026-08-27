@@ -31,6 +31,17 @@ import { AUTO_ROTATE_SPEED, R } from "./renderer/state";
 
 export { setOnCameraChange, pickNode, setHoveredNode };
 
+// 切换作品文字标签显隐(即时生效,无需重排布局)
+export function setShowWorkLabels(show: boolean): void {
+  R.showWorkLabels = show;
+  Object.keys(R.nodeLabels).forEach(function (id) {
+    const label = R.nodeLabels[id];
+    if (!label.userData || label.userData.type !== "work") return;
+    if (label.userData.hiddenByDefault) return; // 孤岛等默认隐藏的标签不干预
+    label.visible = show;
+  });
+}
+
 // =============================== 初始化 ===============================
 
 export function initThree(containerOrNull?: HTMLElement | null): void {

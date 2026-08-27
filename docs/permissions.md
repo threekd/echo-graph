@@ -24,7 +24,7 @@
 | --- | --- | --- | --- | --- |
 | 浏览自己的星云(图/搜索/详情/扩散/路径,`/api/me/*`) | ❌ 401(空图 + 登录提示) | ✅ 仅本人数据 | ✅ 仅本人数据 | ✅ 仅本人数据 |
 | 星际跃迁(随机 / 定向访问公开星云,`/api/space/*`) | ✅ 仅公开星云 | ✅ 仅公开星云 | ✅ 仅公开星云 | ✅ 公开星云 + 任意 private 星云 |
-| 数据管理(图/搜索/详情/扩散/路径 + 数据 CRUD+ CSV 导出按钮,`/api/me/*`) | ❌ 401 | ✅ 仅本人数据 | ✅ 仅本人数据 | ✅ 仅本人数据 |
+| 星云工坊(图/搜索/详情/扩散/路径 + 数据 CRUD+ CSV 导出按钮,`/api/me/*`) | ❌ 401 | ✅ 仅本人数据 | ✅ 仅本人数据 | ✅ 仅本人数据 |
 | 用户管理(禁用/角色/星云可见性/VIP,`/api/admin/users`) | ❌ | ❌ | ❌ | ✅ |
 | 运维(审计日志 / 快照备份恢复,`/api/admin/audit`、`/api/admin/backups`) | ❌ | ❌ | ❌ | ✅ |
 | 关注 / 粉丝(`/api/follow/*`) | ❌ 401 | ✅ | ✅ | ✅ |
@@ -39,7 +39,7 @@
 | --- | --- | --- |
 | 个人星云只读六件套 | 登录(游客 401) | `app/me.py`(router `dependencies=[Depends(require_user)]`);`app/read_routes.py` |
 | 星际跃迁 | 可见性判定:目标用户 active 且 `space_visibility='public'`,或访问者是本人 / admin | `app/space.py:31-40`(`_require_visible`) |
-| 数据管理 / 用户管理 / 运维 | admin 角色 | `app/admin.py:37`(`dependencies=[Depends(require_admin)]`) |
+| 星云工坊(admin 侧)/ 用户管理 / 运维 | admin 角色 | `app/admin.py:37`(`dependencies=[Depends(require_admin)]`) |
 | AI 书籍导入 | admin 或 VIP | `app/book_import.py:53-55`(`require_admin_or_vip`);端点 `:338`、`:390` |
 | AI 草稿审核 | admin 或 VIP;数据范围 = 当前用户自己上传,互不审核 | `app/llm_review.py:42`(`require_admin_or_vip`);`llm_drafts` `:239`(`owner = user["id"]`);审核端点 `:752` 等(`staging_owner = user["id"]`);判重目标 = 自己星云(`_own_space_scope` `:48`) |
 | 关注 | 登录 | `app/follows.py:15`(require_user) |

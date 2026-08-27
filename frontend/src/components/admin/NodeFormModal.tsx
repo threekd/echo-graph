@@ -1,4 +1,4 @@
-/* 标准节点表单弹窗:新增/编辑作者、作品、涟漪(数据管理与点亮星空共用)。
+/* 标准节点表单弹窗:新增/编辑作者、作品、涟漪(星云工坊与点亮星空共用)。
    通过 apiBase 区分空间:/api/me(个人空间)或 /api/admin(admin 自己的星云)。 */
 
 import { useState } from "react";
@@ -228,7 +228,7 @@ export default function NodeFormModal({
   const markExisting = (field: string, label: string) =>
     setDupHints((h) => ({
       ...h,
-      [field]: `「${label}」已存在,请勿重复新增(可到数据管理编辑)`,
+      [field]: `「${label}」已存在,请勿重复新增(可到星云工坊编辑)`,
     }));
 
   const save = () => {
@@ -267,7 +267,7 @@ export default function NodeFormModal({
             String((r as unknown as Record<string, unknown>)[dupField] || "").trim().toLowerCase() === v
         );
         if (v && hit) {
-          const msg = "该数据已存在,请勿重复新增(可到数据管理编辑)";
+          const msg = "该数据已存在,请勿重复新增(可到星云工坊编辑)";
           setDupHints((h) => ({ ...h, [dupField]: msg }));
           setFormError(msg);
           return;

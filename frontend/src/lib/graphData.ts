@@ -64,7 +64,7 @@ export function filterSingleWorkAuthors(data: GraphData): GraphData {
   };
 }
 
-// 原有"隐藏孤岛星"勾选框逻辑:隐藏无提及关系的作品
+// "孤岛节点"开关(取消勾选=隐藏):隐藏无提及关系的作品
 export function filterIslands(data: GraphData): GraphData {
   const deg: Record<string, number> = {};
   data.edges.forEach((e) => {
@@ -172,7 +172,7 @@ export function maxEchoHops(data: GraphData, seedIds: string[]): number {
   return farthest;
 }
 
-// 没有任何 ECHO 提及关系的作品数(用于"隐藏孤岛星"开关的 toast 提示)
+// 没有任何 ECHO 提及关系的作品数(用于"孤岛节点"开关的 toast 提示)
 export function islandWorkCount(data: GraphData): number {
   const deg: Record<string, number> = {};
   data.edges.forEach((e) => {

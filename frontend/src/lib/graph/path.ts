@@ -25,7 +25,7 @@ export function renderPath(fromId: string, toId: string, opts?: ViewOpts): Promi
     commitView("path", { nodes, edges, pathOrder: result.nodes }, opts || {});
     syncUrl({
       view: "path", from: fromId, to: toId,
-      hideIslands: opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands,
+      showIslands: opts && typeof opts.showIslands === "boolean" ? opts.showIslands : getState().showIslands,
       showAuthors: opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors,
     });
     dispatch({ type: "SET_TOAST", msg: `提及链 · ${result.nodes.length} 本书 / ${result.edges.length} 次提及` });

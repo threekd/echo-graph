@@ -85,7 +85,7 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
 
 export default function Admin() {
   const { state, dispatch } = useApp();
-  // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
+  // 星云工坊对所有登录用户开放:非 admin 管理自己的空间(/api/me),
   // admin 管理自己的星云(/api/admin,即其名下星云);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
   const isVip = Boolean(state.user?.vip);
@@ -458,7 +458,7 @@ export default function Admin() {
       <div className="admin-shell">
         <div className="admin-head">
           <div className="admin-head-left">
-            <h2 className="admin-title">数据管理</h2>
+            <h2 className="admin-title">星云工坊</h2>
             <div className="admin-tabs">
               {tabs.map((k) => (
                 <button

@@ -135,7 +135,7 @@ sqlite3 data/echo-graph.db ".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'"
 ```
 
 或使用管理端快照 / `deploy.sh` 自动备份(见 2.2、2.3)。备份粒度是"全库",包含全部用户;
-单用户导出:登录后数据管理页「导出 CSV」按钮,可把本人星云三张表打包为 zip
+单用户导出:登录后星云工坊页「导出 CSV」按钮,可把本人星云三张表打包为 zip
 (`GET /api/me/export`,admin 为 `GET /api/admin/export`)。
 
 ### 4.2 用户数据导入
@@ -300,6 +300,6 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 uv run python scripts/prune_audit.py --days 90 --dry-run   # 先统计
 uv run python scripts/prune_audit.py --days 90             # 再执行
 
-# 用户数据导出(数据管理页「导出 CSV」按钮)
+# 用户数据导出(星云工坊页「导出 CSV」按钮)
 curl -b cookies.txt http://127.0.0.1:8000/api/me/export -o my-nebula.zip
 ```

@@ -42,7 +42,7 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
     dispatch({ type: "SET_TOAST", msg: "佚名(Anonymous)节点已隐藏,可直接搜索具体作品" });
     return;
   }
-  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
+  const showIslands = opts && typeof opts.showIslands === "boolean" ? opts.showIslands : getState().showIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   const fullData = opts?.fullData || getState().fullData;
   // 作者视图:上限 = 该作者名下作品沿 ECHO 可达的最远跳数 + 1(作者层)
@@ -56,11 +56,11 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
   dispatch({ type: "SET_AUTHOR", id: author.id });
   dispatch({ type: "SET_PANEL", panel: { type: "author", author } });
   let data = authorViewData(author, hops, fullData);
-  if (hideIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛星
+  if (!showIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛作品
   commitView("author", data, opts || {});
   syncUrl({
     view: "author", id: author.id, hops,
-    hideIslands, showAuthors,
+    showIslands, showAuthors,
   });
 }
 
@@ -70,13 +70,13 @@ export function expandAuthorDebounced(hops: number) {
   if (!author) return;
   dispatch({ type: "SET_EXPAND", value: hops });
   let data = authorViewData(author, hops, st.fullData);
-  if (st.hideIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛星
+  if (!st.showIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛作品
   dispatch({ type: "SET_VIEW_DATA", data });
   const works = data.nodes.filter((n) => n.type === "work").length;
   dispatch({ type: "SET_TOAST", msg: hops + " 级扩散 · " + works + " 本书" });
   syncUrl({
     view: "author", id: author.id, hops,
-    hideIslands: st.hideIslands, showAuthors: st.showAuthors,
+    showIslands: st.showIslands, showAuthors: st.showAuthors,
   });
 }
 

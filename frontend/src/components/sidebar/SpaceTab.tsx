@@ -67,6 +67,20 @@ export default function SpaceTab(props: SpaceTabProps) {
         className={"side-btn" + (state.space === "mine" ? " active" : "")}
         onClick={() => switchSpace("mine")}
       >
+        <svg
+          className="mine-btn-icon"
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" />
+        </svg>
         我的星云
       </button>
       <button id="btn-jump" className="side-btn jump-btn" onClick={doJump}>
@@ -250,7 +264,7 @@ export default function SpaceTab(props: SpaceTabProps) {
           </label>
           <label className="opt">
             <input
-              type="checkbox" id="hide-islands" checked={state.hideIslands}
+              type="checkbox" id="show-islands" checked={state.showIslands}
               onChange={onToggleIslands}
             />
             <span>孤岛节点</span>
@@ -270,6 +284,11 @@ export default function SpaceTab(props: SpaceTabProps) {
         >
           点亮星空
         </button>
+        {state.user && (
+          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>
+            星云工坊
+          </button>
+        )}
         {state.user?.role === "admin" && (
           <button
             id="btn-users"
@@ -278,11 +297,6 @@ export default function SpaceTab(props: SpaceTabProps) {
             onClick={() => dispatch({ type: "SET_USER_ADMIN", open: true })}
           >
             用户管理
-          </button>
-        )}
-        {state.user && (
-          <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>
-            数据管理
           </button>
         )}
         {state.user?.role === "admin" && (

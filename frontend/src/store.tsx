@@ -59,7 +59,7 @@ export interface AppState {
   pathToId: string | null;
   // 深链 #v=path:... 打开后回填到侧边栏路径输入框的显示文本(书名 - 作者)
   pathInputs: { from: string; to: string };
-  hideIslands: boolean;
+  showIslands: boolean; // 孤岛节点显示开关:勾选=显示,取消勾选=隐藏(默认显示)
   showAuthors: boolean;
   showWorkLabels: boolean; // 是否显示作品节点的文字标签
   readingFilter: ReadingFilter; // 作品阅读状态筛选(默认全部)
@@ -90,7 +90,7 @@ export type AppAction =
   | { type: "SET_PATH"; from: string | null; to: string | null }
   | { type: "SET_PATH_INPUTS"; inputs: { from: string; to: string } }
   | { type: "SET_CAMERA"; camera: CameraState }
-  | { type: "SET_HIDE_ISLANDS"; value: boolean }
+  | { type: "SET_SHOW_ISLANDS"; value: boolean }
   | { type: "SET_SHOW_AUTHORS"; value: boolean }
   | { type: "SET_SHOW_WORK_LABELS"; value: boolean }
   | { type: "SET_READING_FILTER"; value: ReadingFilter }
@@ -122,7 +122,7 @@ export const initialState: AppState = {
   pathFromId: null,
   pathToId: null,
   pathInputs: { from: "", to: "" },
-  hideIslands: false,
+  showIslands: true,
   showAuthors: true,
   showWorkLabels: true,
   readingFilter: "all",
@@ -162,8 +162,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, pathInputs: action.inputs };
     case "SET_CAMERA":
       return { ...state, camera: action.camera };
-    case "SET_HIDE_ISLANDS":
-      return { ...state, hideIslands: action.value };
+    case "SET_SHOW_ISLANDS":
+      return { ...state, showIslands: action.value };
     case "SET_SHOW_AUTHORS":
       return { ...state, showAuthors: action.value };
     case "SET_SHOW_WORK_LABELS":

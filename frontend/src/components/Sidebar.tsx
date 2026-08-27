@@ -338,7 +338,7 @@ export default function Sidebar() {
 
   // 过滤开关变化后按当前视图重新渲染(保持相机),主/涟漪视图由渲染函数自行同步 URL
   const rerenderCurrentView = (overrides: {
-    hideIslands?: boolean;
+    showIslands?: boolean;
     showAuthors?: boolean;
     readingFilter?: import("../store").ReadingFilter;
   }) => {
@@ -351,7 +351,7 @@ export default function Sidebar() {
     } else {
       syncUrl({
         view: state.currentView,
-        hideIslands: overrides.hideIslands != null ? overrides.hideIslands : state.hideIslands,
+        showIslands: overrides.showIslands != null ? overrides.showIslands : state.showIslands,
         showAuthors: overrides.showAuthors != null ? overrides.showAuthors : state.showAuthors,
         readingFilter: overrides.readingFilter != null ? overrides.readingFilter : state.readingFilter,
       });
@@ -381,12 +381,12 @@ export default function Sidebar() {
 
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.checked;
-    dispatch({ type: "SET_HIDE_ISLANDS", value });
-    rerenderCurrentView({ hideIslands: value });
+    dispatch({ type: "SET_SHOW_ISLANDS", value });
+    rerenderCurrentView({ showIslands: value });
     const n = islandWorkCount(state.fullData);
     dispatch({
       type: "SET_TOAST",
-      msg: value ? `${n} 部作品已隐藏` : `${n} 部作品已显示`,
+      msg: value ? `${n} 部孤岛作品已显示` : `${n} 部孤岛作品已隐藏`,
       kind: "info",
     });
   };

@@ -5,7 +5,7 @@
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   备份为**整库快照**(`backups/` 下 `.db` + 管理端「快照」恢复);`data/export/*.csv`
-  自动导出层已于 2026-08-27 移除(数据管理页「导出 CSV」按钮为手动导出);Neo4j
+  自动导出层已于 2026-08-27 移除(星云工坊页「导出 CSV」按钮为手动导出);Neo4j
   查询层与 JSON 兜底已退役
 - 时间戳:所有时间字段(`createdAt` / `updatedAt` / `deletedAt` / `created_at` /
   `expires_at` / `ts`)均为 UTC 秒级 ISO-8601 字符串(统一 `+00:00`)
@@ -263,7 +263,7 @@
 
 ## 与用户导出 CSV / API 形状的对应
 
-数据管理页「导出 CSV」按钮(所有登录用户)返回三张表的 zip:
+星云工坊页「导出 CSV」按钮(所有登录用户)返回三张表的 zip:
 
 - `authors.csv` / `edges.csv` 的列与表列一一对应;
 - `works.csv` 在 `Title_Other` 之后插入 `author_id` 派生列(work_authors 按

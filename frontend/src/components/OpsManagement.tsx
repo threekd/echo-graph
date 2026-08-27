@@ -1,5 +1,5 @@
 /* 运维管理窗口(仅 admin):日志(审计) + 快照(备份恢复)。
-   与「数据管理 / 用户管理」同款窗口样式;子 Tab 为 日志 / 快照。 */
+   与「星云工坊 / 用户管理」同款窗口样式;子 Tab 为 日志 / 快照。 */
 
 import { useState } from "react";
 import AuditPanel from "./admin/AuditPanel";
@@ -17,7 +17,7 @@ const authFetch = (url: string, options?: RequestInit): Promise<Response> =>
 
 export default function OpsManagement({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<OpsTab>("audit");
-  // 日志表排序/筛选状态(与数据管理页同款)
+  // 日志表排序/筛选状态(与星云工坊页同款)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [textFilters, setTextFilters] = useState<Record<string, string>>({});

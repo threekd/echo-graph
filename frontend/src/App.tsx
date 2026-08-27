@@ -125,7 +125,8 @@ function AppContent() {
     if (!fullData || !fullData.nodes.length) return;
     const cam = parts.cam ? parseCam(parts.cam) : null;
     const flags = {
-      hideIslands: parts.islands === "1" || location.search.indexOf("hideislands") !== -1,
+      // 旧版 islands=1 / ?hideislands=1 仍表示"隐藏孤岛",默认显示(勾选)
+      showIslands: !(parts.islands === "1") && !(location.search.indexOf("hideislands") !== -1),
       showAuthors: parts.authors !== "0",
       showWorkLabels: parts.worklabels !== "0",
       readingFilter: (
@@ -137,12 +138,12 @@ function AppContent() {
     };
     // 同步过滤状态到 React store(渲染函数同时接收显式 flags,不依赖同步生效)
     if (
-      st.hideIslands !== flags.hideIslands ||
+      st.showIslands !== flags.showIslands ||
       st.showAuthors !== flags.showAuthors ||
       st.showWorkLabels !== flags.showWorkLabels ||
       st.readingFilter !== flags.readingFilter
     ) {
-      dispatch({ type: "SET_HIDE_ISLANDS", value: flags.hideIslands });
+      dispatch({ type: "SET_SHOW_ISLANDS", value: flags.showIslands });
       dispatch({ type: "SET_SHOW_AUTHORS", value: flags.showAuthors });
       dispatch({ type: "SET_SHOW_WORK_LABELS", value: flags.showWorkLabels });
       dispatch({ type: "SET_READING_FILTER", value: flags.readingFilter });
@@ -173,7 +174,7 @@ function AppContent() {
     } else if (v.indexOf("path:") === 0) {
       const seg = v.slice(5).split(",");
       renderPath(seg[0], seg[1], flags);
-    } else if (v === "main" || cam || flags.hideIslands || !flags.showAuthors) {
+    } else if (v === "main" || cam || !flags.showIslands || !flags.showAuthors) {
       renderMain(cam ? { camera: cam } : {}, fullData, flags);
     }
   }, [dispatch, applyHashSpace]);
@@ -182,7 +183,7 @@ function AppContent() {
   useEffect(() => {
     fetchMe().then((user) => {
       if (user) dispatch({ type: "SET_USER", user });
-      // 深链 ?admin / #v=admin:仅 admin 角色进入数据管理
+      // 深链 ?admin / #v=admin:仅 admin 角色进入星云工坊
       const wantAdmin =
         new URLSearchParams(location.search).has("admin") ||
         (location.hash || "").indexOf("admin") !== -1;

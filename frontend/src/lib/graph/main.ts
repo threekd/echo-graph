@@ -8,15 +8,15 @@ export function renderMain(opts: any, dataOverride?: GraphData | null, overrides
   const st = getState();
   // dataOverride 用于首次加载(此时 state 尚未更新),同样经过默认过滤
   let data = filterSingleWorkAuthors(dataOverride || st.fullData);
-  const hideIslands = overrides && typeof overrides.hideIslands === "boolean" ? overrides.hideIslands : st.hideIslands;
+  const showIslands = overrides && typeof overrides.showIslands === "boolean" ? overrides.showIslands : st.showIslands;
   const showAuthors = overrides && typeof overrides.showAuthors === "boolean" ? overrides.showAuthors : st.showAuthors;
   const readingFilter =
     overrides && typeof overrides.readingFilter === "string" ? overrides.readingFilter : st.readingFilter;
   data = filterWorksByReading(data, readingFilter);
-  if (hideIslands) data = filterIslands(data);
+  if (!showIslands) data = filterIslands(data);
   data = filterAuthorsWith(data, showAuthors);
   commitView("main", data, opts || {});
-  syncUrl({ view: "main", hideIslands, showAuthors, readingFilter, space: opts && opts.space });
+  syncUrl({ view: "main", showIslands, showAuthors, readingFilter, space: opts && opts.space });
   // 详情栏内容取决于当前视图:主视图无中心节点,一律清空
   dispatch({ type: "SET_PANEL", panel: { type: "empty" } });
 }

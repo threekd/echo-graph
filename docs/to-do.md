@@ -340,3 +340,5 @@
   - 文档同步:`docs/introduction.md` / `permissions.md` / `data_schema.md` /
     `ops-manual.md` / `ui.md` / `deploy/DEPLOY.md` / `.env.example` 移除
     公共星云/官方图谱/默认视图描述。
+- [x] 侧边栏「数据管理」更名为「星云工坊」:按钮、管理窗口标题与文档中的
+      用户可见叫法统一(代码注释与历史 changelog 保留原称谓)。

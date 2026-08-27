@@ -8,7 +8,7 @@ import { commitView, syncUrl, type ViewOpts } from "./view";
 function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
   const st = getState();
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
-  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : st.hideIslands;
+  const showIslands = opts && typeof opts.showIslands === "boolean" ? opts.showIslands : st.showIslands;
   const fullData = opts?.fullData || st.fullData;
   if (!showAuthors) return data;
   const nodes = data.nodes.slice();
@@ -30,8 +30,8 @@ function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
       }
     });
   });
-  // 未勾选"隐藏孤岛星"时:把当前视图里每位作者名下的全部作品也展示出来(勾选后回到仅涟漪节点的行为)
-  if (!hideIslands) {
+  // 勾选"孤岛节点"(显示)时:把当前视图里每位作者名下的全部作品也展示出来(取消勾选后回到仅涟漪节点的行为)
+  if (showIslands) {
     nodes.filter((n) => n.type === "author").forEach((a) => {
       fullData.nodes.filter((w) => w.type === "work" && workAuthorIds(w).includes(a.id)).forEach((w) => {
         if (have[w.id]) return;
@@ -46,7 +46,7 @@ function addAuthorsTo(data: GraphData, opts?: ViewOpts): GraphData {
 
 export function renderRipple(detail: any, hops?: number | string, opts?: ViewOpts) {
   const center = detail.work.id;
-  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : getState().hideIslands;
+  const showIslands = opts && typeof opts.showIslands === "boolean" ? opts.showIslands : getState().showIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : getState().showAuthors;
   const fullData = opts?.fullData || getState().fullData;
   // 动态上限:该作品实际可达的最远跳数(无人工上限,后端同样不限)
@@ -70,15 +70,15 @@ export function renderRipple(detail: any, hops?: number | string, opts?: ViewOpt
     const n = findNode(id, fullData);
     if (n) nodes.push(n);
   });
-  const data = addAuthorsTo({ nodes, edges, centerId: center }, { hideIslands, showAuthors, fullData });
+  const data = addAuthorsTo({ nodes, edges, centerId: center }, { showIslands, showAuthors, fullData });
   commitView("ripple", data, opts || {});
   syncUrl({
     view: "ripple", id: center, hops: expandHops,
-    hideIslands, showAuthors,
+    showIslands, showAuthors,
   });
 }
 
-// 涟漪视图下切换"隐藏孤岛星"等状态时,按当前设置重新渲染(保持相机)
+// 涟漪视图下切换"孤岛节点"等状态时,按当前设置重新渲染(保持相机)
 export function reRenderRipple() {
   const st = getState();
   if (st.currentView !== "ripple" || !st.rippleCenter) return;
@@ -96,7 +96,7 @@ export function expandRippleDebounced(hops: number, centerId?: string, fullData?
     .then((data: any) => {
       const st = getState();
       const viewData = addAuthorsTo(data, {
-        hideIslands: st.hideIslands,
+        showIslands: st.showIslands,
         showAuthors: st.showAuthors,
         fullData: fullData || st.fullData,
       });
@@ -105,9 +105,8 @@ export function expandRippleDebounced(hops: number, centerId?: string, fullData?
       dispatch({ type: "SET_TOAST", msg: hops + " 级扩散 · " + works + " 本书" });
       syncUrl({
         view: "ripple", id: viewData.centerId, hops,
-        hideIslands: st.hideIslands, showAuthors: st.showAuthors,
+        showIslands: st.showIslands, showAuthors: st.showAuthors,
       });
     })
     .catch(failToast);
 }
-

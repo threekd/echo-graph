@@ -1,4 +1,4 @@
-/* 数据管理页的表单选择器组件与选项数据(从 Admin.tsx 拆出,降低单体体积) */
+/* 星云工坊页的表单选择器组件与选项数据(从 Admin.tsx 拆出,降低单体体积) */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuthorRow, WorkRow } from "../../lib/adminTypes";

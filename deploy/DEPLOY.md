@@ -21,7 +21,8 @@
    星云(草稿/驳回对自己可见);游客无默认图谱,可通过星际跃迁浏览公开星云
    (`/api/space/*`)。如需公开展示某星云,把该用户的星云可见性设为公开。
 3. **引导管理员**:在 `.env` 配置 `ADMIN_BOOTSTRAP_EMAIL`,该邮箱注册时自动获得
-   admin 角色(首个管理员引导);数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
+   admin 角色(首个管理员引导);管理接口(`/api/admin/*`)只认 admin 角色登录态,
+   已移除 ADMIN_TOKEN。
 4. **账号体系(可选但建议)**:注册接口含 Cloudflare Turnstile 人机验证——在
    Cloudflare Dashboard 创建 Site,把 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
    写入 `.env`(**未配置密钥时注册默认失败**,仅本地开发可设
@@ -101,7 +102,7 @@ SQLite 为权威库,schema 迁移由服务启动时自动执行;数据备份/恢
 - **异地备份**:建议把 `backups/` 定期同步到异地(rsync / rclone / 对象存储);
   自动化方案见 `docs/to-do.md`「整库异地备份」待办。
 
-> 提示:单用户数据导出请用数据管理页「导出 CSV」按钮(`/api/me/export`,zip)。
+> 提示:单用户数据导出请用星云工坊页「导出 CSV」按钮(`/api/me/export`,zip)。
 
 ## 5. 备份策略
 

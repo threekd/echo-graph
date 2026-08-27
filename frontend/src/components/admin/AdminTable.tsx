@@ -1,4 +1,4 @@
-/* 数据管理通用表格:排序、筛选、操作列(纯展示 + 内置 applyAdminQuery 计算)。 */
+/* 星云工坊通用表格:排序、筛选、操作列(纯展示 + 内置 applyAdminQuery 计算)。 */
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { applyAdminQuery } from "./query";

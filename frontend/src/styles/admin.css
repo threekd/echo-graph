@@ -1,4 +1,4 @@
-/* ===================== 数据管理 ===================== */
+/* ===================== 星云工坊 ===================== */
 #admin-overlay {
   position: fixed;
   inset: 0;
@@ -358,10 +358,15 @@ th.sortable.active .sort-icon {
 }
 #btn-mine {
   margin-top: 8px;
-  border-color: rgba(138, 184, 255, 0.45);
-  background: linear-gradient(120deg, rgba(37, 72, 190, 0.42), rgba(34, 211, 238, 0.16));
+  border-color: rgba(148, 163, 255, 0.4);
+  background: linear-gradient(
+    135deg,
+    rgba(80, 120, 255, 0.26) 0%,
+    rgba(34, 211, 238, 0.1) 55%,
+    rgba(10, 14, 34, 0.5) 100%
+  );
   color: #dce8ff;
-  box-shadow: 0 0 14px rgba(80, 120, 255, 0.22);
+  box-shadow: 0 0 14px rgba(80, 120, 255, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -370,12 +375,21 @@ th.sortable.active .sort-icon {
 #btn-mine.active {
   color: #fff;
   border-color: rgba(138, 184, 255, 0.9);
-  background: linear-gradient(120deg, rgba(49, 78, 160, 0.75), rgba(34, 211, 238, 0.28));
-  box-shadow: 0 0 20px rgba(138, 184, 255, 0.45);
+  background: linear-gradient(
+    135deg,
+    rgba(80, 120, 255, 0.42) 0%,
+    rgba(34, 211, 238, 0.2) 60%,
+    rgba(49, 78, 160, 0.55) 100%
+  );
+  box-shadow: 0 0 18px rgba(138, 184, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 #btn-mine:hover {
   border-color: rgba(138, 184, 255, 0.85);
-  box-shadow: 0 0 20px rgba(138, 184, 255, 0.45);
+  box-shadow: 0 0 16px rgba(138, 184, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.mine-btn-icon {
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 4px rgba(138, 184, 255, 0.3));
 }
 #btn-jump {
   margin-top: 8px;

@@ -1,4 +1,4 @@
-/* 数据管理表格的筛选/排序纯逻辑(与渲染解耦,便于单元测试) */
+/* 星云工坊表格的筛选/排序纯逻辑(与渲染解耦,便于单元测试) */
 
 import type { AuthorRow, EdgeRow, WorkRow } from "../../lib/adminTypes";
 

@@ -15,7 +15,7 @@ export interface ViewOpts {
   from?: string;
   to?: string;
   space?: Space; // 显式指定星云上下文:空间切换时 state 尚未提交,避免 syncUrl 读到旧值
-  hideIslands?: boolean;
+  showIslands?: boolean;
   showAuthors?: boolean;
   showWorkLabels?: boolean;
   readingFilter?: ReadingFilter;
@@ -72,13 +72,13 @@ function buildHash(opts: ViewOpts | undefined): string {
   } else {
     parts.push("v=main");
   }
-  const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : st.hideIslands;
+  const showIslands = opts && typeof opts.showIslands === "boolean" ? opts.showIslands : st.showIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
   const showWorkLabels =
     opts && typeof opts.showWorkLabels === "boolean" ? opts.showWorkLabels : st.showWorkLabels;
   const readingFilter =
     opts && typeof opts.readingFilter === "string" ? opts.readingFilter : st.readingFilter;
-  if (hideIslands) parts.push("islands=1");
+  if (!showIslands) parts.push("islands=1");
   if (!showAuthors) parts.push("authors=0");
   if (!showWorkLabels) parts.push("worklabels=0");
   if (readingFilter && readingFilter !== "all") parts.push("reading=" + readingFilter);

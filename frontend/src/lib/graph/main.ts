@@ -12,9 +12,9 @@ export function renderMain(opts: any, dataOverride?: GraphData | null, overrides
   const showAuthors = overrides && typeof overrides.showAuthors === "boolean" ? overrides.showAuthors : st.showAuthors;
   const readingFilter =
     overrides && typeof overrides.readingFilter === "string" ? overrides.readingFilter : st.readingFilter;
+  data = filterWorksByReading(data, readingFilter);
   if (hideIslands) data = filterIslands(data);
   data = filterAuthorsWith(data, showAuthors);
-  data = filterWorksByReading(data, readingFilter);
   commitView("main", data, opts || {});
   syncUrl({ view: "main", hideIslands, showAuthors, readingFilter, space: opts && opts.space });
   // 详情栏内容取决于当前视图:主视图无中心节点,一律清空

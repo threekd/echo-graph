@@ -5,6 +5,7 @@ import {
   filterAuthorIslands,
   filterIslands,
   filterSingleWorkAuthors,
+  filterWorksByReading,
   islandWorkCount,
   isAnonymousAuthor,
   maxEchoHops,
@@ -110,6 +111,33 @@ describe("filterIslands", () => {
     // w1/w4 有提及 -> a1 可见;w2(合著)/w3 无提及 -> 隐藏,连带 a2 无可见作品 -> 隐藏
     const out = filterIslands(data);
     expect(out.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w4"]);
+  });
+});
+
+describe("filterWorksByReading", () => {
+  const readingData = {
+    nodes: [
+      node("a1", "author"),
+      node("a2", "author"),
+      node("w1", "work", { author_id: "a1", readingStatus: "read" }),
+      node("w2", "work", { author_id: "a1", readingStatus: "unread" }),
+      node("w3", "work", { author_id: "a2", readingStatus: "read" }),
+    ],
+    edges: [
+      { source: "w1", target: "a1", type: "authored" },
+      { source: "w2", target: "a1", type: "authored" },
+      { source: "w3", target: "a2", type: "authored" },
+    ],
+  };
+
+  it("只保留匹配阅读状态的作品及其作者,名下无匹配作品的作者一并隐藏", () => {
+    const out = filterWorksByReading(readingData, "read");
+    const ids = out.nodes.map((n) => n.id).sort();
+    expect(ids).toEqual(["a1", "a2", "w1", "w3"]);
+  });
+
+  it("全部时原样返回", () => {
+    expect(filterWorksByReading(readingData, "all")).toBe(readingData);
   });
 });
 

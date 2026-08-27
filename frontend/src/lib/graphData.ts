@@ -122,16 +122,17 @@ export function filterAuthorsWith(data: GraphData, showAuthors: boolean): GraphD
   };
 }
 
-// 按阅读状态过滤作品节点(保留作者节点;无 readingStatus 的作品不属于任何具体状态,被过滤)
+// 按阅读状态过滤作品节点:只保留匹配作品及其作者,
+// 名下没有匹配作品的作者一并隐藏(避免阅读筛选后出现无作品的孤星)
 export function filterWorksByReading(data: GraphData, filter: ReadingFilter): GraphData {
   if (filter === "all") return data;
   const keep: Record<string, boolean> = {};
   data.nodes.forEach((n) => {
-    if (n.type !== "work") {
-      keep[n.id] = true;
-      return;
-    }
-    if (n.readingStatus === filter) keep[n.id] = true;
+    if (n.type !== "work" || n.readingStatus !== filter) return;
+    keep[n.id] = true;
+    workAuthorIds(n).forEach((aid) => {
+      keep[aid] = true;
+    });
   });
   return {
     nodes: data.nodes.filter((n) => keep[n.id]),

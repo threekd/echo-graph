@@ -1,13 +1,13 @@
-/* 运维管理窗口(仅 admin):日志(审计) + 快照(备份恢复)。
-   与「星云工坊 / 用户管理」同款窗口样式;子 Tab 为 日志 / 快照。 */
+/* 运维管理窗口(仅 admin):快照(备份恢复) + 日志(审计)。
+   与「星云工坊 / 用户管理」同款窗口样式;子 Tab 为 快照 / 日志。 */
 
 import { useState } from "react";
 import AuditPanel from "./admin/AuditPanel";
 import SnapshotsPanel from "./admin/SnapshotsPanel";
 
 const TABS = [
-  { key: "audit", label: "日志" },
   { key: "snapshots", label: "快照" },
+  { key: "audit", label: "日志" },
 ] as const;
 
 type OpsTab = (typeof TABS)[number]["key"];
@@ -16,7 +16,7 @@ const authFetch = (url: string, options?: RequestInit): Promise<Response> =>
   fetch(url, options);
 
 export default function OpsManagement({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<OpsTab>("audit");
+  const [tab, setTab] = useState<OpsTab>("snapshots");
   // 日志表排序/筛选状态(与星云工坊页同款)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});

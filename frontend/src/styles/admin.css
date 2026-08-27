@@ -760,6 +760,16 @@ th.sortable.active .sort-icon {
   text-decoration: underline dotted rgba(138, 184, 255, 0.55);
 }
 .llm-drafts .llm-batch-author-btn:hover { color: #dce6ff; }
+.llm-drafts .llm-reuse-target {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  color: #8fd0a8;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.llm-drafts .llm-batch-title-btn:hover .llm-reuse-target,
+.llm-drafts .llm-batch-author-btn:hover .llm-reuse-target { text-decoration: none; }
 .llm-drafts .llm-batch-meta { color: #8a93a6; font-size: 12px; }
 .llm-drafts .llm-batch-stats {
   display: inline-flex;

@@ -378,6 +378,61 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
 
+    def test_admin_permanent_delete_requires_soft_deleted(self) -> None:
+        """未软删除的行不允许永久删除(400)。"""
+        import app.admin as admin
+
+        author = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
+        self.seed([author])
+        with self.assertRaises(HTTPException) as ctx:
+            admin.permanent_delete("authors", author["id"])
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_admin_permanent_delete_work_and_edges(self) -> None:
+        """软删作品后永久删除:作品与相关涟漪均物理消失,无关作品保留。"""
+        import app.admin as admin
+
+        w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
+        works = [
+            {"id": w1, "language": "en", "originalTitle": "A", "Title_CN": "甲书"},
+            {"id": w2, "language": "en", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"}]
+        self.seed([], works, edges)
+        admin.delete("works", w1)
+        res = admin.permanent_delete("works", w1)
+        self.assertTrue(res["ok"])
+        data = sqlite_store.list_all()
+        work_ids = [r["id"] for r in data["works"]]
+        edge_ids = [r["id"] for r in data["edges"]]
+        self.assertNotIn(w1, work_ids)
+        self.assertNotIn(e1, edge_ids)
+        self.assertIn(w2, work_ids)
+
+    def test_admin_permanent_delete_author_cascades(self) -> None:
+        """软删作者后永久删除:作者/名下作品/相关涟漪全部物理消失。"""
+        import app.admin as admin
+
+        a1, w1, w2, e1 = (str(uuid.uuid4()) for _ in range(4))
+        authors = [{"id": a1, "originalName": "A", "Name_CN": "甲"}]
+        works = [
+            {"id": w1, "language": "en", "originalTitle": "A", "Title_CN": "甲书", "author_id": a1},
+            {"id": w2, "language": "en", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"}]
+        self.seed(authors, works, edges)
+        admin.delete("authors", a1)
+        res = admin.permanent_delete("authors", a1)
+        self.assertTrue(res["ok"])
+        data = sqlite_store.list_all()
+        author_ids = {r["id"] for r in data["authors"]}
+        work_ids = {r["id"] for r in data["works"]}
+        edge_ids = {r["id"] for r in data["edges"]}
+        self.assertNotIn(a1, author_ids)
+        self.assertNotIn(w1, work_ids)
+        self.assertNotIn(e1, edge_ids)
+        self.assertIn(w2, work_ids)  # 无关作品保留
+
     def test_admin_create_persists_and_audits(self) -> None:
         import app.admin as admin
 

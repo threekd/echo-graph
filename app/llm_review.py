@@ -381,11 +381,25 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
         "ripples": sum(len(b["ripples"]) for b in batches),
         "published": len(published),
     }
+    # 复用/发布目标的名称映射:供前端展示「原名 → 已复用《目标名》」
+    reuse_labels: dict[str, dict[str, str]] = {"authors": {}, "works": {}}
+    with db_sqlite._db() as conn:
+        for p in published:
+            if p["kind"] not in ("authors", "works") or not p["public_id"]:
+                continue
+            col = "Name_CN" if p["kind"] == "authors" else "Title_CN"
+            row = conn.execute(
+                f"SELECT {col} AS label FROM {KIND_TABLE[p['kind']]} WHERE id = ?",
+                (p["public_id"],),
+            ).fetchone()
+            if row and row["label"]:
+                reuse_labels[p["kind"]][p["public_id"]] = row["label"]
     return {
         "batches": batches,
         "published": published,
         "counts": counts,
         "space_counts": {"authors": len(space_authors), "works": len(space_works)},
+        "reuse_labels": reuse_labels,
         # 审核人个人库全量作者/作品(排除 AI 草稿,含 author_id),供编辑涟漪的
         # 源/目标作品下拉选择(批内 AI 草稿由前端与 batches 合并展示)
         "space": {
@@ -592,7 +606,17 @@ def _staging_row(conn, kind: Kind, item_id: str, owner: str) -> dict:
     if row.get("deletedAt"):
         raise HTTPException(status_code=409, detail="草稿已删除")
     if row.get("published_to_id"):
-        raise HTTPException(status_code=409, detail="该草稿已批准发布,不可重复操作")
+        raise HTTPException(status_code=409, detail="该草稿已发布或已复用,不可重复操作")
+    return row
+
+
+def _editable_draft_row(conn, kind: Kind, item_id: str, owner: str) -> dict:
+    """编辑用的草稿行:存在、未软删即可(允许已发布/已复用,内容修正不影响映射)。"""
+    row = sqlite_store.get_row(conn, kind, item_id, owner)
+    if row is None or row.get("created_by") != "llm":
+        raise HTTPException(status_code=404, detail=f"草稿不存在:{item_id}")
+    if row.get("deletedAt"):
+        raise HTTPException(status_code=409, detail="草稿已删除")
     return row
 
 
@@ -712,9 +736,10 @@ def _reuse_draft_row(
     """把一条草稿行标记为复用库中已有记录(published_to_id),返回复用目标 id。
 
     复用 = 草稿行回写 published_to_id(与批准时 reuse 同语义),不复制、不修改
-    目标行;后续批准依赖该草稿的条目自动解析到复用目标。
+    目标行;后续批准依赖该草稿的条目自动解析到复用目标。已复用草稿允许
+    **更换目标**(再次调用即更新映射;目标相同则幂等返回)。
     """
-    staging = _staging_row(conn, kind, item_id, owner)
+    staging = _editable_draft_row(conn, kind, item_id, owner)
     target = sqlite_store.get_row(conn, kind, reuse_id)
     if target is None or target.get("deletedAt") or target.get("owner_id") != owner:
         raise HTTPException(status_code=404, detail="复用目标不在自己的星云或已删除")
@@ -725,13 +750,16 @@ def _reuse_draft_row(
         target.get("reviewStatus") != "reviewed" or target.get("published_to_id")
     ):
         raise HTTPException(status_code=400, detail="复用目标不能是 AI 草稿")
+    if staging.get("published_to_id") == reuse_id:
+        return reuse_id  # 目标未变化,幂等返回
     sqlite_store.update_row(
         conn, kind, item_id, staging, owner_id=owner,
         extra={"published_to_id": reuse_id, "reviewStatus": "reviewed", "updatedAt": now},
     )
     db_sqlite.audit(
         conn, "llm_reuse", kind, item_id,
-        f"复用{kind}草稿「{_label(kind, staging)}」→ #{reuse_id}({detail_hint})",
+        f"复用{kind}草稿「{_label(kind, staging)}」→ #{reuse_id}"
+        f"(原目标 {staging.get('published_to_id') or '无'};{detail_hint})",
         before=staging,
         after={**staging, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
         actor=actor,
@@ -1084,11 +1112,16 @@ def edit_draft(
     row: dict,
     user: dict = Depends(require_admin_or_vip),  # noqa: B008
 ) -> dict:
-    """编辑草稿内容(修正 AI 提取),审核状态保持不变;已发布的草稿不可再编辑。"""
+    """编辑草稿内容(修正 AI 提取),审核状态保持不变。
+
+    已发布/已复用的草稿(published_to_id 非空)仍允许编辑内容——发布/复用映射
+    指向已有记录,草稿内容修正不影响已发布数据;批准/驳回/重开仍由
+    _staging_row 的「已发布不可重复操作」保护。
+    """
     staging_owner = user["id"]
     now = db_sqlite.now_iso()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        staging = _staging_row(conn, kind, item_id, staging_owner)
+        staging = _editable_draft_row(conn, kind, item_id, staging_owner)
         merged = clean_row({**staging, **row})
         merged["id"] = item_id
         merged["createdAt"] = staging.get("createdAt") or now

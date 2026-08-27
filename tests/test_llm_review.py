@@ -530,6 +530,76 @@ class LlmReviewTest(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 400)
 
+    def test_edit_draft_allowed_after_reuse(self) -> None:
+        """复用/发布后的草稿仍可编辑内容,且 published_to_id 映射保留。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '已有源书', '已有源书', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+        reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=manual_w), self.vip)
+        result = edit_draft(
+            "works",
+            batch["work1"],
+            {"Title_CN": "源书A(修正)", "originalTitle": "源书A(修正)"},
+            self.vip,
+        )
+        self.assertEqual(result["row"]["Title_CN"], "源书A(修正)")
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id, Title_CN FROM works WHERE id = ?",
+                (batch["work1"],),
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], manual_w)  # 复用映射保留
+            self.assertEqual(row["Title_CN"], "源书A(修正)")
+
+    def test_reuse_can_change_target(self) -> None:
+        """复用后可以更换目标:published_to_id 更新为新目标;目标相同幂等。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            book_a = db_sqlite.new_uuid()
+            book_b = db_sqlite.new_uuid()
+            for wid, title in ((book_a, "已有源书A"), (book_b, "已有源书B")):
+                conn.execute(
+                    "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                    " createdAt, updatedAt, created_by, owner_id)"
+                    " VALUES (?, 'zh', ?, ?, 'reviewed', ?, ?, 'user', ?)",
+                    (wid, title, title, now, now, self.vip["id"]),
+                )
+        reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=book_a), self.vip)
+        result = reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=book_b), self.vip)
+        self.assertEqual(result["reuse_id"], book_b)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id FROM works WHERE id = ?", (batch["work1"],)
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], book_b)
+        # 目标相同:幂等返回,不报错
+        same = reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=book_b), self.vip)
+        self.assertEqual(same["reuse_id"], book_b)
+
+    def test_drafts_include_reuse_labels(self) -> None:
+        """llm_drafts 返回复用目标名称映射(reuse_labels),供前端展示。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            book = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '已有源书', '已有源书', 'reviewed', ?, ?, 'user', ?)",
+                (book, now, now, self.vip["id"]),
+            )
+        reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=book), self.vip)
+        drafts = llm_drafts(self.vip)
+        self.assertEqual(drafts["reuse_labels"]["works"][book], "已有源书")
+
     def test_non_llm_row_not_reviewable_via_draft_endpoints(self) -> None:
         """普通用户空间行(created_by != 'llm')不能经草稿审核接口操作。"""
         now = db_sqlite.now_iso()
@@ -579,12 +649,23 @@ class LlmReviewTest(unittest.TestCase):
         self.assertEqual(edited["row"]["Name_CN"], "改后作者")
         self.assertEqual(edited["row"]["reviewStatus"], "draft")  # 编辑不改变审核状态
 
-    def test_published_draft_not_editable(self) -> None:
-        """已批准发布的草稿不可再编辑(409)。"""
+    def test_published_draft_editable_but_not_repeatable(self) -> None:
+        """已批准发布的草稿可编辑内容(映射保留),但不可重复批准/驳回/重开(409)。"""
         chain = _stage_chain(self.vip["id"], "A")
-        approve_draft("authors", chain["author_id"], None, self.vip)
+        approved = approve_draft("authors", chain["author_id"], None, self.vip)
+        # 编辑内容成功,reviewStatus 保持 reviewed,published_to_id 映射保留
+        edited = edit_draft("authors", chain["author_id"], {"Name_CN": "x"}, self.vip)
+        self.assertEqual(edited["row"]["Name_CN"], "x")
+        self.assertEqual(edited["row"]["reviewStatus"], "reviewed")
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id FROM authors WHERE id = ?",
+                (chain["author_id"],),
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], approved["public_id"])
+        # 已发布草稿不可重复批准
         with self.assertRaises(HTTPException) as ctx:
-            edit_draft("authors", chain["author_id"], {"Name_CN": "x"}, self.vip)
+            approve_draft("authors", chain["author_id"], None, self.vip)
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_approve_with_reuse_own_space_row(self) -> None:

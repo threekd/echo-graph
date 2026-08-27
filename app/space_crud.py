@@ -392,3 +392,87 @@ def restore_row(
         )
     after_write(owner_id)
     return {"ok": True, "cascade": cascade}
+
+
+def permanent_delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) -> dict:
+    """永久删除(物理删除)一条**已软删除**的行,并级联清理引用,不可恢复。
+
+    仅允许软删除行(deletedAt 非空)。作品级联物理删除引用它的涟漪与作者关联;
+    作者级联物理删除其名下作品及相关涟漪与关联。若存在活跃引用(理论不应发生)
+    则拒绝,避免破坏活跃数据。
+    """
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = _resolve_row(conn, kind, item_id, owner_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        if not row.get("deletedAt"):
+            raise HTTPException(status_code=400, detail="仅可永久删除已软删除的条目(请先软删除)")
+
+        def _delete_work(wid: str) -> None:
+            conn.execute("DELETE FROM work_authors WHERE work_id = ?", (wid,))
+            conn.execute(
+                "DELETE FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                (wid, wid),
+            )
+            conn.execute("DELETE FROM works WHERE id = ?", (wid,))
+
+        cascade: dict[str, list[str]] = {"works": [], "edges": []}
+        if kind == "edges":
+            conn.execute("DELETE FROM edges WHERE id = ?", (item_id,))
+        elif kind == "works":
+            active = conn.execute(
+                "SELECT 1 FROM edges WHERE (source_work_id = ? OR target_work_id = ?)"
+                " AND deletedAt IS NULL LIMIT 1",
+                (item_id, item_id),
+            ).fetchone()
+            if active:
+                raise HTTPException(status_code=409, detail="该作品仍被活跃涟漪引用,无法永久删除")
+            cascade["edges"] = [
+                r["id"]
+                for r in conn.execute(
+                    "SELECT id FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                    (item_id, item_id),
+                ).fetchall()
+            ]
+            _delete_work(item_id)
+        else:  # authors
+            work_ids = [
+                r["id"]
+                for r in conn.execute(
+                    "SELECT id FROM works WHERE id IN"
+                    " (SELECT work_id FROM work_authors WHERE author_id = ?)",
+                    (item_id,),
+                ).fetchall()
+            ]
+            active = conn.execute(
+                "SELECT 1 FROM works WHERE deletedAt IS NULL AND id IN"
+                " (SELECT work_id FROM work_authors WHERE author_id = ?) LIMIT 1",
+                (item_id,),
+            ).fetchone()
+            if active:
+                raise HTTPException(status_code=409, detail="该作者名下仍有活跃作品,无法永久删除")
+            for wid in work_ids:
+                cascade["works"].append(wid)
+                cascade["edges"].extend(
+                    r["id"]
+                    for r in conn.execute(
+                        "SELECT id FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                        (wid, wid),
+                    ).fetchall()
+                )
+                _delete_work(wid)
+            conn.execute("DELETE FROM work_authors WHERE author_id = ?", (item_id,))
+            conn.execute("DELETE FROM authors WHERE id = ?", (item_id,))
+
+        db_sqlite.audit(
+            conn, "delete", kind, item_id,
+            f"永久删除「{_audit_label(conn, kind, row, owner_id)}」"
+            + (
+                f"(连带 works={len(cascade['works'])} edges={len(cascade['edges'])})"
+                if any(cascade.values()) else ""
+            ),
+            before=row,
+            actor=actor,
+        )
+    after_write(owner_id)
+    return {"ok": True, "deleted": {"kind": kind, "id": item_id, "cascade": cascade}}

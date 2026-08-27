@@ -47,9 +47,17 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [confirmClear, setConfirmClear] = useState<{ workId: string; title: string } | null>(null);
   const [modal, setModal] = useState<EditModal | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [reuseSource, setReuseSource] = useState<{ workId: string; title: string } | null>(null);
+  const [reuseSource, setReuseSource] = useState<{
+    workId: string;
+    title: string;
+    currentLabel?: string;
+  } | null>(null);
   const [reuseWorkId, setReuseWorkId] = useState("");
-  const [reuseAuthor, setReuseAuthor] = useState<{ authorId: string; label: string } | null>(null);
+  const [reuseAuthor, setReuseAuthor] = useState<{
+    authorId: string;
+    label: string;
+    currentLabel?: string;
+  } | null>(null);
   const [reuseAuthorId, setReuseAuthorId] = useState("");
   const [batchFilter, setBatchFilter] = useState<Record<string, "approved" | "draft" | "rejected">>({});
 
@@ -185,6 +193,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   };
 
   const counts = data?.counts;
+  const reuseLabels = data?.reuse_labels;
   const sourceAuthorLabel = (a: AuthorRow): string => authorLabelOf(a);
   const workLabelOf = (w: WorkRow | undefined | null): string => (w ? workLabel(w) : "?");
   // 批次涟漪状态统计:批准(已发布映射)/ 草稿 / 驳回,按涟漪边计
@@ -240,6 +249,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const edgesList = data ? data.batches.flatMap((b) => b.ripples.map((r) => r.edge)) : [];
 
   const renderEntityActions = (batch: LlmDraftBatch) => {
+    // 源书草稿已发布/已复用(published_to_id 非空):不再显示「批准源书」
+    const sourcePublished = Boolean(batch.source.work.published_to_id);
     return (
     <span className="llm-actions">
       <button
@@ -277,7 +288,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       >
         清空
       </button>
-      {batch.ripples.length === 0 && (
+      {batch.ripples.length === 0 && !sourcePublished && (
         <>
           <button
             className="approve"
@@ -327,14 +338,29 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
               <span className={"llm-collapse-indicator" + (isCollapsed ? "" : " open")} aria-hidden="true">▸</span>
               <button
                 className="llm-batch-title llm-batch-title-btn"
-                title="点击选择库中已有作品进行复用(导入重复且未自动识别时,该批次涟漪将自动指向已有源书)"
+                title={
+                  b.source.work.published_to_id
+                    ? "点击更换复用目标(当前已复用)"
+                    : "点击选择库中已有作品进行复用(导入重复且未自动识别时,该批次涟漪将自动指向已有源书)"
+                }
                 onClick={(e) => {
                   e.stopPropagation();
-                  setReuseSource({ workId: b.source.work.id, title: workLabelOf(b.source.work) });
+                  setReuseSource({
+                    workId: b.source.work.id,
+                    title: workLabelOf(b.source.work),
+                    currentLabel: b.source.work.published_to_id
+                      ? reuseLabels?.works[b.source.work.published_to_id]
+                      : undefined,
+                  });
                   setReuseWorkId("");
                 }}
               >
                 《{workLabelOf(b.source.work)}》
+                {b.source.work.published_to_id && (
+                  <span className="llm-reuse-target">
+                    → 已复用《{reuseLabels?.works[b.source.work.published_to_id] ?? "?"}》
+                  </span>
+                )}
               </button>
               <span className="llm-batch-meta">
                 作者:
@@ -344,14 +370,29 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                         {ai > 0 && "、"}
                         <button
                           className="llm-batch-author-btn"
-                          title="点击选择库中已有作者进行复用(导入重复且未自动识别时,该批次涟漪将自动指向该作者)"
+                          title={
+                            a.published_to_id
+                              ? "点击更换复用目标(当前已复用)"
+                              : "点击选择库中已有作者进行复用(导入重复且未自动识别时,该批次涟漪将自动指向该作者)"
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
-                            setReuseAuthor({ authorId: a.id, label: authorLabelOf(a) });
+                            setReuseAuthor({
+                              authorId: a.id,
+                              label: authorLabelOf(a),
+                              currentLabel: a.published_to_id
+                                ? reuseLabels?.authors[a.published_to_id]
+                                : undefined,
+                            });
                             setReuseAuthorId("");
                           }}
                         >
                           {sourceAuthorLabel(a)}
+                          {a.published_to_id && (
+                            <span className="llm-reuse-target">
+                              → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
+                            </span>
+                          )}
                         </button>
                       </span>
                     ))
@@ -404,9 +445,15 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
               {(() => {
                 const filter = batchFilter[b.source.work.id];
                 const visible = filter ? b.ripples.filter((r) => rippleStatus(r) === filter) : b.ripples;
-                return visible.length === 0 ? (
+                // 未处理(草稿)排前,已批准/已驳回沉到卡片底部(稳定排序,保持原相对顺序)
+                const ordered = [...visible].sort((a, b) => {
+                  const ad = rippleStatus(a) === "draft" ? 0 : 1;
+                  const bd = rippleStatus(b) === "draft" ? 0 : 1;
+                  return ad - bd;
+                });
+                return ordered.length === 0 ? (
                   <p className="llm-empty">该批次没有{filter === "approved" ? "已批准" : filter === "rejected" ? "已驳回" : "草稿"}涟漪</p>
-                ) : visible.map((r, ri) => {
+                ) : ordered.map((r, ri) => {
                 const published = Boolean((r.edge as unknown as Record<string, unknown>).published_to_id);
                 const rejected = r.edge.reviewStatus === "rejected";
                 const evidence = String((r.edge as unknown as Record<string, unknown>).evidence || "");
@@ -477,8 +524,12 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                     <span className="llm-ripple-actions-right">
                       {published ? (
                         <span className="llm-published">
-                          已发布 #
-                          {shortId(String((r.edge as unknown as Record<string, unknown>).published_to_id))}
+                          已发布
+                          {(() => {
+                            const pid = String((r.edge as unknown as Record<string, unknown>).published_to_id);
+                            const label = reuseLabels?.works[pid];
+                            return label ? "《" + label + "》" : " #" + shortId(pid);
+                          })()}
                         </span>
                       ) : rejected ? (
                         <button onClick={() => reopen(r.edge.id)}>重开</button>
@@ -530,10 +581,19 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       {reuseSource && (
         <div id="auth-modal">
           <div className="auth-modal-card">
-            <h3>复用已有源书</h3>
+            <h3>{reuseSource.currentLabel ? "更换复用源书" : "复用已有源书"}</h3>
             <p>
-              批次《{reuseSource.title}》与库中已有作品重复且未自动识别？
-              选择已有作品后，该批次所有涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+              {reuseSource.currentLabel ? (
+                <>
+                  批次《{reuseSource.title}》当前已复用《{reuseSource.currentLabel}》。
+                  选择新作品后将更新映射（已发布的涟漪不受影响）。
+                </>
+              ) : (
+                <>
+                  批次《{reuseSource.title}》与库中已有作品重复且未自动识别？
+                  选择已有作品后，该批次所有涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+                </>
+              )}
             </p>
             <WorkPicker
               value={reuseWorkId}
@@ -561,10 +621,19 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       {reuseAuthor && (
         <div id="auth-modal">
           <div className="auth-modal-card">
-            <h3>复用已有作者</h3>
+            <h3>{reuseAuthor.currentLabel ? "更换复用作者" : "复用已有作者"}</h3>
             <p>
-              批次源书作者「{reuseAuthor.label}」与库中已有作者重复且未自动识别？
-              选择已有作者后，该批次涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+              {reuseAuthor.currentLabel ? (
+                <>
+                  批次源书作者「{reuseAuthor.label}」当前已复用《{reuseAuthor.currentLabel}》。
+                  选择新作者后将更新映射（已发布的涟漪不受影响）。
+                </>
+              ) : (
+                <>
+                  批次源书作者「{reuseAuthor.label}」与库中已有作者重复且未自动识别？
+                  选择已有作者后，该批次涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+                </>
+              )}
             </p>
             <AuthorPickerSingle
               value={reuseAuthorId}

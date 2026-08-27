@@ -28,6 +28,7 @@ from app.space_crud import (
     Kind,
     create_row,
     delete_row,
+    permanent_delete_row,
     restore_row,
     space_data,
     update_row,
@@ -128,6 +129,13 @@ def delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin))
 def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
     return restore_row(kind, item_id, admin["id"], admin["email"])
+
+
+@router.delete("/{kind}/{item_id}/permanent")
+def permanent_delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
+    """永久删除一条已软删除的行(物理删除,不可恢复),级联清理引用。"""
+    admin = _admin_context(user)
+    return permanent_delete_row(kind, item_id, admin["id"], admin["email"])
 
 
 @router.post("/users/{user_id}/vip")

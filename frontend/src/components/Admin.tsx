@@ -362,6 +362,34 @@ export default function Admin() {
       .catch((e) => setStatus("恢复失败: " + e.message));
   };
 
+  // 永久删除:物理删除已软删除的行(不可恢复),级联清理关联数据
+  const doPermanentDelete = (row: AdminRow) => {
+    const id = row.id;
+    setConfirmState({
+      title: "确认永久删除",
+      message: `将从数据库中彻底删除「${rowLabel(row)}」及其软删除的关联数据,不可恢复。确定继续吗?`,
+      danger: true,
+      onConfirm: () => {
+        authFetch(apiBase + "/" + kind + "/" + encodeURIComponent(id) + "/permanent", { method: "DELETE" })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) {
+              setStatus(`已永久删除「${rowLabel(row)}」`);
+              const key = kind as "authors" | "works" | "edges";
+              applyLocal((prev) => ({
+                ...prev,
+                [key]: (prev[key] || []).filter((r: AdminRow) => r.id !== id),
+              }));
+              refreshGraphAfterWrite();
+            } else {
+              setStatus(d.detail || "永久删除失败");
+            }
+          })
+          .catch((e) => setStatus("永久删除失败: " + e.message));
+      },
+    });
+  };
+
   const worksList: WorkRow[] = data ? data.works || [] : [];
   const authorsList: AuthorRow[] = data ? data.authors || [] : [];
   const worksById: Record<string, WorkRow> = {};
@@ -414,9 +442,9 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
+            {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
             {kind !== "llm" && (
               <>
-                {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
                 <button onClick={openAdd}>＋ 新增</button>
                 <button onClick={exportCsv}>导出 CSV</button>
               </>
@@ -478,7 +506,12 @@ export default function Admin() {
               onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
               renderActions={(r) =>
                 r.deletedAt
-                  ? <button onClick={() => doRestore(r.id)}>恢复</button>
+                  ? (
+                    <>
+                      <button onClick={() => doRestore(r.id)}>恢复</button>
+                      <button className="del" onClick={() => doPermanentDelete(r)}>永久删除</button>
+                    </>
+                  )
                   : <button onClick={() => openEdit(r)}>编辑</button>
               }
             />

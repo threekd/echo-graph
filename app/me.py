@@ -20,6 +20,7 @@ from app.space_crud import (
     Kind,
     create_row,
     delete_row,
+    permanent_delete_row,
     restore_row,
     space_data,
     update_row,
@@ -91,6 +92,12 @@ def my_delete(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> d
 @router.post("/{kind}/{item_id}/restore")
 def my_restore(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> dict:  # noqa: B008
     return restore_row(kind, item_id, user["id"], user["email"])
+
+
+@router.delete("/{kind}/{item_id}/permanent")
+def my_permanent_delete(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> dict:  # noqa: B008
+    """永久删除自己星云中一条已软删除的行(物理删除,不可恢复)。"""
+    return permanent_delete_row(kind, item_id, user["id"], user["email"])
 
 
 # 只读六件套(与 /api、/api/space 共用同一套实现,见 app/read_routes.py)

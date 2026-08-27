@@ -27,12 +27,19 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
   const [task, setTask] = useState<BookImportTask | null>(null);
   const [message, setMessage] = useState("");
   const timerRef = useRef<number | null>(null);
+  const logRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
     return () => {
       if (timerRef.current != null) window.clearTimeout(timerRef.current);
     };
   }, []);
+
+  // 日志更新时自动滚动到底部,保证展示的是最新输出
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [task?.log]);
 
   const poll = (taskId: string) => {
     authFetch("/api/admin/import-book/" + encodeURIComponent(taskId))
@@ -162,7 +169,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
         {phase === "running" && (
           <>
             <p className="import-progress">{task?.stage || "任务排队中…"}</p>
-            <pre className="import-log">{(task?.log || []).join("\n")}</pre>
+            <pre ref={logRef} className="import-log">{(task?.log || []).join("\n")}</pre>
             <div className="admin-modal-actions">
               <button onClick={onClose}>后台执行,先关闭窗口</button>
             </div>
@@ -182,7 +189,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
                 · {task.result.counts.failed} 条失败
               </li>
             </ul>
-            <pre className="import-log">{(task.log || []).join("\n")}</pre>
+            <pre ref={logRef} className="import-log">{(task.log || []).join("\n")}</pre>
             <div className="admin-modal-actions">
               <button onClick={onClose}>关闭</button>
             </div>
@@ -192,7 +199,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
         {phase === "error" && (
           <>
             <p className="import-error">导入失败:{message}</p>
-            <pre className="import-log">{(task?.log || []).join("\n")}</pre>
+            <pre ref={logRef} className="import-log">{(task?.log || []).join("\n")}</pre>
             <div className="admin-modal-actions">
               <button onClick={resetToForm}>重试</button>
               <button onClick={onClose}>关闭</button>

@@ -391,6 +391,35 @@ export default function Admin() {
     });
   };
 
+  // 行内直接修改阅读状态(只更新该字段,乐观锁带 updatedAt)
+  const onReadingStatusChange = (row: AdminRow, value: string) => {
+    const id = row.id;
+    const patch = {
+      readingStatus: value,
+      updatedAt: (row as unknown as Record<string, unknown>).updatedAt,
+    };
+    authFetch(apiBase + "/works/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) {
+          applyLocal((prev) => ({
+            ...prev,
+            works: (prev.works || []).map((w: WorkRow) =>
+              w.id === id ? { ...w, readingStatus: value as WorkRow["readingStatus"] } : w
+            ),
+          }));
+          setStatus("阅读状态已更新");
+        } else {
+          setStatus(d.detail || "更新失败");
+        }
+      })
+      .catch((e) => setStatus("更新失败: " + e.message));
+  };
+
   const worksList: WorkRow[] = data ? data.works || [] : [];
   const authorsList: AuthorRow[] = data ? data.authors || [] : [];
   const worksById: Record<string, WorkRow> = {};
@@ -518,6 +547,26 @@ export default function Admin() {
                   )
                   : <button onClick={() => openEdit(r)}>编辑</button>
               }
+              renderCell={(r, key) => {
+                if (kind === "works" && key === "readingStatus") {
+                  const rec = r as unknown as Record<string, unknown>;
+                  if (rec.deletedAt) return cellValue(r, key);
+                  return (
+                    <select
+                      className="admin-inline-select"
+                      value={String(rec.readingStatus || "")}
+                      onChange={(e) => onReadingStatusChange(r, e.target.value)}
+                      title="直接修改阅读状态"
+                    >
+                      <option value="">—</option>
+                      <option value="read">已读</option>
+                      <option value="reading">在读</option>
+                      <option value="unread">未读</option>
+                    </select>
+                  );
+                }
+                return cellValue(r, key);
+              }}
             />
           )}
         </div>

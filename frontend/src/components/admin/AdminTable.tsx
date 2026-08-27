@@ -17,6 +17,7 @@ interface Props<T> {
   sort: { key: string; dir: 1 | -1 } | null;
   cellValue: (row: T, key: string) => string;
   cellTitle?: (row: T, key: string) => string | undefined;
+  renderCell?: (row: T, key: string) => ReactNode; // 自定义单元格渲染(如行内编辑控件)
   uniqueValues: (key: string) => string[];
   onSort: (key: string) => void;
   onFilter: (key: string, value: string) => void;
@@ -34,6 +35,7 @@ export default function AdminTable<T extends object>({
   sort,
   cellValue,
   cellTitle,
+  renderCell,
   uniqueValues,
   onSort,
   onFilter,
@@ -123,7 +125,7 @@ export default function AdminTable<T extends object>({
           <tr key={String(rec.id || rec.source_work_id + ":" + rec.target_work_id)} className={rec.deletedAt ? "deleted" : ""}>
             {cols.map((c) => (
               <td key={c.key} title={cellTitle ? cellTitle(r, c.key) : undefined}>
-                {cellValue(r, c.key)}
+                {renderCell ? renderCell(r, c.key) : cellValue(r, c.key)}
               </td>
             ))}
             <td>{renderActions(r)}</td>

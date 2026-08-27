@@ -87,6 +87,16 @@
   font-size: 12px;
   cursor: pointer;
 }
+.admin-inline-select {
+  background: #0d1529;
+  color: var(--ink);
+  border: 1px solid rgba(148, 163, 255, 0.3);
+  border-radius: 6px;
+  padding: 1px 4px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 92px;
+}
 #admin-status {
   padding: 8px 18px;
   font-size: 12px;

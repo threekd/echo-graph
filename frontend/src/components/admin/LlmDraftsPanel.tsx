@@ -51,12 +51,14 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     workId: string;
     title: string;
     currentLabel?: string;
+    scope: "source" | "target";
   } | null>(null);
   const [reuseWorkId, setReuseWorkId] = useState("");
   const [reuseAuthor, setReuseAuthor] = useState<{
     authorId: string;
     label: string;
     currentLabel?: string;
+    scope: "source" | "target";
   } | null>(null);
   const [reuseAuthorId, setReuseAuthorId] = useState("");
   const [batchFilter, setBatchFilter] = useState<Record<string, "approved" | "draft" | "rejected">>({});
@@ -348,6 +350,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                   setReuseSource({
                     workId: b.source.work.id,
                     title: workLabelOf(b.source.work),
+                    scope: "source",
                     currentLabel: b.source.work.published_to_id
                       ? reuseLabels?.works[b.source.work.published_to_id]
                       : undefined,
@@ -380,6 +383,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                             setReuseAuthor({
                               authorId: a.id,
                               label: authorLabelOf(a),
+                              scope: "source",
                               currentLabel: a.published_to_id
                                 ? reuseLabels?.authors[a.published_to_id]
                                 : undefined,
@@ -464,11 +468,82 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                     <div className="llm-ripple-grid">
                       <div className="llm-field">
                         <span>目标作品</span>
-                        {r.target ? workLabelOf(r.target.work) : "?"}
+                        {r.target ? (
+                          <>
+                            <button
+                              className="llm-batch-title-btn"
+                              title={
+                                r.target.work.published_to_id
+                                  ? "点击更换复用目标(当前已复用)"
+                                  : "点击选择库中已有作品进行复用"
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReuseSource({
+                                  workId: r.target!.work.id,
+                                  title: workLabelOf(r.target!.work),
+                                  scope: "target",
+                                  currentLabel: r.target!.work.published_to_id
+                                    ? reuseLabels?.works[r.target!.work.published_to_id]
+                                    : undefined,
+                                });
+                                setReuseWorkId("");
+                              }}
+                            >
+                              {workLabelOf(r.target.work)}
+                            </button>
+                            {r.target.work.published_to_id && (
+                              <span className="llm-reuse-target">
+                                → 已复用《{reuseLabels?.works[r.target.work.published_to_id] ?? "?"}》
+                              </span>
+                            )}
+                            {r.hint && <span className="llm-hint-inline">{hintText(r.hint)}</span>}
+                          </>
+                        ) : "?"}
                       </div>
                       <div className="llm-field">
                         <span>目标作品作者</span>
-                        {r.target ? r.target.authors.map(sourceAuthorLabel).join("、") || "—" : "—"}
+                        {r.target ? (
+                          <>
+                            {r.target.authors.length
+                              ? r.target.authors.map((a, ai) => (
+                                  <span key={a.id}>
+                                    {ai > 0 && "、"}
+                                    <button
+                                      className="llm-batch-author-btn"
+                                      title={
+                                        a.published_to_id
+                                          ? "点击更换复用目标(当前已复用)"
+                                          : "点击选择库中已有作者进行复用"
+                                      }
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReuseAuthor({
+                                          authorId: a.id,
+                                          label: authorLabelOf(a),
+                                          scope: "target",
+                                          currentLabel: a.published_to_id
+                                            ? reuseLabels?.authors[a.published_to_id]
+                                            : undefined,
+                                        });
+                                        setReuseAuthorId("");
+                                      }}
+                                    >
+                                      {sourceAuthorLabel(a)}
+                                    </button>
+                                    {a.published_to_id && (
+                                      <span className="llm-reuse-target">
+                                        → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
+                                      </span>
+                                    )}
+                                  </span>
+                                ))
+                              : "—"}
+                            {r.author_hint && (
+                              <span className="llm-hint-inline">{hintText(r.author_hint)}</span>
+                            )}
+                          </>
+                        ) : "—"}
                       </div>
                       <div className="llm-field full">
                         <span>原文片段</span>
@@ -485,13 +560,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                         {note || "—"}
                       </div>
                     </div>
-                  {(r.hint || r.author_hint || r.edge_hint) && (
-                    <p className="llm-hint">
-                      {hintText(r.hint)}
-                      {hintText(r.author_hint)}
-                      {hintText(r.edge_hint)}
-                    </p>
-                  )}
+                  {r.edge_hint && <p className="llm-hint">{hintText(r.edge_hint)}</p>}
                   <div className="llm-ripple-actions">
                     {!published && r.target && (
                       <span className="llm-ripple-actions-left">
@@ -581,17 +650,21 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       {reuseSource && (
         <div id="auth-modal">
           <div className="auth-modal-card">
-            <h3>{reuseSource.currentLabel ? "更换复用源书" : "复用已有源书"}</h3>
+            <h3>
+              {reuseSource.currentLabel
+                ? (reuseSource.scope === "source" ? "更换复用源书" : "更换复用作品")
+                : (reuseSource.scope === "source" ? "复用已有源书" : "复用已有作品")}
+            </h3>
             <p>
               {reuseSource.currentLabel ? (
                 <>
-                  批次《{reuseSource.title}》当前已复用《{reuseSource.currentLabel}》。
-                  选择新作品后将更新映射（已发布的涟漪不受影响）。
+                  {reuseSource.scope === "source" ? "批次" : "涟漪目标作品"}《{reuseSource.title}》
+                  当前已复用《{reuseSource.currentLabel}》。选择新作品后将更新映射（已发布的涟漪不受影响）。
                 </>
               ) : (
                 <>
-                  批次《{reuseSource.title}》与库中已有作品重复且未自动识别？
-                  选择已有作品后，该批次所有涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+                  《{reuseSource.title}》与库中已有作品重复且未自动识别？
+                  选择已有作品后，相关涟漪将自动指向它（AI 草稿本身不复制、不修改）。
                 </>
               )}
             </p>
@@ -625,13 +698,14 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
             <p>
               {reuseAuthor.currentLabel ? (
                 <>
-                  批次源书作者「{reuseAuthor.label}」当前已复用《{reuseAuthor.currentLabel}》。
-                  选择新作者后将更新映射（已发布的涟漪不受影响）。
+                  {reuseAuthor.scope === "source" ? "批次源书作者" : "涟漪目标作者"}「{reuseAuthor.label}」
+                  当前已复用《{reuseAuthor.currentLabel}》。选择新作者后将更新映射（已发布的涟漪不受影响）。
                 </>
               ) : (
                 <>
-                  批次源书作者「{reuseAuthor.label}」与库中已有作者重复且未自动识别？
-                  选择已有作者后，该批次涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+                  {reuseAuthor.scope === "source" ? "批次源书作者" : "涟漪目标作者"}「{reuseAuthor.label}」
+                  与库中已有作者重复且未自动识别？选择已有作者后，相关涟漪将自动指向它
+                  （AI 草稿本身不复制、不修改）。
                 </>
               )}
             </p>

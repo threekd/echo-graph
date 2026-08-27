@@ -199,8 +199,11 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
     # 孤立作品(非任何涟漪端点)按 0 涟漪批次处理(--no-ripples 的源书)
     orphan_ids = [w["id"] for w in rows["works"] if w["id"] not in src_ids and w["id"] not in tgt_ids]
 
+    # 批次按上传顺序从新到旧排列:UUID v7 时间前缀 + 字典序即时间序,
+    # 降序 = 新导入的批次在前(含无涟漪的孤儿批次)
+    batch_ids = sorted(set(src_ids) | set(orphan_ids), reverse=True)
     batches: list[dict] = []
-    for wid in sorted(src_ids) + sorted(orphan_ids):
+    for wid in batch_ids:
         work = works_by_id[wid]
         batch_edges = sorted(
             (e for e in rows["edges"] if e["source_work_id"] == wid),

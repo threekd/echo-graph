@@ -57,6 +57,8 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "originalTitle", label: "原著标题" },
           { key: "author_id", label: "作者" },
           { key: "publicationYear", label: "年份" },
+          { key: "readingStatus", label: "阅读状态" },
+          { key: "recommendation", label: "评分" },
           reviewCol("审核状态"),
         ]
       : [
@@ -64,6 +66,7 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "originalTitle", label: "原著标题" },
           { key: "author_id", label: "作者" },
           { key: "publicationYear", label: "年份" },
+          { key: "readingStatus", label: "阅读状态" },
           { key: "recommendation", label: "评分" },
         ],
     edges: isAdmin
@@ -417,6 +420,9 @@ export default function Admin() {
     }
     if (key === "recommendation") {
       return rec[key] === "recommend" ? "推荐" : rec[key] === "not_recommend" ? "不推荐" : "";
+    }
+    if (key === "readingStatus") {
+      return rec[key] === "read" ? "已读" : rec[key] === "reading" ? "在读" : rec[key] === "unread" ? "未读" : "";
     }
     const v = rec[key];
     return v == null ? "" : String(v);

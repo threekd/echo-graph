@@ -1,6 +1,6 @@
 // URL 状态同步:视图/过滤/扩散级数自动写入 hash,浏览器前进/后退可导航;相机不写 URL
 import { isMobileLayout } from "../mobileGestures";
-import type { CameraState, GraphData } from "../../store";
+import type { CameraState, GraphData, ReadingFilter } from "../../store";
 import { spaceParamFromState, type Space } from "../api";
 import { dispatch, getState } from "./state";
 
@@ -17,6 +17,8 @@ export interface ViewOpts {
   space?: Space; // 显式指定星云上下文:空间切换时 state 尚未提交,避免 syncUrl 读到旧值
   hideIslands?: boolean;
   showAuthors?: boolean;
+  showWorkLabels?: boolean;
+  readingFilter?: ReadingFilter;
   preserveCamera?: boolean;
   camera?: CameraState;
   fullData?: GraphData; // 首载深链时显式传入刚加载的全量图,避免 state 尚未刷新
@@ -72,8 +74,14 @@ function buildHash(opts: ViewOpts | undefined): string {
   }
   const hideIslands = opts && typeof opts.hideIslands === "boolean" ? opts.hideIslands : st.hideIslands;
   const showAuthors = opts && typeof opts.showAuthors === "boolean" ? opts.showAuthors : st.showAuthors;
+  const showWorkLabels =
+    opts && typeof opts.showWorkLabels === "boolean" ? opts.showWorkLabels : st.showWorkLabels;
+  const readingFilter =
+    opts && typeof opts.readingFilter === "string" ? opts.readingFilter : st.readingFilter;
   if (hideIslands) parts.push("islands=1");
   if (!showAuthors) parts.push("authors=0");
+  if (!showWorkLabels) parts.push("worklabels=0");
+  if (readingFilter && readingFilter !== "all") parts.push("reading=" + readingFilter);
   // 当前星云上下文写入 URL:刷新/分享后保持(空间切换用 replaceState,不产生历史条目)
   parts.push("space=" + spaceParamFromState((opts && opts.space) || st.space || "public"));
   return parts.join("&");

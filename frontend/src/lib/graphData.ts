@@ -1,6 +1,6 @@
 /* 图谱数据的纯函数(过滤 / 构图),不依赖 React 与渲染器,便于单元测试。 */
 
-import type { GraphData, GraphNode } from "../store";
+import type { GraphData, GraphNode, ReadingFilter } from "../store";
 
 // 佚名(Anonymous)不是真实作者:隐藏其作者节点,让每部佚名作品独立显示,
 // 避免共享的"佚名"星把互不相关的作品连成中枢。数据层保持不变。
@@ -119,6 +119,23 @@ export function filterAuthorsWith(data: GraphData, showAuthors: boolean): GraphD
   return {
     nodes: data.nodes.filter((n) => n.type !== "author"),
     edges: data.edges.filter((e) => ids[e.source] && ids[e.target]),
+  };
+}
+
+// 按阅读状态过滤作品节点(保留作者节点;无 readingStatus 的作品不属于任何具体状态,被过滤)
+export function filterWorksByReading(data: GraphData, filter: ReadingFilter): GraphData {
+  if (filter === "all") return data;
+  const keep: Record<string, boolean> = {};
+  data.nodes.forEach((n) => {
+    if (n.type !== "work") {
+      keep[n.id] = true;
+      return;
+    }
+    if (n.readingStatus === filter) keep[n.id] = true;
+  });
+  return {
+    nodes: data.nodes.filter((n) => keep[n.id]),
+    edges: data.edges.filter((e) => keep[e.source] && keep[e.target]),
   };
 }
 

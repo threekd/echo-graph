@@ -37,6 +37,7 @@ interface SpaceTabProps {
   onToggleAuthors: (e: ChangeEvent<HTMLInputElement>) => void;
   onToggleWorkLabels: (e: ChangeEvent<HTMLInputElement>) => void;
   onToggleIslands: (e: ChangeEvent<HTMLInputElement>) => void;
+  onReadingFilter: (e: ChangeEvent<HTMLSelectElement>) => void;
   switchSpace: (space: Space) => void;
 }
 
@@ -51,7 +52,7 @@ export default function SpaceTab(props: SpaceTabProps) {
     from, setFrom, to, setTo, fromOpen, setFromOpen, toOpen, setToOpen,
     expandInput, filterOptions, chooseHit, onSearchKeyDown,
     doPath, doJump, backMain, stepExpand, onExpandInputChange, commitExpandInput,
-    onToggleAuthors, onToggleWorkLabels, onToggleIslands, switchSpace,
+    onToggleAuthors, onToggleWorkLabels, onToggleIslands, onReadingFilter, switchSpace,
   } = props;
 
   return (
@@ -234,6 +235,15 @@ export default function SpaceTab(props: SpaceTabProps) {
         </div>
       </nav>
       <div className="sidebar-bottom">
+        <label className="opt">
+          <span>阅读状态</span>
+          <select id="reading-filter" value={state.readingFilter} onChange={onReadingFilter}>
+            <option value="all">全部</option>
+            <option value="read">已读</option>
+            <option value="reading">待读</option>
+            <option value="unread">未读</option>
+          </select>
+        </label>
         <label className="opt">
           <input
             type="checkbox" id="show-authors" checked={state.showAuthors}

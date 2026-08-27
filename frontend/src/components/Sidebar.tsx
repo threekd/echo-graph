@@ -334,7 +334,11 @@ export default function Sidebar() {
   };
 
   // 过滤开关变化后按当前视图重新渲染(保持相机),主/涟漪视图由渲染函数自行同步 URL
-  const rerenderCurrentView = (overrides: { hideIslands?: boolean; showAuthors?: boolean }) => {
+  const rerenderCurrentView = (overrides: {
+    hideIslands?: boolean;
+    showAuthors?: boolean;
+    readingFilter?: import("../store").ReadingFilter;
+  }) => {
     if (state.currentView === "main") {
       renderMain({ preserveCamera: true }, null, overrides);
     } else if (state.currentView === "ripple") {
@@ -346,6 +350,7 @@ export default function Sidebar() {
         view: state.currentView,
         hideIslands: overrides.hideIslands != null ? overrides.hideIslands : state.hideIslands,
         showAuthors: overrides.showAuthors != null ? overrides.showAuthors : state.showAuthors,
+        readingFilter: overrides.readingFilter != null ? overrides.readingFilter : state.readingFilter,
       });
     }
   };
@@ -361,7 +366,14 @@ export default function Sidebar() {
     const value = e.target.checked;
     dispatch({ type: "SET_SHOW_WORK_LABELS", value });
     // 标签显隐由 GraphCanvas effect 直接驱动渲染器,无需重新布局
+    syncUrl({ view: state.currentView, showWorkLabels: value });
     dispatch({ type: "SET_TOAST", msg: value ? "已显示作品名称" : "已隐藏作品名称", kind: "info" });
+  };
+
+  const onReadingFilter = (e: ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as import("../store").ReadingFilter;
+    dispatch({ type: "SET_READING_FILTER", value });
+    rerenderCurrentView({ readingFilter: value });
   };
 
   const onToggleIslands = (e: ChangeEvent<HTMLInputElement>) => {
@@ -493,6 +505,7 @@ export default function Sidebar() {
               commitExpandInput={commitExpandInput}
               onToggleAuthors={onToggleAuthors}
               onToggleWorkLabels={onToggleWorkLabels}
+              onReadingFilter={onReadingFilter}
               onToggleIslands={onToggleIslands}
               switchSpace={switchSpace}
             />

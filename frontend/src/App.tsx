@@ -122,12 +122,25 @@ function AppContent() {
     const flags = {
       hideIslands: parts.islands === "1" || location.search.indexOf("hideislands") !== -1,
       showAuthors: parts.authors !== "0",
+      showWorkLabels: parts.worklabels !== "0",
+      readingFilter: (
+        parts.reading === "read" || parts.reading === "reading" || parts.reading === "unread"
+          ? parts.reading
+          : "all"
+      ) as import("./store").ReadingFilter,
       fullData: data, // 首载深链:显式传入刚加载的全量图,避免 state 尚未刷新
     };
     // 同步过滤状态到 React store(渲染函数同时接收显式 flags,不依赖同步生效)
-    if (st.hideIslands !== flags.hideIslands || st.showAuthors !== flags.showAuthors) {
+    if (
+      st.hideIslands !== flags.hideIslands ||
+      st.showAuthors !== flags.showAuthors ||
+      st.showWorkLabels !== flags.showWorkLabels ||
+      st.readingFilter !== flags.readingFilter
+    ) {
       dispatch({ type: "SET_HIDE_ISLANDS", value: flags.hideIslands });
       dispatch({ type: "SET_SHOW_AUTHORS", value: flags.showAuthors });
+      dispatch({ type: "SET_SHOW_WORK_LABELS", value: flags.showWorkLabels });
+      dispatch({ type: "SET_READING_FILTER", value: flags.readingFilter });
     }
     if (v.indexOf("ripple:") === 0) {
       const seg = v.slice(7).split(":");

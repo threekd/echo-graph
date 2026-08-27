@@ -25,6 +25,9 @@ export interface GraphEdge {
   [key: string]: any;
 }
 
+// 阅读状态筛选:全部 / 已读(read) / 待读(reading,系统内为「在读」) / 未读(unread)
+export type ReadingFilter = "all" | "read" | "reading" | "unread";
+
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -60,6 +63,7 @@ export interface AppState {
   hideIslands: boolean;
   showAuthors: boolean;
   showWorkLabels: boolean; // 是否显示作品节点的文字标签
+  readingFilter: ReadingFilter; // 作品阅读状态筛选(默认全部)
   expandHops: number;
   expandMax: number; // 当前节点视图的扩散上限(动态:该节点实际可达的最远跳数,无人工上限)
   panel: PanelState;
@@ -91,6 +95,7 @@ export type AppAction =
   | { type: "SET_HIDE_ISLANDS"; value: boolean }
   | { type: "SET_SHOW_AUTHORS"; value: boolean }
   | { type: "SET_SHOW_WORK_LABELS"; value: boolean }
+  | { type: "SET_READING_FILTER"; value: ReadingFilter }
   | { type: "SET_EXPAND"; value: number }
   | { type: "SET_EXPAND_MAX"; value: number }
   | { type: "SET_PANEL"; panel: PanelState }
@@ -123,6 +128,7 @@ export const initialState: AppState = {
   hideIslands: false,
   showAuthors: true,
   showWorkLabels: true,
+  readingFilter: "all",
   expandHops: 1,
   expandMax: 8, // 初始兜底(数据未就绪/非节点视图时,进入视图后按实际可达跳数更新)
   panel: { type: "empty" },
@@ -167,6 +173,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, showAuthors: action.value };
     case "SET_SHOW_WORK_LABELS":
       return { ...state, showWorkLabels: action.value };
+    case "SET_READING_FILTER":
+      return { ...state, readingFilter: action.value };
     case "SET_EXPAND":
       return { ...state, expandHops: action.value };
     case "SET_EXPAND_MAX":

@@ -58,6 +58,7 @@ def _work_node(p: dict) -> dict:
         "language": p.get("language"),
         "genre": p.get("genre"),
         "reviewStatus": p.get("reviewStatus"),
+        "readingStatus": p.get("readingStatus"),  # 个人阅读状态(仅用户空间语义,公共数据为 None)
         "author_id": author_ids[0] if author_ids else None,
         "author_ids": author_ids,
         "author": p.get("author_name", ""),

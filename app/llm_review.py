@@ -34,7 +34,7 @@ from app.ai_assistant.tools import dedupe_check
 from app.auth import require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
-from app.space_crud import Kind, after_write, space_data, validate_row
+from app.space_crud import Kind, after_write, validate_row
 
 router = APIRouter(
     prefix="/api/admin/llm",
@@ -156,7 +156,25 @@ def _draft_rows(owner_id: str) -> dict:
     }
 
 
-def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
+def _space_rows(owner: str) -> dict:
+    """个人库活跃行(排除 AI 草稿、含 author_id),供编辑弹窗下拉——不计算 warnings。"""
+    a, w, _ = sqlite_store.load_rows(owner_id=owner)
+
+    def _not_draft(r: dict) -> bool:
+        return not (
+            r.get("created_by") == "llm"
+            and (r.get("reviewStatus") != "reviewed" or r.get("published_to_id"))
+        )
+
+    return {
+        "authors": [r for r in a if _not_draft(r) and not r.get("deletedAt")],
+        "works": [r for r in w if _not_draft(r) and not r.get("deletedAt")],
+    }
+
+
+def _draft_batches(
+    owner_id: str, space: dict[str, list[dict]] | None = None
+) -> tuple[list[dict], list[dict]]:
     """按源书作品分组 AI 草稿为「批次」,并列出已发布条目。
 
     批次 = 一部导入的书:source(作品+作者) + ripples(每条涟漪含目标作品/作者与
@@ -166,7 +184,8 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
     返回 (batches, published)。
     """
     rows = _draft_rows(owner_id)
-    space = load_user_rows(owner_id)  # 个人库活跃行(排除 AI 草稿),端点可指向
+    # 个人库活跃行(排除 AI 草稿),端点可指向;由调用方传入避免重复查询
+    space = space if space is not None else load_user_rows(owner_id)
     authors_by_id = {a["id"]: a for a in rows["authors"]}
     for a in space["authors"]:
         authors_by_id.setdefault(a["id"], a)
@@ -259,13 +278,13 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
 def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
     """当前上传者(admin/VIP)上传的 AI 草稿,按导入批次(源书)分组 + 自己星云去重提示。"""
     owner = user["id"]
-    batches, published = _draft_batches(owner)
+    user_rows = load_user_rows(owner)
+    batches, published = _draft_batches(owner, user_rows)
 
     # 去重/复用判重目标 = 上传者自己的星云(admin 的星云即官方图谱)
-    user_rows = load_user_rows(owner)
     space_authors, space_works = user_rows["authors"], user_rows["works"]
-    # 个人库全量行(与数据管理页同口径:排除 AI 草稿、含 author_id),供编辑弹窗下拉
-    space_rows = space_data(owner, include_deleted=False)
+    # 个人库全量行(排除 AI 草稿、含 author_id),供编辑弹窗下拉(轻量,不计算 warnings)
+    space_rows = _space_rows(owner)
 
     # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
     batch_works: dict[str, dict] = {}

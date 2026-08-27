@@ -92,16 +92,85 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       return d;
     });
 
+  // 局部更新某条涟漪(及其所属批次的源书/目标实体发布映射),不整页刷新
+  const patchRippleLocally = (
+    edgeId: string,
+    patch: Record<string, unknown>,
+    deps?: {
+      sourceWork?: string;
+      sourceAuthors?: string[];
+      targetWork?: string;
+      targetAuthors?: string[];
+    }
+  ) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        batches: prev.batches.map((b) => {
+          const hasEdge = b.ripples.some((r) => r.edge.id === edgeId);
+          if (!hasEdge) return b;
+          return {
+            ...b,
+            source: deps?.sourceWork || deps?.sourceAuthors?.length
+              ? {
+                  ...b.source,
+                  work: deps?.sourceWork
+                    ? { ...b.source.work, published_to_id: deps.sourceWork }
+                    : b.source.work,
+                  authors: deps?.sourceAuthors?.length
+                    ? b.source.authors.map((a, i) =>
+                        deps.sourceAuthors![i] ? { ...a, published_to_id: deps.sourceAuthors![i] } : a
+                      )
+                    : b.source.authors,
+                }
+              : b.source,
+            ripples: b.ripples.map((r) => {
+              if (r.edge.id !== edgeId) return r;
+              return {
+                ...r,
+                edge: { ...r.edge, ...patch },
+                target: r.target && (deps?.targetWork || deps?.targetAuthors?.length)
+                  ? {
+                      ...r.target,
+                      work: deps?.targetWork
+                        ? { ...r.target.work, published_to_id: deps.targetWork }
+                        : r.target.work,
+                      authors: deps?.targetAuthors?.length
+                        ? r.target.authors.map((a, i) =>
+                            deps.targetAuthors![i] ? { ...a, published_to_id: deps.targetAuthors![i] } : a
+                          )
+                        : r.target.authors,
+                    }
+                  : r.target,
+              };
+            }),
+          };
+        }),
+      };
+    });
+  };
+
   const approveRipple = (edgeId: string) => {
     call("/api/admin/llm/ripples/" + encodeURIComponent(edgeId) + "/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     })
-      .then(() => {
-        onStatus("涟漪已发布到公共星云(精确命中时已自动复用)");
+      .then((d: { public_ids?: Record<string, unknown> }) => {
+        const p = d.public_ids || {};
+        onStatus("涟漪已发布(精确命中时已自动复用)");
         onPublicChanged();
-        reload();
+        patchRippleLocally(
+          edgeId,
+          { reviewStatus: "reviewed", published_to_id: p.edge ? String(p.edge) : null },
+          {
+            sourceWork: p.source_work ? String(p.source_work) : undefined,
+            sourceAuthors: Array.isArray(p.source_authors) ? p.source_authors.map(String) : undefined,
+            targetWork: p.target_work ? String(p.target_work) : undefined,
+            targetAuthors: Array.isArray(p.target_authors) ? p.target_authors.map(String) : undefined,
+          }
+        );
       })
       .catch((e: Error) => onStatus(e.message));
   };
@@ -122,13 +191,19 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
 
   const reject = (edgeId: string) => {
     call("/api/admin/llm/drafts/edges/" + encodeURIComponent(edgeId) + "/reject", { method: "POST" })
-      .then(() => { onStatus("已驳回（草稿保留）"); reload(); })
+      .then(() => {
+        onStatus("已驳回（草稿保留）");
+        patchRippleLocally(edgeId, { reviewStatus: "rejected" });
+      })
       .catch((e: Error) => onStatus(e.message));
   };
 
   const reopen = (edgeId: string) => {
     call("/api/admin/llm/drafts/edges/" + encodeURIComponent(edgeId) + "/reopen", { method: "POST" })
-      .then(() => { onStatus("已重开为草稿"); reload(); })
+      .then(() => {
+        onStatus("已重开为草稿");
+        patchRippleLocally(edgeId, { reviewStatus: "draft", published_to_id: null });
+      })
       .catch((e: Error) => onStatus(e.message));
   };
 

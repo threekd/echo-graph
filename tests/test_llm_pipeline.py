@@ -153,7 +153,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(len(r["public_ids"]["target_authors"]), 1)
         self.assertIsNotNone(r["public_ids"]["edge"])
 
-        # admin 星云(官方图谱)落库校验:2 作者 / 2 作品 / 1 涟漪;草稿行回写 published_to_id
+        # admin 自己星云落库校验:2 作者 / 2 作品 / 1 涟漪;草稿行回写 published_to_id
         with db_sqlite._db() as conn:
             pub_a = conn.execute(
                 "SELECT count(*) c FROM authors WHERE owner_id = ? AND deletedAt IS NULL"

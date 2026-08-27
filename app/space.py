@@ -3,12 +3,13 @@
 星云可见性:users.space_visibility(默认 public)。private 空间对访客不可见(404);
 本人通过 /api/me/* 访问;admin 可访问任意空间(审核/运营)。
 公开星云内的作者/作品不再有节点级可见性(schema v21 移除),访客与 owner 看到一致数据。
-读取返回与 /api/graph 同形状的数据,附 spaceId / displayName(星云账号,
+读取返回与 /api/me 同形状的数据,附 spaceId / displayName(星云账号,
 displayName 优先昵称,其次用户名,不再暴露邮箱)。
 
 跃迁后的完整交互(搜索/详情/扩散/路径)由 /api/space/{user_id}/search、
 /api/space/{user_id}/work/{id}、/api/space/{user_id}/expansion/{id}、
 /api/space/{user_id}/path 提供,前端按 space 上下文路由(见 api.ts 的 apiRoot)。
+公共星云/官方图谱概念已移除(2026-08-28):不存在默认视图,登录用户首页即自己的星云。
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from app import db_sqlite
-from app.auth import SESSION_COOKIE, admin_user_id, current_user
+from app.auth import SESSION_COOKIE, current_user
 from app.db import SqliteStore
 from app.read_routes import register_read_routes
 from app.users import display_name, user_row
@@ -82,12 +83,10 @@ def _space_graph_extra(request: Request, user_id: str | None = None) -> dict:
 def random_space_graph(request: Request) -> dict:
     """随机跃迁:返回一个公开星云的图谱(含 spaceId)。"""
     viewer = _viewer(request)
-    admin = admin_user_id()
     where = "space_visibility = 'public' AND status = 'active'"
     params: tuple = ()
-    # 排除默认视图(admin 星云/官方图谱)所有者,避免跃迁到与默认视图重复的星云;
-    # 同时排除浏览者本人(避免跃迁到自己的星云)
-    excludes = [x for x in (admin, viewer["id"] if viewer else None) if x]
+    # 排除浏览者本人(避免跃迁到自己的星云);官方图谱概念已移除,不再排除 admin
+    excludes = [x for x in (viewer["id"] if viewer else None,) if x]
     if excludes:
         placeholders = ",".join("?" for _ in excludes)
         where += f" AND id NOT IN ({placeholders})"

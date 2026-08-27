@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,10 +62,10 @@ class SqliteStoreTest(unittest.TestCase):
         rewrite_all(_own(a), _own(w), _own(e))
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
-        self.store = db.SqliteStore(reviewed_only=False)
+        self.store = db.SqliteStore(owner_id=self.admin["id"])
 
     def _own(self, rows):
-        """测试数据统一归属 admin(默认视图 = admin 星云)。"""
+        """测试数据统一归属 admin 自己的空间。"""
         return [{**r, "owner_id": self.admin["id"]} for r in rows]
 
     def test_graph_shape(self) -> None:
@@ -145,62 +144,16 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertEqual(s["reviewStatus"]["edges"]["reviewed"], 1)
         self.assertEqual(s["reviewStatus"]["edges"]["draft"], 2)
 
-    def test_reviewed_only_public_filter(self) -> None:
-        """公开视图(reviewed_only)只暴露审核通过的内容。"""
-        a, w, e = _fixture()
-        for row in a:
-            row["reviewStatus"] = "reviewed"
-        w[0]["reviewStatus"] = "reviewed"  # 只有局外人 reviewed
-        rewrite_all(self._own(a), self._own(w), self._own(e))
-        store = db.SqliteStore(reviewed_only=True)
-
-        g = store.graph()
-        works = [n["id"] for n in g["nodes"] if n["type"] == "work"]
-        self.assertEqual(works, [W1])
-        echo_edges = [ed for ed in g["edges"] if ed["type"] == "echo"]
-        # e1(W1→W2) 虽为 reviewed,但 W2 是 draft——目标不可见,边不进入公开视图(与 expansion 跳过不可见邻居一致)
-        self.assertEqual(len(echo_edges), 0)
-
-        self.assertEqual(store.search("狂人"), [])  # 草稿作品不可搜索
-        self.assertIsNone(store.work_detail(W2))  # 草稿作品详情 404
-        d = store.work_detail(W1)
-        self.assertEqual(len(d["mentions"]), 1)
-        self.assertIsNone(store.path(W1, W2, 5))  # 草稿作品不可作为路径端点
-
-        s = store.stats()
-        self.assertEqual(s["authors"], 2)
-        self.assertEqual(s["works"], 1)
-        self.assertEqual(s["echo_edges"], 1)
-
-    def test_expansion_skips_invisible_neighbors(self) -> None:
-        """已审核边指向草稿作品时,扩散不应报错,且跳过被过滤的草稿节点。"""
-        a, w, e = _fixture()
-        for row in a:
-            row["reviewStatus"] = "reviewed"
-        w[0]["reviewStatus"] = "reviewed"  # W1 reviewed;e1(W2->W1) reviewed,但 W2 是 draft
-        rewrite_all(self._own(a), self._own(w), self._own(e))
-        store = db.SqliteStore(reviewed_only=True)
-        out = store.expansion(W1, 2)
-        self.assertIsNotNone(out)
-        self.assertEqual([n["id"] for n in out["nodes"]], [W1])
-
-    def test_env_controls_reviewed_only_default(self) -> None:
-        """PUBLIC_REVIEWED_ONLY 环境变量决定默认过滤开关。"""
-        with patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "1"}, clear=False):
-            self.assertTrue(db.SqliteStore().reviewed_only)
-        with patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": ""}, clear=False):
-            self.assertFalse(db.SqliteStore().reviewed_only)
-
     def test_close_is_noop(self) -> None:
         self.store.close()  # 无连接池,不应抛错;后续查询仍可用
         self.assertEqual(len(self.store.graph()["nodes"]), 6)
 
     def test_read_cache_populated_and_invalidated(self) -> None:
-        """读层缓存按 DB 路径 + 空间 + 审核过滤缓存,整库重写后立即失效。"""
+        """读层缓存按 DB 路径 + 空间缓存,整库重写后立即失效。"""
         db._read_cache.clear()
         self.store.graph()
         self.assertIn(
-            (str(db_sqlite.DB_PATH), "public", self.store.reviewed_only),
+            (str(db_sqlite.DB_PATH), self.admin["id"]),
             db._read_cache,
         )
         a, w, e = _fixture()

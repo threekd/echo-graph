@@ -121,13 +121,6 @@
   user-select: none;
 }
 .brand .sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
-.store-badge {
-  width: 100%;
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  margin-top: 2px;
-}
 
 nav { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; position: relative; }
 #view-status {
@@ -137,6 +130,7 @@ nav { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; positi
   border: 1px solid rgba(148, 163, 255, 0.14);
   border-radius: 8px;
   background: rgba(30, 44, 90, 0.25);
+  margin-top: 12px;
 }
 #view-status::before {
   content: "";

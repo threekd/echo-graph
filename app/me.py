@@ -1,8 +1,8 @@
 """个人空间 API:登录用户自己的星云(私有,仅本人可见)。
 
-与 admin 星云(官方图谱)共用同一套读取/写路径,只是 owner 上下文不同:
+所有用户(含 admin)共用同一套读取/写路径,只是 owner 上下文不同:
 - 读取:SqliteStore(owner_id=当前用户),严格过滤本人数据;
-- 写入:app.space_crud(owner_id=当前用户),不接纳未认领行,行不属于本人一律 404。
+- 写入:app.space_crud(owner_id=当前用户),行不属于本人一律 404。
 """
 
 from __future__ import annotations

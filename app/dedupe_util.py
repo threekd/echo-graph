@@ -146,5 +146,5 @@ def load_rows(
 
 
 def load_user_rows(user_id: str, db_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """判重目标库:某用户自己空间的活跃行(admin 即官方图谱,口径一致)。"""
+    """判重目标库:某用户自己空间的活跃行(所有用户口径一致)。"""
     return load_rows(db_path, owner_id=user_id)

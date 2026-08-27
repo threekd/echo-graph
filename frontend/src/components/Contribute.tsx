@@ -362,10 +362,8 @@ export default function Contribute() {
       const fresh = await loadMyRows();
       setMyRows(fresh);
       try {
-        // 写入本人星云后刷新图谱(admin 的「我的星云」即默认视图/官方图谱)
-        if (state.space === "mine" || (state.user?.role === "admin" && state.space === "public")) {
-          refreshSpaceGraph();
-        }
+        // 写入本人星云后刷新图谱(仅当当前浏览空间为自己的星云时)
+        if (state.space === "mine") refreshSpaceGraph();
       } catch {
         /* 图谱视图刷新失败不影响添加结果 */
       }

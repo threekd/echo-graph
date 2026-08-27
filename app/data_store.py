@@ -1,6 +1,6 @@
 """数据清洗与用户空间 CSV 导出(zip)。
 
-历史上 `data/export/*.csv` 曾作为公共星云自动导出 + git 审计/跨机器传输通道;
+历史上 `data/export/*.csv` 曾作为自动导出 + git 审计/跨机器传输通道;
 2026-08-27 起该备份层移除(多设备/调试导致漂移,改为整库备份,见 docs/to-do.md)。
 本模块保留通用数据清洗(clean_row / remove_invisible_chars)与用户主动导出的
 space_csv_zip()(数据管理页「导出 CSV」按钮,所有登录用户可用)。

@@ -7,12 +7,10 @@ Neo4j 查询层与 JSON 兜底(seed.json)已退役(见 docs/sqlite-migration.md)
 
 from __future__ import annotations
 
-import os
 import time
 from collections import deque
 
 from app import db_sqlite
-from app.auth import admin_user_id
 
 # 进程内读缓存:同一 DB 路径缓存活跃行(默认 3 秒,兜底外部进程写入);
 # admin 写入 / 整库重建 / 快照恢复会显式调用 invalidate_cache() 立即失效。
@@ -132,46 +130,21 @@ class SqliteStore:
     每次查询读取活跃(未软删除)数据;当前规模下开销可忽略,
     数据量增长后可在此层加进程内缓存(写入时失效)。
 
-    reviewed_only(默认视图):为 True 时默认视图(官方图谱 = admin 星云)只返回
-    reviewStatus=reviewed 的内容(草稿/驳回不可见)。默认读取环境变量
-    PUBLIC_REVIEWED_ONLY(取值 1 / true / yes / on 开启),部署时在 .env 中配置;
-    后续将整合为用户级设置(见 docs/to-do.md)。
-
-    公共星云概念已于 2026-08-27 移除:默认视图 = admin 星云(官方图谱),
-    不再存在 owner_id 为空的「未认领历史行」。作者/作品的节点可见性
-    (visibility)已于 schema v21 移除,访客/owner 视图不再区分。
+    公共星云/官方图谱概念已移除(2026-08-28):不存在「默认视图」,每个 store
+    必须绑定具体用户空间(owner_id)。作者/作品的节点可见性(visibility)已于
+    schema v21 移除,访客/owner 视图不再区分;AI 草稿由 ai_draft_clause 排除。
     """
 
     name = "sqlite"
 
-    def __init__(
-        self,
-        reviewed_only: bool | None = None,
-        owner_id: str | None = None,
-    ) -> None:
-        if reviewed_only is None:
-            reviewed_only = os.getenv("PUBLIC_REVIEWED_ONLY", "").strip().lower() in (
-                "1", "true", "yes", "on",
-            )
-        # 审核过滤只约束默认视图:个人空间里用户必须能看到自己的草稿/驳回数据
-        self.reviewed_only = reviewed_only and owner_id is None
-        # 空间过滤:None = 默认视图(admin 星云,即官方图谱);
-        # 具体用户 id = 该用户的空间(仅本人可见)。
+    def __init__(self, owner_id: str) -> None:
+        """绑定具体用户空间:owner_id = 该用户的空间(仅本人可见)。"""
         self.owner_id = owner_id
 
-    def _effective_status(self, status: str | None) -> str | None:
-        """默认视图强制 reviewed;内部/管理场景沿用显式 status。"""
-        return "reviewed" if self.reviewed_only else status
-
     def _owner_clause(self, prefix: str = "") -> tuple[str, tuple]:
-        """返回 owner 过滤 SQL 片段与参数;默认视图 = admin 星云(官方图谱)。"""
+        """返回 owner 过滤 SQL 片段与参数(按绑定用户空间精确过滤)。"""
         col = f"{prefix}owner_id"
-        if self.owner_id is not None:
-            return f"{col} = ?", (self.owner_id,)
-        admin = admin_user_id()
-        if admin is None:
-            return "1 = 0", ()  # 引导管理员未注册时默认视图无数据
-        return f"{col} = ?", (admin,)
+        return f"{col} = ?", (self.owner_id,)
 
     def close(self) -> None:
         """无连接池,无需清理。"""
@@ -183,12 +156,8 @@ class SqliteStore:
         写路径通过 invalidate_cache() 保证"编辑保存后即时可读"。
         """
         now = time.monotonic()
-        # 缓存键含空间与审核过滤:不同 owner/默认视图互不串缓存,
-        # 同一 DB 路径下不同 reviewed_only 的 store 也不串缓存
-        key = _cache_key() + (
-            self.owner_id or "public",
-            self.reviewed_only,
-        )
+        # 缓存键含空间:不同 owner 互不串缓存
+        key = _cache_key() + (self.owner_id,)
         hit = _read_cache.get(key)
         if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
             return hit[1]
@@ -245,7 +214,6 @@ class SqliteStore:
 
     def graph(self, status: str | None = None) -> dict:
         authors, works, edges, work_authors = self._tables()
-        status = self._effective_status(status)
         if status:
             authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
             works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
@@ -271,9 +239,6 @@ class SqliteStore:
 
     def search(self, q: str, limit: int = 20) -> list[dict]:
         authors, works, _, work_authors = self._tables()
-        if self.reviewed_only:
-            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == "reviewed"]
-            works = [w for w in works if (w.get("reviewStatus") or "draft") == "reviewed"]
         ql = q.lower()
         if not ql.strip():
             return []  # 空/纯空白查询直接返回空,避免空串子串匹配命中全量
@@ -311,10 +276,6 @@ class SqliteStore:
 
     def path(self, from_id: str, to_id: str, max_hops: int) -> dict | None:
         _, works, edges, _ = self._tables()
-        status = self._effective_status(None)
-        if status:
-            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
-            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
         work_ids = {w["id"] for w in works}
         if from_id not in work_ids or to_id not in work_ids:
             return None
@@ -363,10 +324,6 @@ class SqliteStore:
         w = next((x for x in works if x["id"] == work_id), None)
         if w is None:
             return None
-        if self.reviewed_only and (w.get("reviewStatus") or "draft") != "reviewed":
-            return None
-        if self.reviewed_only:
-            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == "reviewed"]
         works_by_id = {x["id"]: x for x in works}
         authors_by_id = {a["id"]: a for a in authors}
 
@@ -409,11 +366,6 @@ class SqliteStore:
     def expansion(self, work_id: str, hops: int) -> dict | None:
         """以 work_id 为中心,沿 ECHO 关系(无向)向外扩散 hops 级,返回子图。"""
         authors, works, edges, work_authors = self._tables()
-        status = self._effective_status(None)
-        if status:
-            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
-            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
-            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
         works_by_id = {w["id"]: w for w in works}
         if work_id not in works_by_id:
             return None
@@ -451,11 +403,6 @@ class SqliteStore:
 
     def stats(self) -> dict:
         authors, works, edges, _ = self._tables()
-        status = self._effective_status(None)
-        if status:
-            authors = [a for a in authors if (a.get("reviewStatus") or "draft") == status]
-            works = [w for w in works if (w.get("reviewStatus") or "draft") == status]
-            edges = [e for e in edges if (e.get("reviewStatus") or "draft") == status]
 
         def status_counts(items: list[dict]) -> dict[str, int]:
             counts = {"draft": 0, "reviewed": 0, "rejected": 0}
@@ -476,14 +423,3 @@ class SqliteStore:
                 "edges": status_counts(edges),
             },
         }
-
-
-_store: SqliteStore | None = None
-
-
-def get_store() -> SqliteStore:
-    """返回进程内唯一的 SQLite 读取 Store(DB 路径按 db_sqlite.DB_PATH 惰性解析)。"""
-    global _store
-    if _store is None:
-        _store = SqliteStore()
-    return _store

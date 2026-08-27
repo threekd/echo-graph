@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main  # noqa: E402
 from app import auth, db_sqlite, sqlite_store  # noqa: E402
+from app.db import SqliteStore
 from tests._helpers import rewrite_all  # noqa: E402
 
 
@@ -49,16 +50,20 @@ class ApiSmokeTest(unittest.TestCase):
         }
         for expected in (
             "/",
+            "/api/health",
+            "/assets/{path:path}",
+        ):
+            self.assertIn(expected, paths)
+        # 公共星云/官方图谱概念已移除:不再注册面向"默认视图"的 /api 只读端点
+        for gone in (
             "/api/graph",
             "/api/search",
             "/api/work/{work_id}",
             "/api/expansion/{work_id}",
             "/api/path",
             "/api/stats",
-            "/api/health",
-            "/assets/{path:path}",
         ):
-            self.assertIn(expected, paths)
+            self.assertNotIn(gone, paths)
 
     def test_admin_and_auth_routes_registered(self) -> None:
         """管理/账号路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
@@ -94,7 +99,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(main.app.version, expected)
 
     def test_stats_and_health(self) -> None:
-        stats = main.store.stats()
+        stats = SqliteStore(owner_id=self.admin_id).stats()
         self.assertEqual(stats["store"], "sqlite")
         self.assertIn("authors", stats)
         self.assertIn("works", stats)
@@ -103,7 +108,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(health["store"], "sqlite")
 
     def test_graph_is_empty_on_fresh_db(self) -> None:
-        g = main.store.graph()
+        g = SqliteStore(owner_id=self.admin_id).graph()
         self.assertEqual(g["nodes"], [])
         self.assertEqual(g["edges"], [])
 
@@ -124,20 +129,21 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_graph_status_filter_and_stats(self) -> None:
-        g = main.store.graph(status="reviewed")
+        g = SqliteStore(owner_id=self.admin_id).graph(status="reviewed")
         self.assertEqual(g["nodes"], [])
         self.assertEqual(g["edges"], [])
-        stats = main.store.stats()
+        stats = SqliteStore(owner_id=self.admin_id).stats()
         self.assertIn("reviewStatus", stats)
         self.assertIn("authors", stats["reviewStatus"])
         self.assertIn("works", stats["reviewStatus"])
         self.assertIn("edges", stats["reviewStatus"])
 
     def test_search_blank_returns_empty(self) -> None:
-        """路由层对纯空白 q 返回空结果,而不是全量命中。"""
+        """路由层(/api/me/search)对纯空白 q 返回空结果,而不是全量命中。"""
         client = TestClient(main.app)
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(self.admin_id))
         for q in ("   ", "\t\n ", "a b"):
-            resp = client.get("/api/search", params={"q": q})
+            resp = client.get("/api/me/search", params={"q": q})
             self.assertEqual(resp.status_code, 200, q)
             if q.strip() == "":
                 self.assertEqual(resp.json(), {"hits": []}, q)

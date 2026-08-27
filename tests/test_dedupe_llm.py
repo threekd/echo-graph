@@ -280,7 +280,7 @@ class UserScopeDedupeTest(unittest.TestCase):
 
     def test_dedupe_entity_work_basic(self) -> None:
         """统一入口 dedupe_entity:work 基础匹配 + 自动复用判定。"""
-        self._seed_work(self.admin["id"])  # admin 个人空间即公共星云
+        self._seed_work(self.admin["id"])  # admin 自己的空间
         entry = dedupe_check.dedupe_entity(
             "work",
             {"Title_CN": "三体", "originalTitle": "三体"},
@@ -293,7 +293,7 @@ class UserScopeDedupeTest(unittest.TestCase):
         self.assertEqual(entry["decision"], "likely_duplicate")
 
     def test_dedupe_entity_admin_space(self) -> None:
-        """admin 判重目标 = 自己空间(官方图谱),与普通用户口径一致。"""
+        """admin 判重目标 = 自己空间,与普通用户口径一致。"""
         self._seed_work(self.admin["id"])
         entry = dedupe_check.dedupe_entity(
             "work",

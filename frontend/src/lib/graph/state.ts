@@ -18,7 +18,7 @@ export function getState(): AppState {
 }
 
 export function currentSpace(): Space {
-  return getState().space || "public";
+  return getState().space || "mine";
 }
 
 export function dispatch(a: AppAction) {

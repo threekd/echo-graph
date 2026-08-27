@@ -356,25 +356,26 @@ th.sortable.active .sort-icon {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.space-switch {
+#btn-mine {
+  margin-top: 8px;
+  border-color: rgba(138, 184, 255, 0.45);
+  background: linear-gradient(120deg, rgba(37, 72, 190, 0.42), rgba(34, 211, 238, 0.16));
+  color: #dce8ff;
+  box-shadow: 0 0 14px rgba(80, 120, 255, 0.22);
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 10px 12px 2px;
 }
-.space-btn {
-  flex: 1;
-  padding: 7px 0;
-  border-radius: 9px;
-  border: 1px solid rgba(148, 163, 255, 0.2);
-  background: rgba(30, 44, 90, 0.4);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12.5px;
-}
-.space-btn.active {
+#btn-mine.active {
   color: #fff;
-  border-color: rgba(138, 184, 255, 0.7);
-  box-shadow: 0 0 12px rgba(138, 184, 255, 0.25);
+  border-color: rgba(138, 184, 255, 0.9);
+  background: linear-gradient(120deg, rgba(49, 78, 160, 0.75), rgba(34, 211, 238, 0.28));
+  box-shadow: 0 0 20px rgba(138, 184, 255, 0.45);
+}
+#btn-mine:hover {
+  border-color: rgba(138, 184, 255, 0.85);
+  box-shadow: 0 0 20px rgba(138, 184, 255, 0.45);
 }
 #btn-jump {
   margin-top: 8px;

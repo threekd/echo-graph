@@ -1,5 +1,5 @@
 /* 标准节点表单弹窗:新增/编辑作者、作品、涟漪(数据管理与点亮星空共用)。
-   通过 apiBase 区分空间:/api/me(个人空间)或 /api/admin(公共星云)。 */
+   通过 apiBase 区分空间:/api/me(个人空间)或 /api/admin(admin 自己的星云)。 */
 
 import { useState } from "react";
 import type { AdminRow, AuthorRow, EdgeRow, WorkRow } from "../../lib/adminTypes";

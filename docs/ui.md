@@ -70,7 +70,7 @@
 
 - `#v=main` / `#v=path:{fromId},{toId}` / `#v=ripple:{workId}:{hops}` / `#v=author:{authorId}`
 - `islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)
-- `space=public|mine|<用户id>`(当前星云,刷新/分享后保持)
+- `space=mine|<用户id>`(当前星云,刷新/分享后保持;旧版 `public` 参数已废弃)
 - `cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,兼容解析)
 - 旧格式 `#path=` / `#ripple=` / `#author=` 已移除,统一 `#v=` 格式;标识均为 UUID。
 

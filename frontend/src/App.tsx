@@ -15,7 +15,7 @@ import Guide from "./components/Guide";
 import AuthModal from "./components/AuthModal";
 import ChunkBoundary from "./components/ChunkBoundary";
 import {
-  loadGraphData, loadSpaceGraph, loadStats, spaceFromParam, spaceUserId, workDetail, type Space,
+  loadGraphData, loadSpaceGraph, spaceFromParam, spaceUserId, workDetail, type Space,
 } from "./lib/api";
 import { fetchMe } from "./lib/auth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
@@ -42,15 +42,15 @@ function AppContent() {
   // 同一 hash 在短时间内(hashchange/popstate/focus 多事件)只处理一次
   const lastAppliedHash = useRef<string | null>(null);
   const lastAppliedAt = useRef(0);
-  // 防止空间切换加载期间/回退公共星云时,对同一 hash 重复触发切换
+  // 防止空间切换加载期间/回退我的星云时,对同一 hash 重复触发切换
   const lastAppliedSpace = useRef<Space | null>(null);
 
-  // 切换空间上下文(hash 的 space 参数变化):加载目标星云并应用;未登录/不可访问回退公共星云
+  // 切换空间上下文(hash 的 space 参数变化):加载目标星云并应用;
+  // 未登录访问 mine 或目标星云不可访问时,回到 mine(空图)并提示登录
   const applyHashSpace = useCallback((target: Space): Promise<{ data: GraphData }> => {
     const apply = (space: Space, data: GraphData) => {
       const owner =
-        space === "public" ? "public"
-        : space === "mine"
+        space === "mine"
           ? ((data as any).owner?.nickname || (data as any).owner?.username || "我的星云")
           : ((data as any).displayName || "未知星云");
       enterSpace(dispatch, space, data, owner, (data as any).owner, { flush: true });
@@ -62,20 +62,25 @@ function AppContent() {
           dispatch({ type: "SET_USER", user });
           return loadGraphData("mine").then((d) => apply("mine", d));
         }
-        dispatch({ type: "SET_TOAST", msg: "请先登录,已回到公共星云", kind: "info" });
-        return loadGraphData("public").then((d) => apply("public", d));
+        dispatch({ type: "SET_USER", user: null });
+        dispatch({ type: "SET_TOAST", msg: "请先登录,即可创建并查看你的星云", kind: "info" });
+        return apply("mine", { nodes: [], edges: [] });
       });
     }
-    if (target !== "public") {
-      const uid = spaceUserId(target);
-      return loadSpaceGraph(uid!)
-        .then((d) => apply(target, d))
-        .catch(() => {
-          dispatch({ type: "SET_TOAST", msg: "该星云不可访问,已回到公共星云", kind: "info" });
-          return loadGraphData("public").then((d) => apply("public", d));
+    const uid = spaceUserId(target);
+    return loadSpaceGraph(uid!)
+      .then((d) => apply(target, d))
+      .catch(() => {
+        dispatch({ type: "SET_TOAST", msg: "该星云不可访问,已回到我的星云", kind: "info" });
+        return fetchMe().then((user) => {
+          if (user) {
+            dispatch({ type: "SET_USER", user });
+            return loadGraphData("mine").then((d) => apply("mine", d));
+          }
+          dispatch({ type: "SET_USER", user: null });
+          return apply("mine", { nodes: [], edges: [] });
         });
-    }
-    return loadGraphData("public").then((d) => apply("public", d));
+      });
   }, [dispatch]);
 
   // URL 深链处理:#v=main / #v=ripple:id:hops / #v=author:id / #v=path:from,to
@@ -198,8 +203,8 @@ function AppContent() {
       dispatch({ type: "SET_CAMERA", camera });
     });
     let cancelled = false;
-    // 首载空间上下文:优先取 hash 的 space 参数(public / mine / <用户id>)
-    let target: Space = spaceFromParam(parseHashParams(location.hash).space) || "public";
+    // 首载空间上下文:优先取 hash 的 space 参数(mine / <用户id>),默认 mine
+    let target: Space = spaceFromParam(parseHashParams(location.hash).space) || "mine";
     let mineOwner = "我的星云";
 
     const loadTarget = async (): Promise<GraphData> => {
@@ -210,37 +215,38 @@ function AppContent() {
           mineOwner = (user.nickname || "").trim() || (user.username || "") || "我的星云";
           return loadGraphData("mine");
         }
-        target = "public";
-        dispatch({ type: "SET_TOAST", msg: "请先登录,已回到公共星云", kind: "info" });
-        return loadGraphData("public");
+        dispatch({ type: "SET_USER", user: null });
+        dispatch({ type: "SET_TOAST", msg: "请先登录,即可创建并查看你的星云", kind: "info" });
+        return { nodes: [], edges: [] };
       }
-      if (target !== "public") {
-        const uid = spaceUserId(target);
-        try {
-          return await loadSpaceGraph(uid!);
-        } catch {
-          target = "public";
-          dispatch({ type: "SET_TOAST", msg: "该星云不可访问,已回到公共星云", kind: "info" });
-          return loadGraphData("public");
+      const uid = spaceUserId(target);
+      try {
+        return await loadSpaceGraph(uid!);
+      } catch {
+        target = "mine";
+        const user = await fetchMe();
+        if (user) {
+          dispatch({ type: "SET_USER", user });
+          mineOwner = (user.nickname || "").trim() || (user.username || "") || "我的星云";
+          return loadGraphData("mine");
         }
+        dispatch({ type: "SET_USER", user: null });
+        dispatch({ type: "SET_TOAST", msg: "该星云不可访问,请先登录查看自己的星云", kind: "info" });
+        return { nodes: [], edges: [] };
       }
-      return loadGraphData("public");
     };
 
-    Promise.all([loadTarget(), loadStats()])
-      .then(([data, stats]) => {
+    loadTarget()
+      .then((data) => {
         if (cancelled) return;
         const owner =
-          target === "public" ? "public"
-          : target === "mine" ? mineOwner
-          : ((data as any).displayName || "未知星云");
+          target === "mine" ? mineOwner : ((data as any).displayName || "未知星云");
         // flushSync 保证 applyHash/renderMain 读到的是最新 space
         flushSync(() => {
           dispatch({ type: "SET_DATA", data });
           dispatch({ type: "SET_SPACE", space: target });
           dispatch({ type: "SET_SPACE_OWNER", owner });
           dispatch({ type: "SET_SPACE_PROFILE", profile: (data as any).owner || null });
-          dispatch({ type: "SET_STORE", name: (stats && stats.store) || "" });
         });
         if (location.hash.replace(/^#/, "")) {
           applyHash(data);

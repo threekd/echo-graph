@@ -1,8 +1,7 @@
-"""空间隔离测试:admin 星云(官方图谱)与个人空间互不可见、不可修改。"""
+"""空间隔离测试:admin 星云与普通用户个人空间互不可见、不可修改。"""
 
 from __future__ import annotations
 
-import os
 import tempfile
 import types
 import unittest
@@ -73,8 +72,6 @@ class SpaceIsolationTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "iso.db").start()
         patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN).start()
-        # 隔离测试不依赖机器 .env 的审核过滤开关,新建草稿即可见
-        patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
         self.addCleanup(patch.stopall)
         self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
         self.alice = auth.register(self.ALICE, "alice-password-123", username="alice")
@@ -86,8 +83,8 @@ class SpaceIsolationTest(unittest.TestCase):
             "authors", {"originalName": "A", "Name_CN": "爱丽丝的作者"}, user=self.alice
         )
         aid = created["row"]["id"]
-        # 默认视图(admin 星云)与第三方空间均不可见
-        self.assertEqual(SqliteStore().graph()["nodes"], [])
+        # admin 空间与第三方空间均不可见(alice 的数据只属于 alice)
+        self.assertEqual(SqliteStore(owner_id=self.admin["id"]).graph()["nodes"], [])
         self.assertEqual(SqliteStore(owner_id=self.bob["id"]).graph()["nodes"], [])
         self.assertEqual(admin.get_data()["authors"], [])
         # 第三方不可改(视为不存在,404)
@@ -126,7 +123,7 @@ class SpaceIsolationTest(unittest.TestCase):
         )
         aid = res["row"]["id"]
         self.assertEqual(res["row"]["reviewStatus"], "reviewed")  # admin 手动新增默认已审核(输入即确认)
-        nodes = SqliteStore().graph()["nodes"]
+        nodes = SqliteStore(owner_id=self.admin["id"]).graph()["nodes"]
         self.assertEqual(len(nodes), 1)
         self.assertEqual(nodes[0]["id"], aid)
         # 用户空间看不到公共数据,也不能改

@@ -182,7 +182,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       body: JSON.stringify({}),
     })
       .then(() => {
-        onStatus("源书已发布到公共星云(精确命中时已自动复用)");
+        onStatus("源书已发布到你的星云(精确命中时已自动复用)");
         onPublicChanged();
         reload();
       })

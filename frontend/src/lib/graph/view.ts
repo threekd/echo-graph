@@ -83,7 +83,7 @@ function buildHash(opts: ViewOpts | undefined): string {
   if (!showWorkLabels) parts.push("worklabels=0");
   if (readingFilter && readingFilter !== "all") parts.push("reading=" + readingFilter);
   // 当前星云上下文写入 URL:刷新/分享后保持(空间切换用 replaceState,不产生历史条目)
-  parts.push("space=" + spaceParamFromState((opts && opts.space) || st.space || "public"));
+  parts.push("space=" + spaceParamFromState((opts && opts.space) || st.space || "mine"));
   return parts.join("&");
 }
 

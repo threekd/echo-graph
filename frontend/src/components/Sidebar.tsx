@@ -53,18 +53,21 @@ export default function Sidebar() {
       dispatch({ type: "SET_AUTH", open: true }); // 我的星云需登录
       return;
     }
-    dispatch({ type: "SET_SPACE", space });
-    dispatch({
-      type: "SET_SPACE_OWNER",
-      owner: space === "public" ? "public" : (userDisplayName(state.user) || "我的星云"),
-    });
+    if (space === "mine") {
+      dispatch({ type: "SET_SPACE", space });
+      dispatch({ type: "SET_SPACE_OWNER", owner: userDisplayName(state.user) || "我的星云" });
+    }
     loadGraphData(space)
       .then((data) => {
+        const owner =
+          space === "mine"
+            ? userDisplayName(state.user) || "我的星云"
+            : (data as any).displayName || "未知星云";
         enterSpace(
           dispatch,
           space,
           data,
-          space === "public" ? "public" : userDisplayName(state.user) || "我的星云",
+          owner,
           (data as any).owner,
           { render: true }
         );
@@ -72,7 +75,7 @@ export default function Sidebar() {
       .catch((e) =>
         dispatch({
           type: "SET_TOAST",
-          msg: "加载「" + (space === "mine" ? "我的星云" : "公共星云") + "」失败: " + e.message,
+          msg: "加载「" + (space === "mine" ? "我的星云" : "目标星云") + "」失败: " + e.message,
           kind: "error",
         })
       );

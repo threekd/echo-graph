@@ -3,9 +3,9 @@
 import type { GraphData } from "../store";
 import type { AuthorRow, EdgeRow, WorkRow } from "./adminTypes";
 
-// 浏览空间三元状态:public = 默认视图(admin 星云/官方图谱,功能栏仍叫「公共星云」);
-// mine = 我的星云(私有);"space:<userId>" = 星际跃迁后正在浏览的他人星云。
-export type Space = "public" | "mine" | `space:${string}`;
+// 浏览空间二元状态:mine = 我的星云(登录用户首页);"space:<userId>" = 星际跃迁后
+// 正在浏览的他人星云。公共星云/官方图谱概念已移除(2026-08-28),不再有 public 默认视图。
+export type Space = "mine" | `space:${string}`;
 
 export interface SearchHit {
   id: string;
@@ -85,56 +85,57 @@ export function spaceUserId(space: Space): string | null {
 }
 
 // 空间状态值 <-> URL hash 参数互转:
-// URL 里用 public / mine / <用户id> 表示,状态里用户空间带 "space:" 前缀
+// URL 里用 mine / <用户id> 表示,状态里他人空间带 "space:" 前缀
 export function spaceParamFromState(space: Space): string {
-  if (space === "public" || space === "mine") return space;
-  return spaceUserId(space) || "public";
+  if (space === "mine") return space;
+  return spaceUserId(space) || "mine";
 }
 
 export function spaceFromParam(param: string | undefined | null): Space | null {
   if (!param) return null;
-  if (param === "public" || param === "mine") return param;
+  if (param === "mine") return param;
   // 用户空间以 UUID 表示(36 位含连字符)
   if (/^[0-9a-fA-F-]{36}$/.test(param)) return `space:${param}`;
+  // 旧版 "public" 参数(公共星云/默认视图)已废弃,不再识别
   return null;
 }
 
-// 按空间上下文选择 API 前缀:公共 /api、我的 /api/me、他人星云 /api/space/{userId}。
+// 按空间上下文选择 API 前缀:我的 /api/me、他人星云 /api/space/{userId}。
 // 后端空间系列接口(/graph|search|work|expansion|path)共享同一可见性规则。
 export function apiRoot(space: Space): string {
   if (space === "mine") return "/api/me";
   const uid = spaceUserId(space);
   if (uid) return "/api/space/" + encodeURIComponent(uid);
-  return "/api";
+  return "/api/me";
 }
 
-export function loadGraphData(space: Space = "public"): Promise<GraphData> {
+export function loadGraphData(space: Space = "mine"): Promise<GraphData> {
   return getJson<GraphData>(apiRoot(space) + "/graph");
 }
 
-export function loadStats(space: Space = "public"): Promise<StatsResponse> {
+export function loadStats(space: Space = "mine"): Promise<StatsResponse> {
   return getJson<StatsResponse>(apiRoot(space) + "/stats");
 }
 
-export function search(q: string, space: Space = "public"): Promise<SearchResponse> {
+export function search(q: string, space: Space = "mine"): Promise<SearchResponse> {
   return getJson<SearchResponse>(apiRoot(space) + "/search?q=" + encodeURIComponent(q));
 }
 
-export function workDetail(id: string, space: Space = "public"): Promise<WorkDetailResponse> {
+export function workDetail(id: string, space: Space = "mine"): Promise<WorkDetailResponse> {
   return getJson<WorkDetailResponse>(apiRoot(space) + "/work/" + encodeURIComponent(id));
 }
 
 export function expansion(
   id: string,
   hops: number,
-  space: Space = "public"
+  space: Space = "mine"
 ): Promise<GraphData & { centerId: string }> {
   return getJson<GraphData & { centerId: string }>(
     apiRoot(space) + "/expansion/" + encodeURIComponent(id) + "?hops=" + hops
   );
 }
 
-export function findPath(from: string, to: string, space: Space = "public"): Promise<PathResponse> {
+export function findPath(from: string, to: string, space: Space = "mine"): Promise<PathResponse> {
   return getJson<PathResponse>(
     apiRoot(space) + "/path?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to)
   );

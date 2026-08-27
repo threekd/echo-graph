@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,7 +22,6 @@ class CreatedByTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "created_by.db").start()
         patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN).start()
-        patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
         self.addCleanup(patch.stopall)
         self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
         self.alice = auth.register(self.ALICE, "alice-password-123", username="alice")

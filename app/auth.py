@@ -37,7 +37,9 @@ logger = logging.getLogger("echo_graph")
 
 SESSION_COOKIE = "echo_graph_session"
 SESSION_DAYS = 30
-# 引导管理员邮箱:该邮箱注册自动提权为 admin(官方图谱 = admin 星云由 admin 维护)
+# 引导管理员邮箱:该邮箱注册自动提权为 admin(首个管理员引导机制)。
+# 公共星云/官方图谱概念已于 2026-08-28 移除:admin 的星云与其他用户星云
+# 数据语义完全一致,不再作为默认视图。
 BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 # 每 IP 每小时注册 / 登录尝试上限(与贡献限流同一套进程内滑动窗口)
 REGISTER_LIMIT = 10
@@ -80,41 +82,8 @@ def admin_user_id() -> str | None:
     return row["id"] if row else None
 
 
-def admin_profile() -> dict | None:
-    """引导管理员(默认视图 = 官方图谱所有者)的公开资料:用户名/昵称/简介(不含邮箱)。"""
-    if not BOOTSTRAP_EMAIL:
-        return None
-    with db_sqlite._db() as conn:
-        row = conn.execute(
-            "SELECT username, nickname, bio FROM users WHERE email = ?",
-            (BOOTSTRAP_EMAIL,),
-        ).fetchone()
-    if row is None:
-        return None
-    return {
-        "username": row["username"],
-        "nickname": row["nickname"],
-        "bio": row["bio"],
-    }
-
-
-def claim_unowned_rows(conn, admin_id: str) -> int:
-    """兼容旧库:把 owner_id 为空的遗留业务行一次性划归引导管理员。
-
-    公共星云/未认领行概念已于 2026-08-27 移除,读取层不再支持 NULL owner;
-    此函数仅在启动/注册引导管理员时兜底迁移旧数据,避免遗留行成为孤儿。
-    """
-    total = 0
-    for table in ("authors", "works", "edges"):
-        cur = conn.execute(
-            f"UPDATE {table} SET owner_id = ? WHERE owner_id IS NULL", (admin_id,)
-        )
-        total += cur.rowcount
-    return total
-
-
 def bootstrap_admin() -> dict | None:
-    """启动时执行引导:补 admin 角色并兼容迁移旧库遗留未归属数据。返回管理员用户(若有)。"""
+    """启动时执行引导:为 ADMIN_BOOTSTRAP_EMAIL 补 admin 角色(首个管理员引导)。"""
     if not BOOTSTRAP_EMAIL:
         return None
     with db_sqlite._write_lock, db_sqlite._db() as conn:
@@ -128,7 +97,6 @@ def bootstrap_admin() -> dict | None:
                 "UPDATE users SET role = 'admin', updatedAt = ? WHERE id = ?",
                 (_now(), row["id"]),
             )
-        claim_unowned_rows(conn, row["id"])
     return {"id": row["id"], "email": row["email"], "role": "admin"}
 
 
@@ -379,8 +347,6 @@ def register(
             " status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
             (user_id, email, password_hash, username, nickname, bio, role, now, now),
         )
-        if role == "admin":
-            claim_unowned_rows(conn, user_id)
     return {
         "id": user_id,
         "email": email,

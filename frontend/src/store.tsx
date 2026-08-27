@@ -59,7 +59,6 @@ export interface AppState {
   pathToId: string | null;
   // 深链 #v=path:... 打开后回填到侧边栏路径输入框的显示文本(书名 - 作者)
   pathInputs: { from: string; to: string };
-  storeName: string;
   hideIslands: boolean;
   showAuthors: boolean;
   showWorkLabels: boolean; // 是否显示作品节点的文字标签
@@ -74,8 +73,8 @@ export interface AppState {
   contributeOpen: boolean; // "点亮星空(添加到我的星云)"弹窗
   authOpen: boolean; // 登录/注册弹窗
   user: AuthUser | null; // 当前登录用户(未登录为 null)
-  space: Space; // 当前浏览空间:public(默认视图=admin 星云) | mine | "space:<userId>"
-  spaceOwner: string; // 数据源显示:默认视图为 "public",个人/跃迁星云为账号
+  space: Space; // 当前浏览空间:mine(我的星云) | "space:<userId>"(星际跃迁)
+  spaceOwner: string; // 数据源显示:我的星云/跃迁星云为账号
   pinLeft: boolean; // 左侧功能栏钉住(不再自动隐藏)
   pinRight: boolean; // 右侧详情栏钉住(不再自动隐藏)
   spaceProfile: { username?: string; nickname?: string | null; bio?: string | null } | null; // 当前星云所有者的公开资料
@@ -90,7 +89,6 @@ export type AppAction =
   | { type: "SET_AUTHOR"; id: string | null }
   | { type: "SET_PATH"; from: string | null; to: string | null }
   | { type: "SET_PATH_INPUTS"; inputs: { from: string; to: string } }
-  | { type: "SET_STORE"; name: string }
   | { type: "SET_CAMERA"; camera: CameraState }
   | { type: "SET_HIDE_ISLANDS"; value: boolean }
   | { type: "SET_SHOW_AUTHORS"; value: boolean }
@@ -124,7 +122,6 @@ export const initialState: AppState = {
   pathFromId: null,
   pathToId: null,
   pathInputs: { from: "", to: "" },
-  storeName: "",
   hideIslands: false,
   showAuthors: true,
   showWorkLabels: true,
@@ -139,8 +136,8 @@ export const initialState: AppState = {
   contributeOpen: false,
   authOpen: false,
   user: null,
-  space: "public",
-  spaceOwner: "public",
+  space: "mine",
+  spaceOwner: "我的星云",
   pinLeft: false,
   pinRight: false,
   spaceProfile: null,
@@ -163,8 +160,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, pathFromId: action.from, pathToId: action.to };
     case "SET_PATH_INPUTS":
       return { ...state, pathInputs: action.inputs };
-    case "SET_STORE":
-      return { ...state, storeName: action.name };
     case "SET_CAMERA":
       return { ...state, camera: action.camera };
     case "SET_HIDE_ISLANDS":

@@ -6,9 +6,9 @@
     2) dedupe_check.run_dedupe         与库内现有数据做基础 + 语义去重
     3) review_publish.build_batch      生成批次登记簿 → stage_batch 写入
                                        上传者空间(reviewStatus=draft,
-                                       created_by='llm',官方图谱不可见)
+                                       created_by='llm',个人星云读取不可见)
 
-发布后的审核在 admin/VIP 管理端「AI 草稿」页完成(批准 → 自己的星云;admin 即官方图谱)。
+发布后的审核在 admin/VIP 管理端「AI 草稿」页完成(批准 → 自己的星云)。
 
 依赖(配置在项目根目录 .env):
     - DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(书籍解析 LLM,可选 DEEPSEEK_MODEL)

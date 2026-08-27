@@ -93,7 +93,7 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(parsed["edges.csv"], [])
 
     def test_export_scoped_to_own_space(self) -> None:
-        """用户导出不含其他空间(admin 星云/官方图谱)的数据。"""
+        """用户导出不含其他空间(admin 星云)的数据。"""
         self._login("user@test.local", "user-password-123")
         _, parsed = self._zip_names_and_csv(self.client.get("/api/me/export"))
         self.assertEqual(len(parsed["authors.csv"]), 1)  # 只有自己的作者

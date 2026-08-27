@@ -6,18 +6,16 @@
        (见 app/ai_assistant/tools/review_publish.py stage_batch)。
     2) 上传者(admin 或 VIP)在本页浏览自己上传的草稿(附与**自己星云**的
        去重提示),可编辑/驳回/重开;多 admin 各自独立、互不审核。
-    3) 批准:默认复制进自己的星云(created_by='llm'、reviewStatus='reviewed';
-       admin 的星云即官方图谱);或按去重提示选择「复用」自己星云中的
-       现有记录。
+    3) 批准:默认复制进自己的星云(created_by='llm'、reviewStatus='reviewed');
+       或按去重提示选择「复用」自己星云中的现有记录。
        草稿行回写 published_to_id(公共行 id),同一草稿不可重复发布。
 
 隔离规则:
     - 草稿区 = 上传者的空间(owner_id=上传者 + created_by='llm'),上传者只能
-      看到/审核自己上传的草稿;官方图谱/策展读取统一排除 AI 草稿
+      看到/审核自己上传的草稿;个人星云读取统一排除 AI 草稿
       (见 db_sqlite.ai_draft_clause);
-    - 发布目标 = 上传者自己的星云(owner_id=上传者);admin 的星云即官方图谱,
-      admin 发布即进入官方图谱;「admin 整合用户数据进官方图谱」的通道为后续
-      规划(见 docs/to-do.md);
+    - 发布目标 = 上传者自己的星云(owner_id=上传者);「admin 整合用户数据进
+      官方图谱」的通道已随官方图谱概念移除(2026-08-28);
     - 批准复制依赖先决条件:作品依赖的作者、涟漪依赖的两端作品必须已批准,
       依赖通过草稿行的 published_to_id 解析到公共行 id,保证引用不跨空间。
 """
@@ -281,7 +279,7 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
     user_rows = load_user_rows(owner)
     batches, published = _draft_batches(owner, user_rows)
 
-    # 去重/复用判重目标 = 上传者自己的星云(admin 的星云即官方图谱)
+    # 去重/复用判重目标 = 上传者自己的星云
     space_authors, space_works = user_rows["authors"], user_rows["works"]
     # 个人库全量行(排除 AI 草稿、含 author_id),供编辑弹窗下拉(轻量,不计算 warnings)
     space_rows = _space_rows(owner)
@@ -844,7 +842,7 @@ def _publish_draft_entity(
 ) -> str:
     """把单条草稿发布/复用到上传者自己的星云;已发布直接返回现有行 id。
 
-    发布目标 owner = admin_id(调用方传入的上传者 id;admin 的星云即官方图谱)。
+    发布目标 owner = admin_id(调用方传入的上传者 id)。
     返回发布行 id;审计 create / llm_publish / llm_reuse 留痕。
     """
     # 非 AI 草稿行(个人库既有记录,如编辑涟漪时把端点改为个人库作品)

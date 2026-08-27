@@ -1,4 +1,4 @@
-/* 侧边栏「星云」Tab:品牌、空间切换、星际跃迁、搜索、路径、扩散与过滤。
+/* 侧边栏「星云」Tab:品牌、我的星云入口、星际跃迁、搜索、路径、扩散与过滤。
 
    状态与处理函数由 Sidebar 容器持有并注入(本组件保持无自有状态),拆出后
    Sidebar.tsx 从 839 行降到约 380 行。 */
@@ -60,25 +60,15 @@ export default function SpaceTab(props: SpaceTabProps) {
       <div className="brand">
         <h1>Litnebula</h1>
         <span className="beta-badge">beta</span>
-        {/* 账号入口已移入「设置」Tab,品牌行不再显示账号角标 */}
-        <div className="store-badge">
-          数据源:{state.spaceOwner || "public"}
-        </div>
       </div>
-      <div className="space-switch">
-        <button
-          className={"space-btn" + (state.space === "public" ? " active" : "")}
-          onClick={() => switchSpace("public")}
-        >
-          公共星云
-        </button>
-        <button
-          className={"space-btn" + (state.space === "mine" ? " active" : "")}
-          onClick={() => switchSpace("mine")}
-        >
-          我的星云
-        </button>
-      </div>
+      <div id="view-status">视图:{viewLabel(state.currentView)}</div>
+      <button
+        id="btn-mine"
+        className={"side-btn" + (state.space === "mine" ? " active" : "")}
+        onClick={() => switchSpace("mine")}
+      >
+        我的星云
+      </button>
       <button id="btn-jump" className="side-btn jump-btn" onClick={doJump}>
         <svg
           className="jump-btn-icon"
@@ -100,7 +90,6 @@ export default function SpaceTab(props: SpaceTabProps) {
         星际跃迁
       </button>
       <nav>
-        <div id="view-status">视图:{viewLabel(state.currentView)}</div>
         <button
           id="btn-back-main" className="side-btn"
           style={{ display: state.currentView === "main" ? "none" : "block" }}

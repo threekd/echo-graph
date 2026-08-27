@@ -7,6 +7,7 @@ CLI 管线没有登录用户,草稿归属引导管理员。
 
 本模块还提供旧数据迁移:2026-08 之前草稿落在共享 system_llm 账号空间,
 migrate_legacy_llm_drafts() 把它们改挂到引导管理员并删除空账号。
+(官方图谱/公共星云概念已移除,引导管理员仅作为 CLI 无登录态时的草稿归属者。)
 """
 
 from __future__ import annotations

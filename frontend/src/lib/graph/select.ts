@@ -10,7 +10,7 @@ import { renderAuthorView, reRenderAuthor } from "./author";
 // 数据写入(数据管理/点亮星空)后刷新当前星云图谱并重绘当前视图,无需整页刷新
 export function refreshSpaceGraph(): void {
   const st = getState();
-  const space = st.space || "public";
+  const space = st.space || "mine";
   loadGraphData(space)
     .then((data) => {
       flushSync(() => {

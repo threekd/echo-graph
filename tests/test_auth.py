@@ -312,37 +312,18 @@ class AuthStoreTest(unittest.TestCase):
             auth.update_me({"username": "hacker"}, req)
         self.assertEqual(ctx.exception.status_code, 400)
 
-    def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
+    def test_bootstrap_email_registers_as_admin(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
-            rewrite_all(
-                [{"id": "01a00000-0000-7000-8000-000000000001", "originalName": "X", "Name_CN": "甲"}],
-                [],
-                [],
-            )
             user = auth.register("Boss@Test.local", "password123", username="bigboss")
             self.assertEqual(user["role"], "admin")
-            with db_sqlite._db() as conn:
-                row = conn.execute(
-                    "SELECT owner_id FROM authors WHERE id = ?",
-                    ("01a00000-0000-7000-8000-000000000001",),
-                ).fetchone()
-            self.assertEqual(row["owner_id"], user["id"])
 
-    def test_bootstrap_admin_promotes_existing_user_and_claims(self) -> None:
+    def test_bootstrap_admin_promotes_existing_user(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
             user = auth.register("boss@test.local", "password123", username="boss01")
             self.assertEqual(user["role"], "user")
-        rewrite_all(
-            [{"id": "01a00000-0000-7000-8000-000000000002", "originalName": "X", "Name_CN": "甲"}],
-            [],
-            [],
-        )
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
             result = auth.bootstrap_admin()
             self.assertEqual(result["role"], "admin")
-            with db_sqlite._db() as conn:
-                row = conn.execute("SELECT owner_id FROM authors").fetchone()
-            self.assertEqual(row["owner_id"], user["id"])
 
     def test_require_admin_enforces_role(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):

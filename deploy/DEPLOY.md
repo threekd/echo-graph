@@ -16,12 +16,12 @@
 ## 0. 上线前决策(请逐项确认)
 
 1. **域名与备案**:VPS 对外提供 80/443 服务,国内机房绑定域名需 ICP 备案;不想备案可选香港/新加坡 VPS。
-2. **公开数据范围**:默认视图(官方图谱)默认返回全部审核状态(便于管理/开发);
-   **已在代码内置方案**——在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1`,默认视图即只返回
-   `reviewed` 内容(草稿/驳回不可见;用户公开星云 `/api/space/*` 不受该开关影响)。
-   上线前请逐条人工审核并置 `reviewed`,再决定是否开启。
+2. **公开数据范围**:公共星云/官方图谱概念已移除(2026-08-28)——不存在默认视图,
+   `/api/*` 公共只读端点与 `PUBLIC_REVIEWED_ONLY` 均已下线。登录用户首页即自己的
+   星云(草稿/驳回对自己可见);游客无默认图谱,可通过星际跃迁浏览公开星云
+   (`/api/space/*`)。如需公开展示某星云,把该用户的星云可见性设为公开。
 3. **引导管理员**:在 `.env` 配置 `ADMIN_BOOTSTRAP_EMAIL`,该邮箱注册时自动获得
-   admin 角色并认领公共星云数据;数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
+   admin 角色(首个管理员引导);数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
 4. **账号体系(可选但建议)**:注册接口含 Cloudflare Turnstile 人机验证——在
    Cloudflare Dashboard 创建 Site,把 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
    写入 `.env`(**未配置密钥时注册默认失败**,仅本地开发可设
@@ -54,7 +54,6 @@ sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 
 ```bash
 sudo nano /opt/echo-graph/.env          # 填入 ADMIN_BOOTSTRAP_EMAIL(及可选的 TURNSTILE_* / COOKIE_SECURE)
-# 可选:若只展示已审核内容,追加 PUBLIC_REVIEWED_ONLY=1
 sudo systemctl start echo-graph
 curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"sqlite"}
 ```
@@ -83,7 +82,7 @@ SQLite 为权威库,schema 迁移由服务启动时自动执行;数据备份/恢
 
 ## 4. 数据备份与恢复(重要)
 
-`data/echo-graph.db` 不在 git 中,**备份介质只有整库快照**(含公共星云、用户星云、
+`data/echo-graph.db` 不在 git 中,**备份介质只有整库快照**(含全部用户星云、
 审计日志、用户与会话):
 
 - **日常备份**:`deploy.sh` 每次部署前自动 `sqlite3 .backup` 到 `backups/`(保留 14 份);

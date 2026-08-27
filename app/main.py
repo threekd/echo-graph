@@ -12,15 +12,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.admin import router as admin_router
-from app.auth import admin_profile, bootstrap_admin
+from app.auth import bootstrap_admin
 from app.auth import router as auth_router
 from app.book_import import router as book_import_router
-from app.db import get_store
 from app.follows import router as follows_router
 from app.llm_account import migrate_legacy_llm_drafts
 from app.llm_review import router as llm_review_router
 from app.me import router as me_router
-from app.read_routes import register_read_routes
 from app.security import is_state_changing, same_origin_allowed
 from app.space import router as space_router
 
@@ -46,8 +44,7 @@ def _app_version() -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色,
-    # 并兼容迁移旧库遗留未归属数据(公共星云概念已移除)
+    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色
     bootstrap_admin()
     # 旧 system_llm 共享草稿一次性改挂到引导管理员(GET 端点保持只读,迁移只在启动执行)
     migrate_legacy_llm_drafts()
@@ -68,8 +65,6 @@ app = FastAPI(
     description="回声图谱——世界文学的涟漪地图 API",
     lifespan=lifespan,
 )
-
-store = get_store()
 
 
 @app.middleware("http")
@@ -124,7 +119,7 @@ def apple_touch_icon() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict:
     """健康检查:返回当前存储后端(SQLite)。"""
-    return {"status": "ok", "store": store.name}
+    return {"status": "ok", "store": "sqlite"}
 
 
 app.include_router(book_import_router)
@@ -134,14 +129,6 @@ app.include_router(auth_router)
 app.include_router(follows_router)
 app.include_router(me_router)
 app.include_router(space_router)
-
-# 公共只读六件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
-register_read_routes(
-    app,
-    lambda request, user_id: get_store(),
-    owner_provider=lambda request, user_id: admin_profile(),
-    path_prefix="/api",
-)
 
 
 if __name__ == "__main__":

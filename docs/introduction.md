@@ -14,7 +14,7 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**默认视图(功能栏「公共星云」标签)= admin 星云(官方图谱)**:公开接口(`/api/graph` 等)直接查 admin 星云,admin 星云与其他用户星云在数据语义上完全一致,无「未认领行」概念。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**公共星云/官方图谱概念已移除(2026-08-28)**:不存在默认视图,admin 的星云与其他用户星云在数据语义上完全一致;登录用户首页即自己的星云(`/api/me/*`),游客无默认图谱(空图 + 登录提示),可通过星际跃迁浏览其他用户的公开星云(`/api/space/*`)。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
   书内书名提及**仅取正文**,涟漪出处标注为 前言/正文/尾记/其它 四类;提示词统一
@@ -24,10 +24,9 @@
   `created_by='llm'`、`reviewStatus='draft'` 写入草稿区(已不再使用共享
   `system_llm` 机器账号,历史草稿由 `migrate_legacy_llm_drafts()` 一次性迁移);
   上传者(admin 或 VIP)在管理端「AI 草稿」页只看到/审核自己上传的草稿,逐条
-  审核——批准(复制进**自己的星云**,admin 的星云即官方图谱)/ 复用(去重
+  审核——批准(复制进**自己的星云**)/ 复用(去重
   命中自己星云中的现有记录)/ 驳回 / 重开 / 编辑,批准后回写 `published_to_id`
-  防重复发布;多 admin 各自独立、互不审核;「admin 整合用户数据进官方图谱」
-  的统一通道为后续规划(见 `docs/to-do.md`)。
+  防重复发布;多 admin 各自独立、互不审核。
 - **前端**：React 19 + Vite 5 + TypeScript(构建产物由 FastAPI 托管于 `frontend/dist`),Three.js(0.185,npm 依赖 + addons)。3D 渲染为**受控模式**:React store 持有 `viewData`/`currentView`/相机,`GraphCanvas` 的 effect 驱动渲染器执行绘制,渲染器退化为纯执行器(`update(kind, data)`,同视图增量同步);节点点击/悬停由 React 事件委托驱动。主视图为**球状星云**——作者为蓝白星、作品为金星(均带光晕并随机呼吸闪烁),`AUTHORED_BY` 归属关系为暗淡弱连线,ECHO 提及关系为青色发光星轨;支持右键旋转、左键平移、滚轮缩放、点击选星,并有 CSS 星空背景与流星点缀。
 
 ### 运行方式
@@ -103,7 +102,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 
 > 数据管理视图对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
 > (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
-> admin 角色,其「自己的星云」即官方图谱(默认视图),并可额外使用「日志 / 快照 / 用户」
+> admin 角色,其「自己的星云」即其个人星云,并可额外使用「日志 / 快照 / 用户」
 > 平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
 > 所有登录用户可在数据管理页导出自己星云的三张表为 CSV zip(「导出 CSV」按钮)。
 
@@ -123,9 +122,9 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   注册报「人机验证失败」多为浏览器无法加载 challenges.cloudflare.com(部分地区网络受限)或验证超时——
   前端会提示组件加载失败并可重试;服务端 siteverify 仅对公网 IP 传 `remoteip`,避免本地回环地址导致校验失败
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录与关注写接口按 IP 滑动窗口限流(共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`)做同源校验——带 Origin 头的跨站请求一律 403
-- 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后左侧栏
-  「公共星云 / 我的星云」切换。「公共星云」标签 = admin 星云(官方图谱),
-  点击效果与跃迁到 admin 星云一致,未登录游客默认浏览该视图。
+- 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后首页即
+  「我的星云」。公共星云/官方图谱概念已移除(2026-08-28):不存在默认视图,
+  未登录游客看到空图与登录提示,可通过星际跃迁浏览公开星云。
 - 左侧功能栏采用 **Tab 列**(类 VS Code 侧边栏):展开后左侧窄条为「星云 / 我的 / 消息 /
   设置」四个 Tab:
   - **星云**:图谱操作(搜索/路径/扩散/过滤/点亮星空/用户管理/数据管理;
@@ -145,9 +144,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 点亮星空(添加到我的星云):登录后打开,直接向自己的星云写入作者/作品/涟漪
   (作品/作者下拉列表来自你自己的星云数据,与数据管理页一致;
   搜不到时下拉框第一行可打开标准新增弹窗),数据直接进入本人星云。
-- 星际跃迁:左侧栏「公共星云 / 我的星云」下方「✦ 星际跃迁」按钮,随机访问一个
-  公开星云(排除自己与默认视图所有者 admin,避免与默认视图重复);数据源标签显示
-  所在星云账号,默认视图显示 public。
+- 星际跃迁:左侧栏「我的星云」下方「✦ 星际跃迁」按钮,随机访问一个公开星云
+  (排除自己,避免跃迁到自己的星云);数据源标签显示所在星云账号。
   接口:`GET /api/space/random/graph`(随机)、`GET /api/space/{user_id}/graph`(定向);
   跃迁后可继续在目标星云内完整交互(搜索 / 作品详情 / 扩散 / 路径),
   由 `GET /api/space/{user_id}/search|work/{id}|expansion/{id}|path` 提供,前端按空间上下文自动路由。
@@ -163,17 +161,22 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   作品另有个人阅读状态(已读/在读/未读)、评分(推荐/不推荐)与评价(长文本)字段;
   普通用户界面隐藏「备注」,admin 保持原样;阅读状态、评分与评价在右侧「书签」Tab 展示。
 - 新增作者/作品时,原文名/原著标题输入框会联想**当前空间已有数据**
-  (普通用户 = 自己的星云,admin = 官方图谱,同等逻辑);选中已存在数据时提示
+  (普通用户与 admin 均为自己的星云,同等逻辑);选中已存在数据时提示
   「数据已存在,请勿重复新增」并**禁止保存**(命中本空间已有数据即拦截);
   涟漪与作品关联作者的选取同样基于当前空间已有数据。
 - 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
 
-**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,默认视图(官方图谱,`/api/graph`、`/api/search` 等)只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见;用户公开星云 `/api/space/*` 不受此开关影响),默认关闭以便开发时看到全部数据;运维管理窗口「快照」Tab(2026-08-26 起自数据管理迁入)可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照——恢复前会自动为当前库做安全备份(CSV 类型历史快照已随 CSV 备份层于 2026-08-27 移除)。
+**发布过滤与快照恢复**:`PUBLIC_REVIEWED_ONLY` 全局开关已随公共星云/官方图谱概念
+移除(2026-08-28)——每个用户在自己的星云里看到自己的全部内容,草稿/驳回的
+用户级显示设置见 `docs/to-do.md` 待办;运维管理窗口「快照」Tab(2026-08-26 起自
+数据管理迁入)可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并
+恢复 `backups/`(SQLite 备份)下的快照——恢复前会自动为当前库做安全备份
+(CSV 类型历史快照已随 CSV 备份层于 2026-08-27 移除)。
 
 
 策展数据以 SQLite(`data/echo-graph.db`)为准;授权后通过页面左侧「**数据管理**」入口编辑
 (表单校验、软删除/恢复、日志记录),保存前自动校验(类型、枚举、交叉引用、作者 id 关联、
-重复 id),保存后公开接口即时读到新数据;「导出 CSV」按钮可把当前星云的三张表
+重复 id),保存后本人图谱/公开星云接口即时读到新数据;「导出 CSV」按钮可把当前星云的三张表
 (作者/作品/涟漪)打包下载(zip),所有登录用户可用。
 
 **软删除设计**:`deletedAt` 在数据层表达——被删除的行保留在库中(`deletedAt` 非空,用户导出 CSV 亦含该列),但读取层一律过滤,图上只出现活跃数据。删除作品时,与其相关的涟漪边会一并软删除;删除作者时,其名下作品及相关涟漪边会一并软删除;恢复时,同一删除动作删掉的作品/涟漪(相同 `deletedAt`)会一并恢复。
@@ -190,18 +193,24 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 | 作者 | 该作者与全部作品 | `http://127.0.0.1:8000/#v=author:{authorId}` |
 
 URL 参数:`v=`(视图)、`islands=1`(隐藏孤岛星)、`authors=0`(隐藏作者节点)、
-`space=public|mine|<用户id>`(当前星云,刷新/分享后保持;他人星云按可见性访问,
-未登录访问 `mine` 或 private/无效星云时自动回退默认视图(公共星云标签))、
+`space=mine|<用户id>`(当前星云,刷新/分享后保持;他人星云按可见性访问,
+未登录访问 `mine` 或 private/无效星云时提示登录并回到「我的星云」(空图);
+旧版 `space=public` 参数已废弃,不再识别)、
 `cam=theta,phi,radius,cx,cy,cz`(相机位置,旧版分享链接格式,仍兼容解析)。旧格式 `#path=` / `#ripple=` / `#author=` 已在 React 迁移后移除,统一使用 `#v=` 格式,标识均为 UUID。
 
 ### API
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/graph?status=` | 全量图谱(节点 + 边);`status` 可选 `draft` / `reviewed` / `rejected`,按审核状态过滤 |
-| `GET /api/search?q=` | 搜索作家 / 作品 |
-| `GET /api/work/{id}` | 作品详情 + 谁提及它 / 它提及谁(涟漪数据) |
-| `GET /api/path?from={workId}&to={workId}` | 有向最短提及链 |
-| `GET /api/expansion/{workId}?hops=N` | N 级涟漪扩散子图 |
-| `GET /api/stats` | 数据统计(含 `reviewStatus` 分布) |
+| `GET /api/me/graph?status=` | 我的星云全量图谱(需登录);`status` 可选 `draft` / `reviewed` / `rejected`,按审核状态过滤 |
+| `GET /api/me/search?q=` | 在我的星云中搜索作家 / 作品 |
+| `GET /api/me/work/{id}` | 作品详情 + 谁提及它 / 它提及谁(涟漪数据) |
+| `GET /api/me/path?from={workId}&to={workId}` | 有向最短提及链 |
+| `GET /api/me/expansion/{workId}?hops=N` | N 级涟漪扩散子图 |
+| `GET /api/me/stats` | 我的星云数据统计(含 `reviewStatus` 分布) |
+| `GET /api/space/{user_id}/graph\|search\|work/{id}\|expansion/{id}\|path\|stats` | 星际跃迁目标星云的同一套只读接口(按可见性访问) |
+
+> 公共 `/api/graph`、`/api/search` 等「默认视图」端点已随公共星云/官方图谱概念移除
+> (2026-08-28),不再注册;游客无默认图谱,登录后使用 `/api/me/*`,浏览他人公开
+> 星云使用 `/api/space/*`。
 

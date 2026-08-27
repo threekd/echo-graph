@@ -16,15 +16,16 @@
 
 | 数据 | 位置 | 是否进 git | 说明 |
 |---|---|---|---|
-| 权威库(全部数据) | `data/echo-graph.db` | 否 | 官方图谱(admin 星云)/ 用户星云 / 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
+| 权威库(全部数据) | `data/echo-graph.db` | 否 | 全部用户星云(含 admin)/ 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
 | 整库快照 | `backups/echo-graph-*.db` | 否 | 管理端快照 + `deploy.sh` 自动备份 |
 | 历史快照 | `data/versions/` | 否 | 只读恢复来源(旧机制遗留,新代码不再写入;**当前环境不存在此目录,仅有旧机器残留时才有内容**) |
 | 部署备份包 | `backups/data-*.tgz` | 否 | `deploy.sh` 对数据目录的打包 |
 
 关键语义:
 
-- **默认视图(功能栏「公共星云」标签)= admin 星云(官方图谱)**:`owner_id = 引导管理员`
-  的行;公共星云/未认领行概念已于 2026-08-27 移除,启动时仅对旧库遗留 NULL 行做一次性兼容认领。
+- **不存在默认视图/官方图谱(2026-08-28 移除)**:功能栏「公共星云」标签、`/api/*`
+  默认视图端点与 `PUBLIC_REVIEWED_ONLY` 均已下线;登录用户首页即自己的星云
+  (`/api/me/*`),游客无默认图谱,可通过星际跃迁浏览公开星云(`/api/space/*`)。
 - **用户星云 = `authors/works/edges` 中 `owner_id=用户id` 的行**,只存在 SQLite 中,不进 git。
 - 单 worker 是设计约束:限流(进程内滑动窗口)与写锁(`_write_lock`)都依赖单进程语义,不要增加 uvicorn worker。
 
@@ -268,7 +269,7 @@ ls -lt backups | head -20
 
 | 现象 | 排查思路 |
 |---|---|
-| 页面空图,`/api/health` 正常 | 检查 `PUBLIC_REVIEWED_ONLY`(draft 未审核时公开视图接近空图);确认 `data/echo-graph.db` 存在且有数据;`journalctl -u echo-graph -e` |
+| 页面空图,`/api/health` 正常 | 未登录用户无默认图谱(空图属预期,需登录或星际跃迁);确认 `data/echo-graph.db` 存在且有数据;`journalctl -u echo-graph -e` |
 | 服务起不来 | `.env` 是否配置 `ADMIN_BOOTSTRAP_EMAIL`;uv/pnpm 路径;`uv run --frozen python -c "from app.main import app"` 做导入自检 |
 | git pull 报本地修改冲突 | 本地有未推送提交或未提交改动,先提交推送再部署 |
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
@@ -279,8 +280,7 @@ ls -lt backups | head -20
 
 | 变量 | 作用 | 运维注意 |
 |---|---|---|
-| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(官方图谱/默认视图所有者) | 必须配置 |
-| `PUBLIC_REVIEWED_ONLY` | 公开视图只显示已审核数据 | 生产开启前需先完成数据审核 |
+| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(首个管理员) | 必须配置 |
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
 | `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |

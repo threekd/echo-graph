@@ -83,7 +83,8 @@ UNION ALL SELECT 'users', count(*) FROM users;"
 
 ### 3.1 可恢复快照来源
 
-管理端「数据管理 → 快照」Tab(或 `GET /api/admin/backups`)会列出两类:
+管理端「运维管理 → 快照」Tab(日志/快照自 2026-08-26 起位于运维管理窗口;或
+`GET /api/admin/backups`)会列出两类:
 
 - `db`:`backups/echo-graph-*.db`(当前实际来源);
 - `db`:`data/versions/<目录>/echo-graph.db` 历史库快照(旧机制遗留,**仅当该目录存在时**才会出现;
@@ -94,7 +95,7 @@ UNION ALL SELECT 'users', count(*) FROM users;"
 
 ### 3.2 整库恢复(db 类型)
 
-UI:数据管理 → 快照 → 选择 db 条目 → 恢复。
+UI:运维管理 → 快照 → 选择 db 条目 → 恢复。
 
 API:
 

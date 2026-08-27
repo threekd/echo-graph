@@ -76,6 +76,10 @@ server {
     root $APP_DIR/frontend/dist;
     index index.html;
 
+    # AI 书籍导入支持最大 200MB 电子书上传(与后端 MAX_BOOK_BYTES 一致);
+    # nginx 默认 client_max_body_size 为 1MB,不放开会 413 拒绝正常 epub 上传
+    client_max_body_size 200m;
+
     # 安全响应头(HTTPS 部署时 HSTS 生效;CSP 若引入新外部资源需同步调整)
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;

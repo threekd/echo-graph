@@ -157,8 +157,9 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   (我的关注 / 粉丝列表)、`GET /api/follow/relation/{user_id}`(我与该用户的关系)。
   关注/粉丝列表展示在左侧栏「我的」Tab,点击条目可直接跃迁到对方星云。
 - 用户数据语义:作者/作品/涟漪**新增即「已审核」**(输入即确认,`created_by=user/curated`
-  默认 `reviewed`;`created_by=llm` 即 AI 提取,默认 `draft` 进入草稿态;显式传值可覆盖;
-  普通用户管理界面不显示审核状态,admin 显式传 `draft` 仍可保留草稿);
+  默认 `reviewed`;`created_by=llm` 即 AI 提取,默认 `draft` 进入草稿态;admin 空间显式传值
+  可覆盖,非 admin 空间手工新增一律强制 `reviewed`,不允许通过 API 显式传 `draft`/`rejected`
+  制造公开可见的"草稿";普通用户管理界面不显示审核状态,admin 显式传 `draft` 仍可保留草稿);
   作品另有个人阅读状态(已读/在读/未读)、评分(推荐/不推荐)与评价(长文本)字段;
   普通用户界面隐藏「备注」,admin 保持原样;阅读状态、评分与评价在右侧「书签」Tab 展示。
 - 新增作者/作品时,原文名/原著标题输入框会联想**当前空间已有数据**
@@ -167,7 +168,7 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   涟漪与作品关联作者的选取同样基于当前空间已有数据。
 - 点亮星空需登录使用(未登录点击会先弹出登录框),提交进入自己的星云。
 
-**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,公开接口只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见),默认关闭以便开发时看到全部数据;管理页新增「快照」Tab,可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照——恢复前会自动为当前库做安全备份(CSV 类型历史快照已随 CSV 备份层于 2026-08-27 移除)。
+**发布过滤与快照恢复**:在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1` 后,默认视图(官方图谱,`/api/graph`、`/api/search` 等)只返回 `reviewStatus=reviewed` 的内容(草稿/驳回不可见;用户公开星云 `/api/space/*` 不受此开关影响),默认关闭以便开发时看到全部数据;运维管理窗口「快照」Tab(2026-08-26 起自数据管理迁入)可一键创建当前库快照(`backups/echo-graph-<时间>.db`),也可查看并恢复 `backups/`(SQLite 备份)下的快照——恢复前会自动为当前库做安全备份(CSV 类型历史快照已随 CSV 备份层于 2026-08-27 移除)。
 
 
 策展数据以 SQLite(`data/echo-graph.db`)为准;授权后通过页面左侧「**数据管理**」入口编辑

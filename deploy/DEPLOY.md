@@ -16,9 +16,10 @@
 ## 0. 上线前决策(请逐项确认)
 
 1. **域名与备案**:VPS 对外提供 80/443 服务,国内机房绑定域名需 ICP 备案;不想备案可选香港/新加坡 VPS。
-2. **公开数据范围**:公开接口默认返回全部审核状态(便于管理/开发);
-   **已在代码内置方案**——在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1`,公开视图即只返回
-   `reviewed` 内容(草稿/驳回不可见)。上线前请逐条人工审核并置 `reviewed`,再决定是否开启。
+2. **公开数据范围**:默认视图(官方图谱)默认返回全部审核状态(便于管理/开发);
+   **已在代码内置方案**——在 `.env` 设置 `PUBLIC_REVIEWED_ONLY=1`,默认视图即只返回
+   `reviewed` 内容(草稿/驳回不可见;用户公开星云 `/api/space/*` 不受该开关影响)。
+   上线前请逐条人工审核并置 `reviewed`,再决定是否开启。
 3. **引导管理员**:在 `.env` 配置 `ADMIN_BOOTSTRAP_EMAIL`,该邮箱注册时自动获得
    admin 角色并认领公共星云数据;数据管理只认 admin 角色登录态,已移除 ADMIN_TOKEN。
 4. **账号体系(可选但建议)**:注册接口含 Cloudflare Turnstile 人机验证——在
@@ -26,6 +27,9 @@
    写入 `.env`(**未配置密钥时注册默认失败**,仅本地开发可设
    `TURNSTILE_ALLOW_SKIP=1` 临时跳过,请勿在生产设置);HTTPS 部署**必须**设
    `COOKIE_SECURE=1`(未设置时服务启动会输出告警日志)。
+5. **书籍导入上传大小**:nginx 模板已内置 `client_max_body_size 200m`(与后端
+   `MAX_BOOK_BYTES` 一致);若手动配置 nginx,需同步添加该指令,否则 >1MB 的
+   电子书会被 nginx 以 413 拒绝。
 
 ## 1. 准备仓库
 
@@ -90,7 +94,7 @@ SQLite 为权威库,schema 迁移由服务启动时自动执行;数据备份/恢
     sqlite3 data/echo-graph.db \".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'\""
   ```
 
-- **恢复**:把快照放到 VPS 后,在管理端「数据管理 → 快照」Tab 选择并恢复
+- **恢复**:把快照放到 VPS 后,在管理端「运维管理 → 快照」Tab 选择并恢复
   (恢复前自动安全备份当前库,恢复后自动重新认领未归属行);或停服直接替换
   `data/echo-graph.db`(先 `PRAGMA integrity_check`,并移除旧的 `-wal`/`-shm`)。
 - **跨机器迁移**:复制 `backups/echo-graph-*.db` 到目标机器后按上述恢复,完整包含
@@ -109,7 +113,7 @@ SQLite 为权威库,schema 迁移由服务启动时自动执行;数据备份/恢
 | Neo4j 时代快照 `data/snapshots/` | VPS 本地 | 同上(历史遗留,不再产生) |
 | 审计日志 `audit_log` | SQLite 内 | 用 `scripts/prune_audit.py --days 90` 裁剪(可加 cron 定期执行) |
 
-> **快照恢复入口**:管理端「数据管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
+> **快照恢复入口**:管理端「运维管理 → 快照」Tab 可一键创建当前库快照,也可查看并恢复
 > `backups/` 的 SQLite 备份(`data/versions/` 的历史库快照仅在旧机器残留时可用);
 > 恢复前会自动为当前库做安全备份。应用侧创建的快照保留最近 30 份(`backups/` 下),
 > deploy.sh 自身的备份保留 14 份;**恢复期间请勿编辑数据**,后端在恢复与写事务之间

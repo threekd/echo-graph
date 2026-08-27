@@ -46,14 +46,24 @@ class CreatedByTest(unittest.TestCase):
         self.assertEqual(row["created_by"], "llm")
         self.assertEqual(row["reviewStatus"], "draft")  # created_by=llm 默认草稿
 
-    def test_explicit_review_status_overrides_default(self) -> None:
-        """显式传 reviewStatus 时覆盖 created_by 推导的默认值。"""
-        row = my_create(
-            "authors", {"originalName": "D", "Name_CN": "显式状态", "reviewStatus": "rejected"},
-            user=self.alice,
+    def test_user_cannot_override_review_status_to_unreviewed(self) -> None:
+        """输入即确认:非 admin 空间手工新增一律强制 reviewed,显式 draft/rejected 被回正。"""
+        for status in ("draft", "rejected"):
+            with self.subTest(status=status):
+                row = my_create(
+                    "authors",
+                    {"originalName": "D", "Name_CN": "强制已审核", "reviewStatus": status},
+                    user=self.alice,
+                )["row"]
+                self.assertEqual(row["created_by"], "user")
+                self.assertEqual(row["reviewStatus"], "reviewed")
+
+    def test_admin_explicit_draft_preserved(self) -> None:
+        """admin 空间保留显式传值能力:显式传 draft 仍可保留草稿。"""
+        row = admin.create(
+            "authors", {"originalName": "E", "Name_CN": "官方草稿", "reviewStatus": "draft"}
         )["row"]
-        self.assertEqual(row["created_by"], "user")
-        self.assertEqual(row["reviewStatus"], "rejected")
+        self.assertEqual(row["reviewStatus"], "draft")
 
     def test_invalid_created_by_rejected(self) -> None:
         with self.assertRaises(HTTPException) as ctx:

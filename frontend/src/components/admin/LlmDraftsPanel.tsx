@@ -47,6 +47,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [confirmClear, setConfirmClear] = useState<{ workId: string; title: string } | null>(null);
   const [modal, setModal] = useState<EditModal | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const [reuseSource, setReuseSource] = useState<{
     workId: string;
     title: string;
@@ -307,6 +308,310 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
     );
   };
 
+  // 批次待处理数:有涟漪时按草稿涟漪数;无涟漪的孤儿批次看源书是否已发布/已复用
+  const draftCountOf = (b: LlmDraftBatch): number => {
+    const drafts = b.ripples.filter((r) => rippleStatus(r) === "draft").length;
+    if (b.ripples.length === 0) {
+      return b.source.work.published_to_id ? 0 : 1;
+    }
+    return drafts;
+  };
+
+  const pendingBatches = data ? data.batches.filter((b) => draftCountOf(b) > 0) : [];
+  const archivedBatches = data ? data.batches.filter((b) => draftCountOf(b) === 0) : [];
+
+  const renderBatchCard = (b: LlmDraftBatch) => {
+    const workId = b.source.work.id;
+    const isCollapsed = collapsed.has(workId);
+    return (
+    <div className={"llm-batch" + (isCollapsed ? " collapsed" : "")} key={workId}>
+      <div
+        className="llm-batch-head"
+        onClick={() => toggleCollapsed(workId)}
+        title={isCollapsed ? "展开该批次" : "收起该批次"}
+      >
+        <span className={"llm-collapse-indicator" + (isCollapsed ? "" : " open")} aria-hidden="true">▸</span>
+        <button
+          className="llm-batch-title llm-batch-title-btn"
+          title={
+            b.source.work.published_to_id
+              ? "点击更换复用目标(当前已复用)"
+              : "点击选择库中已有作品进行复用(导入重复且未自动识别时,该批次涟漪将自动指向已有源书)"
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            setReuseSource({
+              workId: b.source.work.id,
+              title: workLabelOf(b.source.work),
+              scope: "source",
+              currentLabel: b.source.work.published_to_id
+                ? reuseLabels?.works[b.source.work.published_to_id]
+                : undefined,
+            });
+            setReuseWorkId("");
+          }}
+        >
+          《{workLabelOf(b.source.work)}》
+          {b.source.work.published_to_id && (
+            <span className="llm-reuse-target">
+              → 已复用《{reuseLabels?.works[b.source.work.published_to_id] ?? "?"}》
+            </span>
+          )}
+        </button>
+        <span className="llm-batch-meta">
+          作者:
+          {b.source.authors.length
+            ? b.source.authors.map((a, ai) => (
+                <span key={a.id}>
+                  {ai > 0 && "、"}
+                  <button
+                    className="llm-batch-author-btn"
+                    title={
+                      a.published_to_id
+                        ? "点击更换复用目标(当前已复用)"
+                        : "点击选择库中已有作者进行复用(导入重复且未自动识别时,该批次涟漪将自动指向该作者)"
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReuseAuthor({
+                        authorId: a.id,
+                        label: authorLabelOf(a),
+                        scope: "source",
+                        currentLabel: a.published_to_id
+                          ? reuseLabels?.authors[a.published_to_id]
+                          : undefined,
+                      });
+                      setReuseAuthorId("");
+                    }}
+                  >
+                    {sourceAuthorLabel(a)}
+                    {a.published_to_id && (
+                      <span className="llm-reuse-target">
+                        → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
+                      </span>
+                    )}
+                  </button>
+                </span>
+              ))
+            : "未知"}
+          {b.ripples.length > 0 &&
+            (() => {
+              const s = batchStats(b);
+              const active = batchFilter[b.source.work.id];
+              return (
+                <span className="llm-batch-stats">
+                  <button
+                    className={"ok" + (active === "approved" ? " active" : "")}
+                    title="点击仅显示已批准涟漪,再点取消筛选"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleBatchFilter(b.source.work.id, "approved");
+                    }}
+                  >
+                    批准 {s.approved}
+                  </button>
+                  <button
+                    className={"draft" + (active === "draft" ? " active" : "")}
+                    title="点击仅显示草稿涟漪,再点取消筛选"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleBatchFilter(b.source.work.id, "draft");
+                    }}
+                  >
+                    草稿 {s.draft}
+                  </button>
+                  <button
+                    className={"bad" + (active === "rejected" ? " active" : "")}
+                    title="点击仅显示驳回涟漪,再点取消筛选"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleBatchFilter(b.source.work.id, "rejected");
+                    }}
+                  >
+                    驳回 {s.rejected}
+                  </button>
+                </span>
+              );
+            })()}
+        </span>
+        {renderEntityActions(b)}
+      </div>
+
+      {!isCollapsed && (
+      <div className="llm-batch-body">
+        {(() => {
+          const filter = batchFilter[b.source.work.id];
+          const visible = filter ? b.ripples.filter((r) => rippleStatus(r) === filter) : b.ripples;
+          const ordered = [...visible].sort((a, b) => {
+            const ad = rippleStatus(a) === "draft" ? 0 : 1;
+            const bd = rippleStatus(b) === "draft" ? 0 : 1;
+            return ad - bd;
+          });
+          return ordered.length === 0 ? (
+            <p className="llm-empty">该批次没有{filter === "approved" ? "已批准" : filter === "rejected" ? "已驳回" : "草稿"}涟漪</p>
+          ) : ordered.map((r, ri) => {
+          const published = Boolean((r.edge as unknown as Record<string, unknown>).published_to_id);
+          const rejected = r.edge.reviewStatus === "rejected";
+          const evidence = String((r.edge as unknown as Record<string, unknown>).evidence || "");
+          const evidenceSource = String((r.edge as unknown as Record<string, unknown>).evidenceSource || "");
+          const note = String((r.edge as unknown as Record<string, unknown>).note || "");
+          return (
+            <div className={"llm-ripple" + (published ? " published" : "")} key={ri}>
+              <div className="llm-ripple-grid">
+                <div className="llm-field">
+                  <span>目标作品</span>
+                  {r.target ? (
+                    <>
+                      <button
+                        className="llm-batch-title-btn"
+                        title={
+                          r.target.work.published_to_id
+                            ? "点击更换复用目标(当前已复用)"
+                            : "点击选择库中已有作品进行复用"
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReuseSource({
+                            workId: r.target!.work.id,
+                            title: workLabelOf(r.target!.work),
+                            scope: "target",
+                            currentLabel: r.target!.work.published_to_id
+                              ? reuseLabels?.works[r.target!.work.published_to_id]
+                              : undefined,
+                          });
+                          setReuseWorkId("");
+                        }}
+                      >
+                        {workLabelOf(r.target.work)}
+                      </button>
+                      {r.target.work.published_to_id && (
+                        <span className="llm-reuse-target">
+                          → 已复用《{reuseLabels?.works[r.target.work.published_to_id] ?? "?"}》
+                        </span>
+                      )}
+                      {r.hint && <span className="llm-hint-inline">{hintText(r.hint)}</span>}
+                    </>
+                  ) : "?"}
+                </div>
+                <div className="llm-field">
+                  <span>目标作品作者</span>
+                  {r.target ? (
+                    <>
+                      {r.target.authors.length
+                        ? r.target.authors.map((a, ai) => (
+                            <span key={a.id}>
+                              {ai > 0 && "、"}
+                              <button
+                                className="llm-batch-author-btn"
+                                title={
+                                  a.published_to_id
+                                    ? "点击更换复用目标(当前已复用)"
+                                    : "点击选择库中已有作者进行复用"
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReuseAuthor({
+                                    authorId: a.id,
+                                    label: authorLabelOf(a),
+                                    scope: "target",
+                                    currentLabel: a.published_to_id
+                                      ? reuseLabels?.authors[a.published_to_id]
+                                      : undefined,
+                                  });
+                                  setReuseAuthorId("");
+                                }}
+                              >
+                                {sourceAuthorLabel(a)}
+                              </button>
+                              {a.published_to_id && (
+                                <span className="llm-reuse-target">
+                                  → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
+                                </span>
+                              )}
+                            </span>
+                          ))
+                        : "—"}
+                      {r.author_hint && (
+                        <span className="llm-hint-inline">{hintText(r.author_hint)}</span>
+                      )}
+                    </>
+                  ) : "—"}
+                </div>
+                <div className="llm-field full">
+                  <span>原文片段</span>
+                  <span className="llm-evidence" title={evidence}>
+                    {evidence || "—"}
+                  </span>
+                </div>
+                <div className="llm-field">
+                  <span>出处</span>
+                  {evidenceSource || "—"}
+                </div>
+                <div className="llm-field">
+                  <span>备注</span>
+                  {note || "—"}
+                </div>
+              </div>
+            {r.edge_hint && <p className="llm-hint">{hintText(r.edge_hint)}</p>}
+            <div className="llm-ripple-actions">
+              {!published && r.target && (
+                <span className="llm-ripple-actions-left">
+                  <button
+                    title={"编辑目标作品 " + workLabelOf(r.target.work)}
+                    onClick={() => setModal({
+                      kind: "works",
+                      row: { ...r.target!.work, author_id: r.target!.authors.map((a) => a.id).join(",") } as AdminRow,
+                    })}
+                  >
+                    编辑作品
+                  </button>
+                  {r.target.authors.map((a) => (
+                    <button
+                      key={a.id}
+                      title={"编辑目标作者 " + sourceAuthorLabel(a)}
+                      onClick={() => setModal({ kind: "authors", row: a as AdminRow })}
+                    >
+                      编辑作者
+                    </button>
+                  ))}
+                  <button
+                    title="编辑涟漪(原文片段/出处/备注)"
+                    onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}
+                  >
+                    编辑涟漪
+                  </button>
+                </span>
+              )}
+              <span className="llm-ripple-actions-right">
+                {published ? (
+                  <span className="llm-published">
+                    已发布
+                    {(() => {
+                      const pid = String((r.edge as unknown as Record<string, unknown>).published_to_id);
+                      const label = reuseLabels?.works[pid];
+                      return label ? "《" + label + "》" : " #" + shortId(pid);
+                    })()}
+                  </span>
+                ) : rejected ? (
+                  <button onClick={() => reopen(r.edge.id)}>重开</button>
+                ) : (
+                  <>
+                    <button className="approve" onClick={() => approveRipple(r.edge.id)}>批准</button>
+                    <button className="reject" onClick={() => reject(r.edge.id)}>驳回</button>
+                  </>
+                )}
+              </span>
+            </div>
+            </div>
+          );
+          });
+        })()}
+      </div>
+      )}
+    </div>
+    );
+  };
+
   return (
     <div className="llm-drafts">
       <div className="llm-head">
@@ -318,7 +623,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
             : ""}
         </p>
         <div className="llm-toolbar">
-          <span className="llm-toolbar-title">待审核批次</span>
+          <span className="llm-toolbar-title">待审核批次({pendingBatches.length})</span>
         </div>
       </div>
 
@@ -327,298 +632,18 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       ) : !data || data.batches.length === 0 ? (
         <p className="llm-empty">暂无待审核的 AI 草稿，可先导入书籍。</p>
       ) : (
-        data.batches.map((b) => {
-          const workId = b.source.work.id;
-          const isCollapsed = collapsed.has(workId);
-          return (
-          <div className={"llm-batch" + (isCollapsed ? " collapsed" : "")} key={workId}>
-            <div
-              className="llm-batch-head"
-              onClick={() => toggleCollapsed(workId)}
-              title={isCollapsed ? "展开该批次" : "收起该批次"}
-            >
-              <span className={"llm-collapse-indicator" + (isCollapsed ? "" : " open")} aria-hidden="true">▸</span>
-              <button
-                className="llm-batch-title llm-batch-title-btn"
-                title={
-                  b.source.work.published_to_id
-                    ? "点击更换复用目标(当前已复用)"
-                    : "点击选择库中已有作品进行复用(导入重复且未自动识别时,该批次涟漪将自动指向已有源书)"
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setReuseSource({
-                    workId: b.source.work.id,
-                    title: workLabelOf(b.source.work),
-                    scope: "source",
-                    currentLabel: b.source.work.published_to_id
-                      ? reuseLabels?.works[b.source.work.published_to_id]
-                      : undefined,
-                  });
-                  setReuseWorkId("");
-                }}
-              >
-                《{workLabelOf(b.source.work)}》
-                {b.source.work.published_to_id && (
-                  <span className="llm-reuse-target">
-                    → 已复用《{reuseLabels?.works[b.source.work.published_to_id] ?? "?"}》
-                  </span>
-                )}
-              </button>
-              <span className="llm-batch-meta">
-                作者:
-                {b.source.authors.length
-                  ? b.source.authors.map((a, ai) => (
-                      <span key={a.id}>
-                        {ai > 0 && "、"}
-                        <button
-                          className="llm-batch-author-btn"
-                          title={
-                            a.published_to_id
-                              ? "点击更换复用目标(当前已复用)"
-                              : "点击选择库中已有作者进行复用(导入重复且未自动识别时,该批次涟漪将自动指向该作者)"
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReuseAuthor({
-                              authorId: a.id,
-                              label: authorLabelOf(a),
-                              scope: "source",
-                              currentLabel: a.published_to_id
-                                ? reuseLabels?.authors[a.published_to_id]
-                                : undefined,
-                            });
-                            setReuseAuthorId("");
-                          }}
-                        >
-                          {sourceAuthorLabel(a)}
-                          {a.published_to_id && (
-                            <span className="llm-reuse-target">
-                              → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
-                            </span>
-                          )}
-                        </button>
-                      </span>
-                    ))
-                  : "未知"}
-                {b.ripples.length > 0 &&
-                  (() => {
-                    const s = batchStats(b);
-                    const active = batchFilter[b.source.work.id];
-                    return (
-                      <span className="llm-batch-stats">
-                        <button
-                          className={"ok" + (active === "approved" ? " active" : "")}
-                          title="点击仅显示已批准涟漪,再点取消筛选"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleBatchFilter(b.source.work.id, "approved");
-                          }}
-                        >
-                          批准 {s.approved}
-                        </button>
-                        <button
-                          className={"draft" + (active === "draft" ? " active" : "")}
-                          title="点击仅显示草稿涟漪,再点取消筛选"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleBatchFilter(b.source.work.id, "draft");
-                          }}
-                        >
-                          草稿 {s.draft}
-                        </button>
-                        <button
-                          className={"bad" + (active === "rejected" ? " active" : "")}
-                          title="点击仅显示驳回涟漪,再点取消筛选"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleBatchFilter(b.source.work.id, "rejected");
-                          }}
-                        >
-                          驳回 {s.rejected}
-                        </button>
-                      </span>
-                    );
-                  })()}
-              </span>
-              {renderEntityActions(b)}
+        <>
+          {pendingBatches.map(renderBatchCard)}
+          {archivedBatches.length > 0 && (
+            <div className="llm-archived">
+              <div className="llm-archived-head" onClick={() => setArchivedOpen((o) => !o)}>
+                <span className={"llm-collapse-indicator" + (archivedOpen ? " open" : "")} aria-hidden="true">▸</span>
+                <span className="llm-toolbar-title">已审核批次({archivedBatches.length})</span>
+              </div>
+              {archivedOpen && archivedBatches.map(renderBatchCard)}
             </div>
-
-            {!isCollapsed && (
-            <div className="llm-batch-body">
-              {(() => {
-                const filter = batchFilter[b.source.work.id];
-                const visible = filter ? b.ripples.filter((r) => rippleStatus(r) === filter) : b.ripples;
-                // 未处理(草稿)排前,已批准/已驳回沉到卡片底部(稳定排序,保持原相对顺序)
-                const ordered = [...visible].sort((a, b) => {
-                  const ad = rippleStatus(a) === "draft" ? 0 : 1;
-                  const bd = rippleStatus(b) === "draft" ? 0 : 1;
-                  return ad - bd;
-                });
-                return ordered.length === 0 ? (
-                  <p className="llm-empty">该批次没有{filter === "approved" ? "已批准" : filter === "rejected" ? "已驳回" : "草稿"}涟漪</p>
-                ) : ordered.map((r, ri) => {
-                const published = Boolean((r.edge as unknown as Record<string, unknown>).published_to_id);
-                const rejected = r.edge.reviewStatus === "rejected";
-                const evidence = String((r.edge as unknown as Record<string, unknown>).evidence || "");
-                const evidenceSource = String((r.edge as unknown as Record<string, unknown>).evidenceSource || "");
-                const note = String((r.edge as unknown as Record<string, unknown>).note || "");
-                return (
-                  <div className={"llm-ripple" + (published ? " published" : "")} key={ri}>
-                    <div className="llm-ripple-grid">
-                      <div className="llm-field">
-                        <span>目标作品</span>
-                        {r.target ? (
-                          <>
-                            <button
-                              className="llm-batch-title-btn"
-                              title={
-                                r.target.work.published_to_id
-                                  ? "点击更换复用目标(当前已复用)"
-                                  : "点击选择库中已有作品进行复用"
-                              }
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReuseSource({
-                                  workId: r.target!.work.id,
-                                  title: workLabelOf(r.target!.work),
-                                  scope: "target",
-                                  currentLabel: r.target!.work.published_to_id
-                                    ? reuseLabels?.works[r.target!.work.published_to_id]
-                                    : undefined,
-                                });
-                                setReuseWorkId("");
-                              }}
-                            >
-                              {workLabelOf(r.target.work)}
-                            </button>
-                            {r.target.work.published_to_id && (
-                              <span className="llm-reuse-target">
-                                → 已复用《{reuseLabels?.works[r.target.work.published_to_id] ?? "?"}》
-                              </span>
-                            )}
-                            {r.hint && <span className="llm-hint-inline">{hintText(r.hint)}</span>}
-                          </>
-                        ) : "?"}
-                      </div>
-                      <div className="llm-field">
-                        <span>目标作品作者</span>
-                        {r.target ? (
-                          <>
-                            {r.target.authors.length
-                              ? r.target.authors.map((a, ai) => (
-                                  <span key={a.id}>
-                                    {ai > 0 && "、"}
-                                    <button
-                                      className="llm-batch-author-btn"
-                                      title={
-                                        a.published_to_id
-                                          ? "点击更换复用目标(当前已复用)"
-                                          : "点击选择库中已有作者进行复用"
-                                      }
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setReuseAuthor({
-                                          authorId: a.id,
-                                          label: authorLabelOf(a),
-                                          scope: "target",
-                                          currentLabel: a.published_to_id
-                                            ? reuseLabels?.authors[a.published_to_id]
-                                            : undefined,
-                                        });
-                                        setReuseAuthorId("");
-                                      }}
-                                    >
-                                      {sourceAuthorLabel(a)}
-                                    </button>
-                                    {a.published_to_id && (
-                                      <span className="llm-reuse-target">
-                                        → 已复用《{reuseLabels?.authors[a.published_to_id] ?? "?"}》
-                                      </span>
-                                    )}
-                                  </span>
-                                ))
-                              : "—"}
-                            {r.author_hint && (
-                              <span className="llm-hint-inline">{hintText(r.author_hint)}</span>
-                            )}
-                          </>
-                        ) : "—"}
-                      </div>
-                      <div className="llm-field full">
-                        <span>原文片段</span>
-                        <span className="llm-evidence" title={evidence}>
-                          {evidence || "—"}
-                        </span>
-                      </div>
-                      <div className="llm-field">
-                        <span>出处</span>
-                        {evidenceSource || "—"}
-                      </div>
-                      <div className="llm-field">
-                        <span>备注</span>
-                        {note || "—"}
-                      </div>
-                    </div>
-                  {r.edge_hint && <p className="llm-hint">{hintText(r.edge_hint)}</p>}
-                  <div className="llm-ripple-actions">
-                    {!published && r.target && (
-                      <span className="llm-ripple-actions-left">
-                        <button
-                          title={"编辑目标作品 " + workLabelOf(r.target.work)}
-                          onClick={() => setModal({
-                            kind: "works",
-                            row: { ...r.target!.work, author_id: r.target!.authors.map((a) => a.id).join(",") } as AdminRow,
-                          })}
-                        >
-                          编辑作品
-                        </button>
-                        {r.target.authors.map((a) => (
-                          <button
-                            key={a.id}
-                            title={"编辑目标作者 " + sourceAuthorLabel(a)}
-                            onClick={() => setModal({ kind: "authors", row: a as AdminRow })}
-                          >
-                            编辑作者
-                          </button>
-                        ))}
-                        <button
-                          title="编辑涟漪(原文片段/出处/备注)"
-                          onClick={() => setModal({ kind: "edges", row: r.edge as AdminRow })}
-                        >
-                          编辑涟漪
-                        </button>
-                      </span>
-                    )}
-                    <span className="llm-ripple-actions-right">
-                      {published ? (
-                        <span className="llm-published">
-                          已发布
-                          {(() => {
-                            const pid = String((r.edge as unknown as Record<string, unknown>).published_to_id);
-                            const label = reuseLabels?.works[pid];
-                            return label ? "《" + label + "》" : " #" + shortId(pid);
-                          })()}
-                        </span>
-                      ) : rejected ? (
-                        <button onClick={() => reopen(r.edge.id)}>重开</button>
-                      ) : (
-                        <>
-                          <button className="approve" onClick={() => approveRipple(r.edge.id)}>批准</button>
-                          <button className="reject" onClick={() => reject(r.edge.id)}>驳回</button>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  </div>
-                );
-                });
-              })()}
-            </div>
-            )}
-          </div>
-          );
-        })
+          )}
+        </>
       )}
 
       {confirmClear && (

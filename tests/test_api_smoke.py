@@ -174,6 +174,27 @@ class ApiSmokeTest(unittest.TestCase):
         })["row"]
         self.assertEqual(row["readingStatus"], "unread")
 
+    def test_admin_partial_update_work_reading_status(self) -> None:
+        """行内编辑:只传 readingStatus 也能更新,其他字段与作者关联保留。"""
+        import app.admin as admin
+
+        a = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
+        w = {
+            "id": str(uuid.uuid4()),
+            "language": "zh",
+            "originalTitle": "T",
+            "Title_CN": "某书",
+            "author_id": a["id"],
+        }
+        self.seed([a], [w], [])
+        res = admin.update("works", w["id"], {"readingStatus": "read"})
+        row = res["row"]
+        self.assertEqual(row["readingStatus"], "read")
+        self.assertEqual(row["Title_CN"], "某书")
+        self.assertEqual(row["language"], "zh")
+        saved = next(x for x in sqlite_store.list_all()["works"] if x["id"] == w["id"])
+        self.assertEqual(saved["author_id"], a["id"])  # 作者关联保留
+
     def test_admin_update_bumps_updated_at_keeps_created_at(self) -> None:
         import app.admin as admin
 

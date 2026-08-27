@@ -266,38 +266,47 @@ def update_row(
     row.pop("created_by", None)  # 溯源列创建后不可修改(与 createdAt 同策略)
     now = _now()
     is_admin_space = owner_id == admin_user_id()
-    extra: dict | None = None
-    if kind == "works":
-        reading_status = row.get("readingStatus")
-        if reading_status is not None and reading_status not in ("read", "reading", "unread"):
-            raise HTTPException(status_code=400, detail="阅读状态取值仅支持 read / reading / unread")
-        recommendation = row.get("recommendation")
-        if recommendation is not None and recommendation not in ("recommend", "not_recommend"):
-            raise HTTPException(status_code=400, detail="评分取值仅支持 recommend / not_recommend")
-        review = row.get("review")
-        if review is not None and len(str(review)) > 2000:
-            raise HTTPException(status_code=400, detail="评价过长(最多 2000 字)")
-        row["readingStatus"] = reading_status
-        row["recommendation"] = recommendation
-        row["review"] = review
-        # 用户表单总会携带这两个字段:空值代表清除(显式写 NULL)
-        extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         existing = _resolve_row(conn, kind, item_id, owner_id)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-        row["created_by"] = existing.get("created_by")  # 返回行携带库内真实溯源值
+        # 部分更新:以前端传入字段覆盖库内行,未传字段保留(支持行内编辑单字段)
+        merged = clean_row({**existing, **row})
+        merged.pop("created_by", None)
+        merged["created_by"] = existing.get("created_by")  # 返回行携带库内真实溯源值
+        if kind == "works" and "author_id" not in row:
+            # author_id 存于 work_authors,行内编辑未传时必须保留原有作者关联
+            wa = conn.execute(
+                "SELECT author_id FROM work_authors WHERE work_id = ?", (item_id,)
+            ).fetchall()
+            merged["author_id"] = ",".join(r["author_id"] for r in wa)
         if not is_admin_space:
-            row["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
+            merged["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
+        extra: dict | None = None
+        if kind == "works":
+            reading_status = merged.get("readingStatus")
+            if reading_status is not None and reading_status not in ("read", "reading", "unread"):
+                raise HTTPException(status_code=400, detail="阅读状态取值仅支持 read / reading / unread")
+            recommendation = merged.get("recommendation")
+            if recommendation is not None and recommendation not in ("recommend", "not_recommend"):
+                raise HTTPException(status_code=400, detail="评分取值仅支持 recommend / not_recommend")
+            review = merged.get("review")
+            if review is not None and len(str(review)) > 2000:
+                raise HTTPException(status_code=400, detail="评价过长(最多 2000 字)")
+            merged["readingStatus"] = reading_status
+            merged["recommendation"] = recommendation
+            merged["review"] = review
+            # 空值代表清除(显式写 NULL)
+            extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
         expected_ts = row.get("updatedAt") or existing.get("updatedAt")
-        row["id"] = item_id
-        row["createdAt"] = row.get("createdAt") or existing.get("createdAt") or now
-        row["updatedAt"] = now
-        errors = validate_row(conn, kind, row, exclude_id=item_id, owner_id=owner_id)
+        merged["id"] = item_id
+        merged["createdAt"] = merged.get("createdAt") or existing.get("createdAt") or now
+        merged["updatedAt"] = now
+        errors = validate_row(conn, kind, merged, exclude_id=item_id, owner_id=owner_id)
         if errors:
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
         status = sqlite_store.update_row(
-            conn, kind, item_id, row, expected_updated_at=expected_ts,
+            conn, kind, item_id, merged, expected_updated_at=expected_ts,
             owner_id=owner_id, extra=extra,
         )
         if status == -1:
@@ -305,15 +314,15 @@ def update_row(
         if status == 0:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
-            sqlite_store.set_work_authors(conn, item_id, _author_id_list(row.get("author_id")))
-        label = _audit_label(conn, kind, row, owner_id)
-        changes = _audit_changes(kind, existing, row)
+            sqlite_store.set_work_authors(conn, item_id, _author_id_list(merged.get("author_id")))
+        label = _audit_label(conn, kind, merged, owner_id)
+        changes = _audit_changes(kind, existing, merged)
         detail = f"修改「{label}」" + (f": {changes}" if changes else "")
         db_sqlite.audit(
-            conn, "update", kind, item_id, detail, before=existing, after=row, actor=actor,
+            conn, "update", kind, item_id, detail, before=existing, after=merged, actor=actor,
         )
     after_write(owner_id)
-    return {"ok": True, "row": row}
+    return {"ok": True, "row": merged}
 
 
 def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) -> dict:

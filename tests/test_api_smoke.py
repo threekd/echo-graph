@@ -160,6 +160,20 @@ class ApiSmokeTest(unittest.TestCase):
         # 行级写入已落库
         self.assertEqual(len(sqlite_store.list_all()["authors"]), 1)
 
+    def test_admin_create_work_defaults_reading_status_unread(self) -> None:
+        """新增作品默认阅读状态为「未读」。"""
+        import app.admin as admin
+
+        author = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
+        self.seed([author])
+        row = admin.create("works", {
+            "language": "zh",
+            "originalTitle": "T",
+            "Title_CN": "某书",
+            "author_id": author["id"],
+        })["row"]
+        self.assertEqual(row["readingStatus"], "unread")
+
     def test_admin_update_bumps_updated_at_keeps_created_at(self) -> None:
         import app.admin as admin
 

@@ -216,6 +216,8 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
     extra: dict = {"created_by": row["created_by"]}
     if kind == "works":
         reading_status = row.get("readingStatus")
+        if reading_status is None:
+            reading_status = "unread"  # 新增作品阅读状态默认「未读」
         if reading_status is not None and reading_status not in ("read", "reading", "unread"):
             raise HTTPException(status_code=400, detail="阅读状态取值仅支持 read / reading / unread")
         recommendation = row.get("recommendation")

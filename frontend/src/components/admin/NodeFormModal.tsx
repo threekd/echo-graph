@@ -176,7 +176,13 @@ export default function NodeFormModal({
   onAuthorAdded?: (row: AuthorRow) => void;
   onWorkAdded?: (row: WorkRow) => void;
 }) {
-  const [form, setForm] = useState<any>({ ...initial });
+  const [form, setForm] = useState<any>({
+    ...initial,
+    // 新增作品时阅读状态默认「未读」
+    ...(mode === "add" && kind === "works" && !(initial as Record<string, unknown>).readingStatus
+      ? { readingStatus: "unread" }
+      : {}),
+  });
   const [formError, setFormError] = useState("");
   const [dupHints, setDupHints] = useState<Record<string, string>>({});
   const [confirmReload, setConfirmReload] = useState(false);
@@ -190,14 +196,6 @@ export default function NodeFormModal({
   const fields = FIELDS[kind].filter(
     (f) => !(!isAdmin && (f.key === "reviewStatus" || f.key === "note"))
   );
-  if (!isAdmin && kind === "works") {
-    // 客观信息(标题/语言/作者/年份/体裁)之后,用细分隔线划出「个人笔记」分组
-    fields.push({ key: "__divider", label: "个人笔记", type: "divider" });
-    fields.push({ key: "readingStatus", label: "阅读状态", type: "readingStatus" });
-    fields.push({ key: "recommendation", label: "评分", type: "recommendation" });
-    fields.push({ key: "review", label: "评价", type: "textarea", maxLength: 2000 });
-  }
-
   const selfId = mode === "edit" ? initial.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {
     const list = kind === "authors" ? authorsList : worksList;

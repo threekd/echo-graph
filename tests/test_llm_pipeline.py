@@ -317,7 +317,7 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual((before["batches"], before["ripples"], before["published"]), (1, 1, 0))
 
         admin = {"id": self.admin["id"], "email": _ADMIN_EMAIL, "role": "admin"}
-        result = clear_drafts(admin)
+        result = clear_drafts(user=admin)
         self.assertTrue(result["ok"])
         self.assertEqual(result["counts"], {"authors": 2, "works": 2, "edges": 1})
 

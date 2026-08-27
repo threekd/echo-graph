@@ -24,6 +24,8 @@ import app.main as main
 from app import auth, db_sqlite, sqlite_store
 from app.llm_review import (
     ApproveBody,
+    ReuseAuthorBody,
+    ReuseWorkBody,
     approve_draft,
     approve_ripple,
     approve_source,
@@ -32,6 +34,8 @@ from app.llm_review import (
     llm_drafts,
     reject_draft,
     reopen_draft,
+    reuse_draft_author,
+    reuse_draft_work,
 )
 from app.me import my_create
 
@@ -208,10 +212,323 @@ class LlmReviewTest(unittest.TestCase):
         _stage_chain(self.vip["id"], "A")
         _stage_chain(self.admin["id"], "B")
 
-        result = clear_drafts(self.vip)
+        result = clear_drafts(user=self.vip)
         self.assertEqual(result["counts"], {"authors": 1, "works": 2, "edges": 1})
         self.assertEqual(llm_drafts(self.vip)["counts"]["batches"], 0)
         self.assertEqual(llm_drafts(self.admin)["counts"]["batches"], 1)
+
+    def test_clear_draft_batch_only(self) -> None:
+        """按批次清空:只软删除该批次相关草稿,其他批次不受影响。"""
+        batch_a = _stage_chain(self.vip["id"], "A")
+        _stage_chain(self.vip["id"], "B")
+
+        result = clear_drafts({"work_id": batch_a["work1"]}, self.vip)
+        self.assertEqual(result["counts"], {"authors": 1, "works": 2, "edges": 1})
+        drafts = llm_drafts(self.vip)
+        self.assertEqual(drafts["counts"]["batches"], 1)
+        titles = [b["source"]["work"]["Title_CN"] for b in drafts["batches"]]
+        self.assertEqual(titles, ["源书B"])
+        with db_sqlite._db() as conn:
+            deleted_a = conn.execute(
+                "SELECT count(*) c FROM works WHERE id = ? AND deletedAt IS NOT NULL",
+                (batch_a["work1"],),
+            ).fetchone()["c"]
+            self.assertEqual(deleted_a, 1)
+            alive_b = conn.execute(
+                "SELECT count(*) c FROM works WHERE id = ? AND deletedAt IS NULL",
+                (batch_a["work1"],),
+            ).fetchone()["c"]
+            self.assertEqual(alive_b, 0)
+
+    def test_clear_draft_batch_keeps_shared_rows(self) -> None:
+        """按批次清空:被其他批次引用的共享作者保留,避免破坏其他批次。"""
+        batch_a = _stage_chain(self.vip["id"], "A")
+        batch_b = _stage_chain(self.vip["id"], "B")
+        # 让批次 B 的源书作品也关联批次 A 的作者(跨批次共享)
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            conn.execute(
+                "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+                (batch_b["work1"], batch_a["author_id"]),
+            )
+
+        result = clear_drafts({"work_id": batch_a["work1"]}, self.vip)
+        self.assertEqual(result["counts"], {"authors": 0, "works": 2, "edges": 1})
+        with db_sqlite._db() as conn:
+            alive = conn.execute(
+                "SELECT count(*) c FROM authors WHERE id = ? AND deletedAt IS NULL",
+                (batch_a["author_id"],),
+            ).fetchone()["c"]
+            self.assertEqual(alive, 1)
+        # 批次 B 的源书作者仍包含共享作者 A
+        drafts = llm_drafts(self.vip)
+        authors_b = next(
+            b for b in drafts["batches"] if b["source"]["work"]["Title_CN"] == "源书B"
+        )["source"]["authors"]
+        self.assertIn(batch_a["author_id"], [a["id"] for a in authors_b])
+
+    def test_clear_batch_with_personal_source_work(self) -> None:
+        """编辑涟漪改源为个人库作品后,清空该批次:个人库源书保留,草稿边/目标删除。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '个人库源书', '个人库源书', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+            # 让草稿作者只关联目标作品(排除孤儿源书 w1A 的关联),便于断言作者一并删除
+            conn.execute(
+                "DELETE FROM work_authors WHERE work_id = ?", (batch["work1"],)
+            )
+        edit_draft(
+            "edges",
+            batch["edge_id"],
+            {
+                "source_work_id": manual_w,
+                "target_work_id": batch["work2"],
+                "evidence": "正文提及了《目标书A》。",
+                "evidenceSource": "第一章",
+            },
+            self.vip,
+        )
+        result = clear_drafts({"work_id": manual_w}, self.vip)
+        self.assertEqual(result["counts"], {"authors": 1, "works": 1, "edges": 1})
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT deletedAt FROM works WHERE id = ?", (manual_w,)
+            ).fetchone()
+            self.assertIsNone(row["deletedAt"])  # 个人库源书保留
+            row = conn.execute(
+                "SELECT deletedAt FROM works WHERE id = ?", (batch["work2"],)
+            ).fetchone()
+            self.assertIsNotNone(row["deletedAt"])  # 草稿目标作品删除
+            row = conn.execute(
+                "SELECT deletedAt FROM edges WHERE id = ?", (batch["edge_id"],)
+            ).fetchone()
+            self.assertIsNotNone(row["deletedAt"])
+
+    def test_clear_batch_after_source_reuse(self) -> None:
+        """复用源书后清空批次:源书草稿(保留映射)被软删,已发布映射不受影响。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '已有源书', '已有源书', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+        reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=manual_w), self.vip)
+        result = clear_drafts({"work_id": batch["work1"]}, self.vip)
+        self.assertEqual(result["counts"], {"authors": 1, "works": 2, "edges": 1})
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT deletedAt, published_to_id FROM works WHERE id = ?",
+                (batch["work1"],),
+            ).fetchone()
+            self.assertIsNotNone(row["deletedAt"])
+            self.assertEqual(row["published_to_id"], manual_w)  # 映射保留,已发布数据不受影响
+
+    def test_drafts_space_includes_personal_library(self) -> None:
+        """编辑弹窗下拉数据(space):含个人库手动新增的作者/作品,排除 AI 草稿。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '手动作品', '手动作品', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+        drafts = llm_drafts(self.vip)
+        space_works = [w["id"] for w in drafts["space"]["works"]]
+        self.assertIn(manual_w, space_works)
+        self.assertNotIn(batch["work1"], space_works)  # AI 草稿作品不进个人库下拉
+        self.assertNotIn(batch["work2"], space_works)
+
+    def test_edit_edge_source_to_personal_work_stays_visible(self) -> None:
+        """编辑涟漪把源作品改为个人库作品后,涟漪仍可见(归入该作品的批次)。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '手动作品', '手动作品', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+        edit_draft(
+            "edges",
+            batch["edge_id"],
+            {
+                "source_work_id": manual_w,
+                "target_work_id": batch["work2"],
+                "evidence": "正文提及了《目标书A》。",
+                "evidenceSource": "第一章",
+            },
+            self.vip,
+        )
+        drafts = llm_drafts(self.vip)
+        by_title = {b["source"]["work"]["Title_CN"]: b for b in drafts["batches"]}
+        # 涟漪出现在「手动作品」批次下,原源书批次失去涟漪后成为 0 涟漪孤儿批次
+        self.assertIn("手动作品", by_title)
+        self.assertEqual(
+            [r["edge"]["id"] for r in by_title["手动作品"]["ripples"]],
+            [batch["edge_id"]],
+        )
+        self.assertIn("源书A", by_title)
+        self.assertEqual(by_title["源书A"]["ripples"], [])
+
+    def test_approve_edge_with_personal_work_endpoint(self) -> None:
+        """批准指向个人库作品的涟漪:个人库作品直接复用,不被复制或修改。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_a = db_sqlite.new_uuid()
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO authors (id, originalName, Name_CN, reviewStatus, createdAt,"
+                " updatedAt, created_by, owner_id)"
+                " VALUES (?, '手动作者', '手动作者', 'reviewed', ?, ?, 'user', ?)",
+                (manual_a, now, now, self.vip["id"]),
+            )
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '手动作品', '手动作品', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+            conn.execute(
+                "INSERT INTO work_authors (work_id, author_id) VALUES (?, ?)",
+                (manual_w, manual_a),
+            )
+        edit_draft(
+            "edges",
+            batch["edge_id"],
+            {
+                "source_work_id": manual_w,
+                "target_work_id": batch["work2"],
+                "evidence": "正文提及了《目标书A》。",
+                "evidenceSource": "第一章",
+            },
+            self.vip,
+        )
+        result = approve_ripple(batch["edge_id"], None, self.vip)
+        self.assertEqual(result["public_ids"]["source_work"], manual_w)
+        self.assertNotEqual(result["public_ids"]["target_work"], batch["work2"])
+        # 个人库作品行未被修改或复制
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT created_by, reviewStatus, published_to_id, deletedAt"
+                " FROM works WHERE id = ?",
+                (manual_w,),
+            ).fetchone()
+            self.assertEqual(row["created_by"], "user")
+            self.assertEqual(row["reviewStatus"], "reviewed")
+            self.assertIsNone(row["published_to_id"])
+            self.assertIsNone(row["deletedAt"])
+
+    def test_reuse_source_work_redirects_ripples(self) -> None:
+        """复用源书草稿:该批次涟漪批准后自动指向库中已有源书,目标行不被修改。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_w = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO works (id, language, originalTitle, Title_CN, reviewStatus,"
+                " createdAt, updatedAt, created_by, owner_id)"
+                " VALUES (?, 'zh', '已有源书', '已有源书', 'reviewed', ?, ?, 'user', ?)",
+                (manual_w, now, now, self.vip["id"]),
+            )
+        result = reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=manual_w), self.vip)
+        self.assertEqual(result["reuse_id"], manual_w)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id, reviewStatus FROM works WHERE id = ?",
+                (batch["work1"],),
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], manual_w)
+            self.assertEqual(row["reviewStatus"], "reviewed")
+        # 批准涟漪:source_work 解析为复用目标
+        approved = approve_ripple(batch["edge_id"], None, self.vip)
+        self.assertEqual(approved["public_ids"]["source_work"], manual_w)
+        # 个人库目标行未被修改
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT created_by, reviewStatus, published_to_id, deletedAt"
+                " FROM works WHERE id = ?",
+                (manual_w,),
+            ).fetchone()
+            self.assertEqual(row["created_by"], "user")
+            self.assertIsNone(row["published_to_id"])
+            self.assertIsNone(row["deletedAt"])
+
+    def test_reuse_source_work_rejects_ai_draft_target(self) -> None:
+        """复用目标不能是另一个 AI 草稿。"""
+        batch_a = _stage_chain(self.vip["id"], "A")
+        batch_b = _stage_chain(self.vip["id"], "B")
+        with self.assertRaises(HTTPException) as ctx:
+            reuse_draft_work(batch_a["work1"], ReuseWorkBody(reuse_id=batch_b["work1"]), self.vip)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_reuse_source_work_requires_own_space(self) -> None:
+        """复用目标必须在自己的星云中(跨空间 404)。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        other = _stage_chain(self.admin["id"], "B")
+        with self.assertRaises(HTTPException) as ctx:
+            reuse_draft_work(batch["work1"], ReuseWorkBody(reuse_id=other["work1"]), self.vip)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_reuse_source_author_redirects_ripples(self) -> None:
+        """复用源书作者:该批次涟漪批准后自动指向库中已有作者,目标行不被修改。"""
+        batch = _stage_chain(self.vip["id"], "A")
+        now = db_sqlite.now_iso()
+        with db_sqlite._write_lock, db_sqlite._db() as conn:
+            manual_a = db_sqlite.new_uuid()
+            conn.execute(
+                "INSERT INTO authors (id, originalName, Name_CN, reviewStatus, createdAt,"
+                " updatedAt, created_by, owner_id)"
+                " VALUES (?, '已有作者', '已有作者', 'reviewed', ?, ?, 'user', ?)",
+                (manual_a, now, now, self.vip["id"]),
+            )
+        result = reuse_draft_author(
+            batch["author_id"], ReuseAuthorBody(reuse_id=manual_a), self.vip
+        )
+        self.assertEqual(result["reuse_id"], manual_a)
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT published_to_id, reviewStatus FROM authors WHERE id = ?",
+                (batch["author_id"],),
+            ).fetchone()
+            self.assertEqual(row["published_to_id"], manual_a)
+            self.assertEqual(row["reviewStatus"], "reviewed")
+        # 批准涟漪:源书作者解析为复用目标
+        approved = approve_ripple(batch["edge_id"], None, self.vip)
+        self.assertIn(manual_a, approved["public_ids"]["source_authors"])
+        # 个人库目标行未被修改
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT created_by, published_to_id, deletedAt FROM authors WHERE id = ?",
+                (manual_a,),
+            ).fetchone()
+            self.assertEqual(row["created_by"], "user")
+            self.assertIsNone(row["published_to_id"])
+            self.assertIsNone(row["deletedAt"])
+
+    def test_reuse_draft_author_rejects_ai_draft_target(self) -> None:
+        """作者复用目标不能是另一个 AI 草稿。"""
+        batch_a = _stage_chain(self.vip["id"], "A")
+        batch_b = _stage_chain(self.vip["id"], "B")
+        with self.assertRaises(HTTPException) as ctx:
+            reuse_draft_author(
+                batch_a["author_id"], ReuseAuthorBody(reuse_id=batch_b["author_id"]), self.vip
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_non_llm_row_not_reviewable_via_draft_endpoints(self) -> None:
         """普通用户空间行(created_by != 'llm')不能经草稿审核接口操作。"""

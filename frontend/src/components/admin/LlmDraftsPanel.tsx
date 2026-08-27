@@ -13,9 +13,10 @@ import type {
   DedupeHint,
   LlmDraftBatch,
   LlmDraftsData,
+  LlmDraftRipple,
   WorkRow,
 } from "../../lib/adminTypes";
-import { authorLabelOf, workLabel } from "./pickers";
+import { authorLabelOf, workLabel, AuthorPickerSingle, WorkPicker } from "./pickers";
 import NodeFormModal, { type NodeKind } from "./NodeFormModal";
 
 const shortId = (id: string): string => (id.length > 8 ? id.slice(0, 8) : id);
@@ -43,8 +44,14 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [data, setData] = useState<LlmDraftsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmClear, setConfirmClear] = useState<{ workId: string; title: string } | null>(null);
   const [modal, setModal] = useState<EditModal | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [reuseSource, setReuseSource] = useState<{ workId: string; title: string } | null>(null);
+  const [reuseWorkId, setReuseWorkId] = useState("");
+  const [reuseAuthor, setReuseAuthor] = useState<{ authorId: string; label: string } | null>(null);
+  const [reuseAuthorId, setReuseAuthorId] = useState("");
+  const [batchFilter, setBatchFilter] = useState<Record<string, "approved" | "draft" | "rejected">>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -57,6 +64,15 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   useEffect(() => { load(); }, [load, reloadKey]);
 
   const reload = () => setReloadKey((k) => k + 1);
+
+  const toggleCollapsed = (workId: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(workId)) next.delete(workId);
+      else next.add(workId);
+      return next;
+    });
+  };
 
   const call = (url: string, options?: RequestInit): Promise<any> =>
     authFetch(url, options).then(async (r) => {
@@ -105,12 +121,17 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       .catch((e: Error) => onStatus(e.message));
   };
 
-  const clearDrafts = () => {
-    call("/api/admin/llm/drafts/clear", { method: "POST" })
+  const clearDrafts = (workId?: string) => {
+    call("/api/admin/llm/drafts/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(workId ? { work_id: workId } : {}),
+    })
       .then((d: { counts?: Record<string, number> }) => {
         const c = d.counts || {};
         onStatus(
-          "AI 草稿已清空(作者 " + (c.authors ?? 0) +
+          (workId ? "该批次 AI 草稿已清空" : "AI 草稿已清空") +
+          "(作者 " + (c.authors ?? 0) +
           " · 作品 " + (c.works ?? 0) +
           " · 涟漪 " + (c.edges ?? 0) + ")"
         );
@@ -119,60 +140,154 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       .catch((e: Error) => onStatus(e.message));
   };
 
+  const confirmReuseSource = () => {
+    if (!reuseSource || !reuseWorkId) return;
+    const source = reuseSource;
+    const targetId = reuseWorkId;
+    call("/api/admin/llm/drafts/works/" + encodeURIComponent(source.workId) + "/reuse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reuse_id: targetId }),
+    })
+      .then(() => {
+        const w = data?.space.works.find((x) => x.id === targetId);
+        onStatus(
+          "已复用《" + source.title + "》→ 已有作品《" +
+          (w ? workLabel(w) : targetId) + "》，该批次涟漪将自动指向已有源书"
+        );
+        setReuseSource(null);
+        setReuseWorkId("");
+        reload();
+      })
+      .catch((e: Error) => onStatus(e.message));
+  };
+
+  const confirmReuseAuthor = () => {
+    if (!reuseAuthor || !reuseAuthorId) return;
+    const source = reuseAuthor;
+    const targetId = reuseAuthorId;
+    call("/api/admin/llm/drafts/authors/" + encodeURIComponent(source.authorId) + "/reuse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reuse_id: targetId }),
+    })
+      .then(() => {
+        const a = data?.space.authors.find((x) => x.id === targetId);
+        onStatus(
+          "已复用作者「" + source.label + "」→ 已有作者「" +
+          (a ? authorLabelOf(a) : targetId) + "」，该批次涟漪将自动指向该作者"
+        );
+        setReuseAuthor(null);
+        setReuseAuthorId("");
+        reload();
+      })
+      .catch((e: Error) => onStatus(e.message));
+  };
+
   const counts = data?.counts;
   const sourceAuthorLabel = (a: AuthorRow): string => authorLabelOf(a);
   const workLabelOf = (w: WorkRow | undefined | null): string => (w ? workLabel(w) : "?");
+  // 批次涟漪状态统计:批准(已发布映射)/ 草稿 / 驳回,按涟漪边计
+  const batchStats = (b: LlmDraftBatch) => {
+    const edges = b.ripples.map((r) => r.edge as unknown as {
+      reviewStatus?: string;
+      published_to_id?: string | null;
+    });
+    const approved = edges.filter((e) => Boolean(e.published_to_id)).length;
+    const rejected = edges.filter((e) => e.reviewStatus === "rejected").length;
+    const draft = edges.length - approved - rejected;
+    return { approved, draft, rejected };
+  };
 
-  // 批次内全部作者/作品/涟漪行,供 NodeFormModal 的关联选择器使用
-  const authorsList: AuthorRow[] = data
-    ? Array.from(
-        new Map(
-          data.batches
-            .flatMap((b) => [
-              ...b.source.authors,
-              ...b.ripples.flatMap((r) => r.target?.authors || []),
-            ])
-            .map((a) => [a.id, a] as const)
-        ).values()
-      )
+  const rippleStatus = (r: LlmDraftRipple): "approved" | "draft" | "rejected" => {
+    const e = r.edge as unknown as { reviewStatus?: string; published_to_id?: string | null };
+    if (e.published_to_id) return "approved";
+    if (e.reviewStatus === "rejected") return "rejected";
+    return "draft";
+  };
+
+  const toggleBatchFilter = (workId: string, status: "approved" | "draft" | "rejected") => {
+    setBatchFilter((prev) => {
+      const next = { ...prev };
+      if (next[workId] === status) delete next[workId];
+      else next[workId] = status;
+      return next;
+    });
+  };
+
+  const mergeById = <T extends { id: string }>(...lists: T[][]): T[] =>
+    Array.from(new Map(lists.flat().map((x) => [x.id, x] as const)).values());
+
+  // 编辑弹窗下拉 = 审核人个人库全量(排除 AI 草稿,data.space)+ 批内 AI 草稿行(去重)
+  const batchAuthors: AuthorRow[] = data
+    ? data.batches.flatMap((b) => [
+        ...b.source.authors,
+        ...b.ripples.flatMap((r) => r.target?.authors || []),
+      ])
     : [];
-  const worksList: WorkRow[] = data
-    ? Array.from(
-        new Map(
-          data.batches
-            .flatMap((b) => [
-              { ...b.source.work, author_id: b.source.authors.map((a) => a.id).join(",") },
-              ...b.ripples.flatMap((r) =>
-                r.target
-                  ? [{ ...r.target.work, author_id: r.target.authors.map((a) => a.id).join(",") }]
-                  : []
-              ),
-            ])
-            .map((w) => [w.id, w] as const)
-        ).values()
-      )
+  const batchWorks: WorkRow[] = data
+    ? data.batches.flatMap((b) => [
+        { ...b.source.work, author_id: b.source.authors.map((a) => a.id).join(",") },
+        ...b.ripples.flatMap((r) =>
+          r.target
+            ? [{ ...r.target.work, author_id: r.target.authors.map((a) => a.id).join(",") }]
+            : []
+        ),
+      ])
     : [];
+  const authorsList: AuthorRow[] = data ? mergeById(data.space?.authors ?? [], batchAuthors) : [];
+  const worksList: WorkRow[] = data ? mergeById(data.space?.works ?? [], batchWorks) : [];
   const edgesList = data ? data.batches.flatMap((b) => b.ripples.map((r) => r.edge)) : [];
 
   const renderEntityActions = (batch: LlmDraftBatch) => {
     return (
     <span className="llm-actions">
       <button
-        onClick={() => setModal({
-          kind: "works",
-          row: { ...batch.source.work, author_id: batch.source.authors.map((a) => a.id).join(",") } as AdminRow,
-        })}
+        onClick={(e) => {
+          e.stopPropagation();
+          setModal({
+            kind: "works",
+            row: { ...batch.source.work, author_id: batch.source.authors.map((a) => a.id).join(",") } as AdminRow,
+          });
+        }}
       >
         编辑作品
       </button>
       {batch.source.authors.map((a) => (
-        <button key={a.id} onClick={() => setModal({ kind: "authors", row: a as AdminRow })}>
+        <button
+          key={a.id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setModal({ kind: "authors", row: a as AdminRow });
+          }}
+        >
           编辑作者
         </button>
       ))}
+      <button
+        className="llm-clear"
+        title="清空该批次(源书作者/作品与全部涟漪)的 AI 草稿"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmClear({
+            workId: batch.source.work.id,
+            title: workLabelOf(batch.source.work),
+          });
+        }}
+      >
+        清空
+      </button>
       {batch.ripples.length === 0 && (
         <>
-          <button className="approve" onClick={() => approveSource(batch.source.work.id)}>批准源书</button>
+          <button
+            className="approve"
+            onClick={(e) => {
+              e.stopPropagation();
+              approveSource(batch.source.work.id);
+            }}
+          >
+            批准源书
+          </button>
         </>
       )}
     </span>
@@ -191,9 +306,6 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         </p>
         <div className="llm-toolbar">
           <span className="llm-toolbar-title">待审核批次</span>
-          <button className="llm-clear" onClick={() => setConfirmClear(true)} disabled={loading}>
-            清空
-          </button>
         </div>
       </div>
 
@@ -202,19 +314,99 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       ) : !data || data.batches.length === 0 ? (
         <p className="llm-empty">暂无待审核的 AI 草稿，可先导入书籍。</p>
       ) : (
-        data.batches.map((b, bi) => (
-          <div className="llm-batch" key={bi}>
-            <div className="llm-batch-head">
-              <span className="llm-batch-title">《{workLabelOf(b.source.work)}》</span>
+        data.batches.map((b) => {
+          const workId = b.source.work.id;
+          const isCollapsed = collapsed.has(workId);
+          return (
+          <div className={"llm-batch" + (isCollapsed ? " collapsed" : "")} key={workId}>
+            <div
+              className="llm-batch-head"
+              onClick={() => toggleCollapsed(workId)}
+              title={isCollapsed ? "展开该批次" : "收起该批次"}
+            >
+              <span className={"llm-collapse-indicator" + (isCollapsed ? "" : " open")} aria-hidden="true">▸</span>
+              <button
+                className="llm-batch-title llm-batch-title-btn"
+                title="点击选择库中已有作品进行复用(导入重复且未自动识别时,该批次涟漪将自动指向已有源书)"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setReuseSource({ workId: b.source.work.id, title: workLabelOf(b.source.work) });
+                  setReuseWorkId("");
+                }}
+              >
+                《{workLabelOf(b.source.work)}》
+              </button>
               <span className="llm-batch-meta">
-                作者:{b.source.authors.map(sourceAuthorLabel).join("、") || "未知"}
-                {b.created_at ? ` · 导入 ${new Date(b.created_at).toLocaleString()}` : ""}
+                作者:
+                {b.source.authors.length
+                  ? b.source.authors.map((a, ai) => (
+                      <span key={a.id}>
+                        {ai > 0 && "、"}
+                        <button
+                          className="llm-batch-author-btn"
+                          title="点击选择库中已有作者进行复用(导入重复且未自动识别时,该批次涟漪将自动指向该作者)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReuseAuthor({ authorId: a.id, label: authorLabelOf(a) });
+                            setReuseAuthorId("");
+                          }}
+                        >
+                          {sourceAuthorLabel(a)}
+                        </button>
+                      </span>
+                    ))
+                  : "未知"}
+                {b.ripples.length > 0 &&
+                  (() => {
+                    const s = batchStats(b);
+                    const active = batchFilter[b.source.work.id];
+                    return (
+                      <span className="llm-batch-stats">
+                        <button
+                          className={"ok" + (active === "approved" ? " active" : "")}
+                          title="点击仅显示已批准涟漪,再点取消筛选"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBatchFilter(b.source.work.id, "approved");
+                          }}
+                        >
+                          批准 {s.approved}
+                        </button>
+                        <button
+                          className={"draft" + (active === "draft" ? " active" : "")}
+                          title="点击仅显示草稿涟漪,再点取消筛选"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBatchFilter(b.source.work.id, "draft");
+                          }}
+                        >
+                          草稿 {s.draft}
+                        </button>
+                        <button
+                          className={"bad" + (active === "rejected" ? " active" : "")}
+                          title="点击仅显示驳回涟漪,再点取消筛选"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBatchFilter(b.source.work.id, "rejected");
+                          }}
+                        >
+                          驳回 {s.rejected}
+                        </button>
+                      </span>
+                    );
+                  })()}
               </span>
               {renderEntityActions(b)}
             </div>
 
+            {!isCollapsed && (
             <div className="llm-batch-body">
-              {b.ripples.map((r, ri) => {
+              {(() => {
+                const filter = batchFilter[b.source.work.id];
+                const visible = filter ? b.ripples.filter((r) => rippleStatus(r) === filter) : b.ripples;
+                return visible.length === 0 ? (
+                  <p className="llm-empty">该批次没有{filter === "approved" ? "已批准" : filter === "rejected" ? "已驳回" : "草稿"}涟漪</p>
+                ) : visible.map((r, ri) => {
                 const published = Boolean((r.edge as unknown as Record<string, unknown>).published_to_id);
                 const rejected = r.edge.reviewStatus === "rejected";
                 const evidence = String((r.edge as unknown as Record<string, unknown>).evidence || "");
@@ -300,31 +492,98 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                   </div>
                   </div>
                 );
-              })}
+                });
+              })()}
             </div>
+            )}
           </div>
-        ))
+          );
+        })
       )}
 
       {confirmClear && (
         <div id="auth-modal">
           <div className="auth-modal-card">
-            <h3>清空 AI 草稿</h3>
+            <h3>清空该批次 AI 草稿</h3>
             <p>
-              确定要清空您上传的 AI 草稿吗？将软删除您上传的全部草稿
-              （作者/作品/涟漪），其他管理员与公共星云数据不受影响。
+              确定要清空批次《{confirmClear.title}》的 AI 草稿吗？
+              将软删除该批次上传的源书作者/作品与全部涟漪
+              （作者/作品/涟漪），不影响其他批次与已发布数据。
             </p>
             <div className="admin-modal-actions">
               <button
                 className="del"
                 onClick={() => {
-                  setConfirmClear(false);
-                  clearDrafts();
+                  const target = confirmClear;
+                  setConfirmClear(null);
+                  clearDrafts(target.workId);
                 }}
               >
                 确认
               </button>
-              <button onClick={() => setConfirmClear(false)}>取消</button>
+              <button onClick={() => setConfirmClear(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reuseSource && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>复用已有源书</h3>
+            <p>
+              批次《{reuseSource.title}》与库中已有作品重复且未自动识别？
+              选择已有作品后，该批次所有涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+            </p>
+            <WorkPicker
+              value={reuseWorkId}
+              onChange={setReuseWorkId}
+              worksList={data?.space.works ?? []}
+              placeholder="搜索并选择库中已有作品…"
+            />
+            <div className="admin-modal-actions">
+              <button className="approve" disabled={!reuseWorkId} onClick={confirmReuseSource}>
+                确认复用
+              </button>
+              <button
+                onClick={() => {
+                  setReuseSource(null);
+                  setReuseWorkId("");
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reuseAuthor && (
+        <div id="auth-modal">
+          <div className="auth-modal-card">
+            <h3>复用已有作者</h3>
+            <p>
+              批次源书作者「{reuseAuthor.label}」与库中已有作者重复且未自动识别？
+              选择已有作者后，该批次涟漪将自动指向它（AI 草稿本身不复制、不修改）。
+            </p>
+            <AuthorPickerSingle
+              value={reuseAuthorId}
+              onChange={setReuseAuthorId}
+              authorsList={data?.space.authors ?? []}
+              placeholder="搜索并选择库中已有作者…"
+            />
+            <div className="admin-modal-actions">
+              <button className="approve" disabled={!reuseAuthorId} onClick={confirmReuseAuthor}>
+                确认复用
+              </button>
+              <button
+                onClick={() => {
+                  setReuseAuthor(null);
+                  setReuseAuthorId("");
+                }}
+              >
+                取消
+              </button>
             </div>
           </div>
         </div>

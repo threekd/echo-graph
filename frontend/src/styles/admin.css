@@ -676,7 +676,18 @@ th.sortable.active .sort-icon {
   flex-wrap: wrap;
   padding-bottom: 8px;
   border-bottom: 1px dashed rgba(138, 184, 255, 0.18);
+  cursor: pointer;
+  user-select: none;
 }
+.llm-drafts .llm-batch-head:hover .llm-collapse-indicator { color: #9cc3ff; }
+.llm-drafts .llm-collapse-indicator {
+  display: inline-block;
+  color: #8a93a6;
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.llm-drafts .llm-collapse-indicator.open { transform: rotate(90deg); }
+.llm-drafts .llm-batch.collapsed .llm-batch-head { border-bottom: none; padding-bottom: 0; }
 .llm-drafts .llm-batch button,
 .llm-drafts .llm-ripple button {
   padding: 4px 10px;
@@ -729,7 +740,49 @@ th.sortable.active .sort-icon {
 }
 .llm-drafts .llm-batch-body .llm-ripple { margin-top: 0; }
 .llm-drafts .llm-batch-title { font-size: 14px; color: #ffe9a8; font-weight: 600; }
+.llm-drafts .llm-batch-title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline dotted rgba(255, 233, 168, 0.55);
+}
+.llm-drafts .llm-batch-title-btn:hover { color: #fff3c9; }
+.llm-drafts .llm-batch-author-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline dotted rgba(138, 184, 255, 0.55);
+}
+.llm-drafts .llm-batch-author-btn:hover { color: #dce6ff; }
 .llm-drafts .llm-batch-meta { color: #8a93a6; font-size: 12px; }
+.llm-drafts .llm-batch-stats {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 2px;
+}
+.llm-drafts .llm-batch-stats button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font: inherit;
+  color: #8a93a6;
+}
+.llm-drafts .llm-batch-stats button.ok { color: #a9f0c8; }
+.llm-drafts .llm-batch-stats button.draft { color: #ffd9a8; }
+.llm-drafts .llm-batch-stats button.bad { color: #ffb0b0; }
+.llm-drafts .llm-batch-stats button:hover { border-color: rgba(138, 184, 255, 0.45); }
+.llm-drafts .llm-batch-stats button.active {
+  border-color: rgba(138, 184, 255, 0.8);
+  background: rgba(138, 184, 255, 0.12);
+}
 .llm-drafts .llm-ripple {
   margin-top: 8px;
   padding: 10px 12px;

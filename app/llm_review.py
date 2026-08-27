@@ -34,7 +34,7 @@ from app.ai_assistant.tools import dedupe_check
 from app.auth import require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
-from app.space_crud import Kind, after_write, validate_row
+from app.space_crud import Kind, after_write, space_data, validate_row
 
 router = APIRouter(
     prefix="/api/admin/llm",
@@ -161,17 +161,39 @@ def _draft_batches(owner_id: str) -> tuple[list[dict], list[dict]]:
 
     批次 = 一部导入的书:source(作品+作者) + ripples(每条涟漪含目标作品/作者与
     证据,字段对齐「点亮星空」表单)。无涟漪的孤立作品视为 0 涟漪批次
-    (--no-ripples 导入)。返回 (batches, published)。
+    (--no-ripples 导入)。端点作品允许被编辑为个人库既有行(非 AI 草稿):
+    分组按「草稿 + 个人库」合并解析,保证编辑源/目标作品后的涟漪仍可见。
+    返回 (batches, published)。
     """
     rows = _draft_rows(owner_id)
+    space = load_user_rows(owner_id)  # 个人库活跃行(排除 AI 草稿),端点可指向
     authors_by_id = {a["id"]: a for a in rows["authors"]}
+    for a in space["authors"]:
+        authors_by_id.setdefault(a["id"], a)
     works_by_id = {w["id"]: w for w in rows["works"]}
+    for w in space["works"]:
+        works_by_id.setdefault(w["id"], w)
     wa_by_work: dict[str, list[dict]] = {}
     for r in rows["work_authors"]:
         author = authors_by_id.get(r["author_id"])
         if author is not None:
             wa_by_work.setdefault(r["work_id"], []).append(author)
+    # 个人库作品的作者关联也并入(端点可指向个人库作品)
+    if space["works"]:
+        space_work_ids = [w["id"] for w in space["works"]]
+        ph = ",".join("?" for _ in space_work_ids)
+        with db_sqlite._db() as conn:
+            wa_space = conn.execute(
+                f"SELECT wa.work_id, wa.author_id FROM work_authors wa"
+                f" WHERE wa.work_id IN ({ph})",
+                space_work_ids,
+            ).fetchall()
+        for r in wa_space:
+            author = authors_by_id.get(r["author_id"])
+            if author is not None:
+                wa_by_work.setdefault(r["work_id"], []).append(author)
 
+    # 批次 = 活跃草稿边的 source(草稿或个人库作品)+ 孤立草稿作品
     src_ids = {e["source_work_id"] for e in rows["edges"] if e["source_work_id"] in works_by_id}
     tgt_ids = {e["target_work_id"] for e in rows["edges"] if e["target_work_id"] in works_by_id}
     # 孤立作品(非任何涟漪端点)按 0 涟漪批次处理(--no-ripples 的源书)
@@ -239,6 +261,8 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
     # 去重/复用判重目标 = 上传者自己的星云(admin 的星云即官方图谱)
     user_rows = load_user_rows(owner)
     space_authors, space_works = user_rows["authors"], user_rows["works"]
+    # 个人库全量行(与数据管理页同口径:排除 AI 草稿、含 author_id),供编辑弹窗下拉
+    space_rows = space_data(owner, include_deleted=False)
 
     # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
     batch_works: dict[str, dict] = {}
@@ -362,48 +386,202 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
         "published": published,
         "counts": counts,
         "space_counts": {"authors": len(space_authors), "works": len(space_works)},
+        # 审核人个人库全量作者/作品(排除 AI 草稿,含 author_id),供编辑涟漪的
+        # 源/目标作品下拉选择(批内 AI 草稿由前端与 batches 合并展示)
+        "space": {
+            "authors": space_rows["authors"],
+            "works": space_rows["works"],
+        },
     }
 
 
 # ======================================================================
 # 草稿操作
 # ======================================================================
-@router.post("/drafts/clear")
-def clear_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
-    """清空当前上传者(admin/VIP)上传的 AI 草稿(owner_id=user + created_by='llm')。
+def _clear_batch_rows(conn, owner: str, work_id: str, now: str, actor: str) -> dict:
+    """软删除单个批次(源书作品 id)相关的 AI 草稿行。
 
-    不影响其他上传者的草稿与已发布数据;软删除保留行
-    (带 deletedAt)可恢复,审计留痕。
+    批次源书/目标作品允许是编辑后指向的个人库既有行(非 AI 草稿):
+    只删除该批次的 AI 草稿(边/作品/作者),个人库行一律保留;
+    被其他活跃草稿边/作品引用的共享草稿行保留(避免破坏其他批次)。
+    返回 {"authors", "works", "edges"} 计数。
+    """
+    draft = db_sqlite.ai_draft_clause()
+    draft_w = db_sqlite.ai_draft_clause("w")
+    src = conn.execute(
+        "SELECT id, created_by, reviewStatus, published_to_id FROM works"
+        " WHERE id = ? AND owner_id = ? AND deletedAt IS NULL",
+        (work_id, owner),
+    ).fetchone()
+    if src is None:
+        raise HTTPException(status_code=404, detail="批次不存在(源书作品未找到或已删除)")
+
+    def _is_ai_draft(r) -> bool:
+        return r["created_by"] == "llm" and (
+            r["reviewStatus"] != "reviewed" or r["published_to_id"] is not None
+        )
+
+    edges = conn.execute(
+        f"SELECT id, target_work_id FROM edges WHERE source_work_id = ?"
+        f" AND owner_id = ? AND deletedAt IS NULL AND {draft}",
+        (work_id, owner),
+    ).fetchall()
+    edge_ids = [r["id"] for r in edges]
+    target_work_ids = [r["target_work_id"] for r in edges if r["target_work_id"]]
+
+    # 涉及作者:源书 + 目标作品 的 work_authors
+    work_ids = [work_id, *target_work_ids]
+    author_ids: list[str] = []
+    if work_ids:
+        ph = ",".join("?" for _ in work_ids)
+        author_ids = [
+            r["author_id"]
+            for r in conn.execute(
+                f"SELECT DISTINCT author_id FROM work_authors WHERE work_id IN ({ph})",
+                work_ids,
+            ).fetchall()
+        ]
+
+    # 可删作品 = 源书(若为草稿)+ 目标作品(草稿且未被本批之外活跃草稿边引用)
+    del_work_ids: set[str] = set()
+    kept_work_ids: set[str] = set()
+    if _is_ai_draft(src):
+        del_work_ids.add(work_id)
+    if target_work_ids:
+        tph = ",".join("?" for _ in target_work_ids)
+        tgt_rows = conn.execute(
+            f"SELECT id, created_by, reviewStatus, published_to_id FROM works"
+            f" WHERE id IN ({tph})",
+            target_work_ids,
+        ).fetchall()
+        eph = ",".join("?" for _ in edge_ids) if edge_ids else ""
+        for t in tgt_rows:
+            if not _is_ai_draft(t):
+                continue  # 个人库目标作品保留
+            row = conn.execute(
+                f"SELECT 1 FROM edges WHERE owner_id = ? AND deletedAt IS NULL AND {draft}"
+                + (f" AND id NOT IN ({eph})" if eph else "")
+                + " AND (source_work_id = ? OR target_work_id = ?) LIMIT 1",
+                (owner, *edge_ids, t["id"], t["id"]),
+            ).fetchone()
+            if row:
+                kept_work_ids.add(t["id"])
+            else:
+                del_work_ids.add(t["id"])
+
+    # 作者:仅草稿可删,且不被「不删除的活跃草稿作品」关联(共享保护)
+    kept_author_ids: set[str] = set()
+    del_author_ids: list[str] = []
+    if author_ids:
+        aph = ",".join("?" for _ in author_ids)
+        author_rows = conn.execute(
+            f"SELECT id, created_by, reviewStatus, published_to_id FROM authors"
+            f" WHERE id IN ({aph})",
+            author_ids,
+        ).fetchall()
+        author_by_id = {r["id"]: r for r in author_rows}
+        dph = ",".join("?" for _ in del_work_ids) if del_work_ids else ""
+        for aid in author_ids:
+            a = author_by_id.get(aid)
+            if a is None or not _is_ai_draft(a):
+                continue  # 个人库作者保留
+            if not dph:
+                # 无草稿作品被删除:作者仍关联任何活跃草稿作品则保留
+                row = conn.execute(
+                    f"SELECT 1 FROM work_authors wa JOIN works w ON w.id = wa.work_id"
+                    f" WHERE wa.author_id = ? AND w.owner_id = ? AND w.deletedAt IS NULL"
+                    f" AND {draft_w} LIMIT 1",
+                    (aid, owner),
+                ).fetchone()
+                if row:
+                    kept_author_ids.add(aid)
+                else:
+                    del_author_ids.append(aid)
+                continue
+            row = conn.execute(
+                f"SELECT 1 FROM work_authors wa JOIN works w ON w.id = wa.work_id"
+                f" WHERE wa.author_id = ? AND w.owner_id = ? AND w.deletedAt IS NULL"
+                f" AND {draft_w} AND w.id NOT IN ({dph}) LIMIT 1",
+                (aid, owner, *del_work_ids),
+            ).fetchone()
+            if row:
+                kept_author_ids.add(aid)
+            else:
+                del_author_ids.append(aid)
+
+    counts: dict[str, int] = {"authors": 0, "works": 0, "edges": 0}
+    detail = f"清空 AI 草稿批次(源书 #{work_id})"
+    if edge_ids:
+        sqlite_store.mark_deleted(conn, "edges", edge_ids, now, owner)
+        counts["edges"] = len(edge_ids)
+    if del_work_ids:
+        sqlite_store.mark_deleted(conn, "works", list(del_work_ids), now, owner)
+        counts["works"] = len(del_work_ids)
+    if del_author_ids:
+        sqlite_store.mark_deleted(conn, "authors", del_author_ids, now, owner)
+        counts["authors"] = len(del_author_ids)
+    kept = []
+    if kept_author_ids:
+        kept.append(f"作者 {len(kept_author_ids)}")
+    if kept_work_ids:
+        kept.append(f"作品 {len(kept_work_ids)}")
+    detail += (
+        f":软删除 作者 {counts['authors']} · 作品 {counts['works']} · 涟漪 {counts['edges']}"
+        + (f"(共享保留:{'、'.join(kept)})" if kept else "")
+    )
+    for kind in ("edges", "works", "authors"):
+        if counts[kind]:
+            db_sqlite.audit(
+                conn, "delete", kind, None, detail, actor=actor,
+            )
+    return counts
+
+
+@router.post("/drafts/clear")
+def clear_drafts(
+    body: dict | None = None,
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
+) -> dict:
+    """清空当前上传者(admin/VIP)上传的 AI 草稿。
+
+    传 body.work_id(某批次的源书作品草稿 id)时仅清空该批次相关草稿
+    (源书作者/作品 + 涟漪边 + 目标作者/作品,被其他批次引用的共享行保留);
+    缺省清空该上传者的全部 AI 草稿。不影响其他上传者的草稿与已发布数据;
+    软删除保留行(带 deletedAt)可恢复,审计留痕。
     """
     owner = user["id"]
+    work_id = str((body or {}).get("work_id") or "").strip() or None
     now = db_sqlite.now_iso()
-    counts: dict[str, int] = {"authors": 0, "works": 0, "edges": 0}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        for kind in ("authors", "works", "edges"):
-            rows = conn.execute(
-                f"SELECT id FROM {KIND_TABLE[kind]}"
-                f" WHERE owner_id = ? AND deletedAt IS NULL"
-                f" AND {db_sqlite.ai_draft_clause()}",
-                (owner,),
-            ).fetchall()
-            ids = [r["id"] for r in rows]
-            if not ids:
-                continue
-            placeholders = ",".join("?" for _ in ids)
-            conn.execute(
-                f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ?"
-                f" WHERE id IN ({placeholders}) AND owner_id = ?",
-                (now, now, *ids, owner),
-            )
-            counts[kind] = len(ids)
-            db_sqlite.audit(
-                conn,
-                "delete",
-                kind,
-                None,
-                f"清空 AI 草稿:软删除 {len(ids)} 条",
-                actor=user["email"],
-            )
+        if work_id is None:
+            counts: dict[str, int] = {"authors": 0, "works": 0, "edges": 0}
+            for kind in ("authors", "works", "edges"):
+                rows = conn.execute(
+                    f"SELECT id FROM {KIND_TABLE[kind]}"
+                    f" WHERE owner_id = ? AND deletedAt IS NULL"
+                    f" AND {db_sqlite.ai_draft_clause()}",
+                    (owner,),
+                ).fetchall()
+                ids = [r["id"] for r in rows]
+                if not ids:
+                    continue
+                placeholders = ",".join("?" for _ in ids)
+                conn.execute(
+                    f"UPDATE {KIND_TABLE[kind]} SET deletedAt = ?, updatedAt = ?"
+                    f" WHERE id IN ({placeholders}) AND owner_id = ?",
+                    (now, now, *ids, owner),
+                )
+                counts[kind] = len(ids)
+                db_sqlite.audit(
+                    conn,
+                    "delete",
+                    kind,
+                    None,
+                    f"清空 AI 草稿:软删除 {len(ids)} 条",
+                    actor=user["email"],
+                )
+        else:
+            counts = _clear_batch_rows(conn, owner, work_id, now, user["email"])
     return {"ok": True, "counts": counts}
 
 
@@ -419,17 +597,23 @@ def _staging_row(conn, kind: Kind, item_id: str, owner: str) -> dict:
 
 
 def _resolve_published(conn, kind: Kind, staging_id: str, owner: str) -> str:
-    """草稿依赖解析:作者/作品草稿必须已批准(published_to_id 非空)。"""
+    """草稿依赖解析:草稿必须已批准(published_to_id 非空);个人库既有行直接复用。"""
     row = conn.execute(
-        f"SELECT published_to_id FROM {KIND_TABLE[kind]} WHERE id = ? AND owner_id = ?",
+        f"SELECT published_to_id, created_by FROM {KIND_TABLE[kind]}"
+        " WHERE id = ? AND owner_id = ?",
         (staging_id, owner),
     ).fetchone()
-    if row is None or not row["published_to_id"]:
-        raise HTTPException(
-            status_code=409,
-            detail=f"依赖草稿 {staging_id} 尚未批准发布,请先处理其作者/作品",
-        )
-    return row["published_to_id"]
+    if row is None:
+        raise HTTPException(status_code=409, detail=f"依赖 {staging_id} 不存在")
+    if row["published_to_id"]:
+        return row["published_to_id"]
+    if row["created_by"] != "llm":
+        # 个人库既有记录(编辑涟漪时指向个人库作品/作者)→ 直接作为发布依赖
+        return staging_id
+    raise HTTPException(
+        status_code=409,
+        detail=f"依赖草稿 {staging_id} 尚未批准发布,请先处理其作者/作品",
+    )
 
 
 def _public_payload(conn, kind: Kind, staging: dict, staging_owner: str, admin_id: str) -> dict:
@@ -493,6 +677,18 @@ class ApproveSourceBody(BaseModel):
     reuse_author_id: str | None = None
 
 
+class ReuseWorkBody(BaseModel):
+    """把批次源书作品草稿标记为复用库中已有作品。"""
+
+    reuse_id: str | None = None
+
+
+class ReuseAuthorBody(BaseModel):
+    """把批次源书作者草稿标记为复用库中已有作者。"""
+
+    reuse_id: str | None = None
+
+
 def _draft_work_authors(conn, work_id: str, owner: str) -> list[dict]:
     """草稿作品的作者行(按 work_authors 关联,活跃作者)。"""
     rows = conn.execute(
@@ -501,6 +697,90 @@ def _draft_work_authors(conn, work_id: str, owner: str) -> list[dict]:
         (work_id, owner),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _reuse_draft_row(
+    conn,
+    kind: Kind,
+    item_id: str,
+    reuse_id: str,
+    owner: str,
+    now: str,
+    actor: str,
+    detail_hint: str,
+) -> str:
+    """把一条草稿行标记为复用库中已有记录(published_to_id),返回复用目标 id。
+
+    复用 = 草稿行回写 published_to_id(与批准时 reuse 同语义),不复制、不修改
+    目标行;后续批准依赖该草稿的条目自动解析到复用目标。
+    """
+    staging = _staging_row(conn, kind, item_id, owner)
+    target = sqlite_store.get_row(conn, kind, reuse_id)
+    if target is None or target.get("deletedAt") or target.get("owner_id") != owner:
+        raise HTTPException(status_code=404, detail="复用目标不在自己的星云或已删除")
+    if target["id"] == item_id:
+        raise HTTPException(status_code=400, detail="不能复用自身")
+    # 复用目标必须是库中已有记录,不能是另一个 AI 草稿(含已发布保留映射的草稿行)
+    if target.get("created_by") == "llm" and (
+        target.get("reviewStatus") != "reviewed" or target.get("published_to_id")
+    ):
+        raise HTTPException(status_code=400, detail="复用目标不能是 AI 草稿")
+    sqlite_store.update_row(
+        conn, kind, item_id, staging, owner_id=owner,
+        extra={"published_to_id": reuse_id, "reviewStatus": "reviewed", "updatedAt": now},
+    )
+    db_sqlite.audit(
+        conn, "llm_reuse", kind, item_id,
+        f"复用{kind}草稿「{_label(kind, staging)}」→ #{reuse_id}({detail_hint})",
+        before=staging,
+        after={**staging, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
+        actor=actor,
+    )
+    return reuse_id
+
+
+@router.post("/drafts/works/{item_id}/reuse")
+def reuse_draft_work(
+    item_id: str,
+    body: ReuseWorkBody,
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
+) -> dict:
+    """把批次源书作品草稿标记为复用个人库已有作品(该批次所有涟漪自动指向已有源书)。
+
+    复用 = 草稿行回写 published_to_id(与批准时 reuse 同语义),不复制、不修改
+    目标行;后续批准涟漪时 source 作品解析到该复用目标。
+    """
+    owner = user["id"]
+    now = db_sqlite.now_iso()
+    reuse_id = (body.reuse_id or "").strip() or None
+    if not reuse_id:
+        raise HTTPException(status_code=400, detail="缺少 reuse_id(库中已有作品 id)")
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        _reuse_draft_row(
+            conn, "works", item_id, reuse_id, owner, now, user["email"],
+            "该批次涟漪将自动指向已有源书",
+        )
+    return {"ok": True, "reuse_id": reuse_id}
+
+
+@router.post("/drafts/authors/{item_id}/reuse")
+def reuse_draft_author(
+    item_id: str,
+    body: ReuseAuthorBody,
+    user: dict = Depends(require_admin_or_vip),  # noqa: B008
+) -> dict:
+    """把批次源书作者草稿标记为复用个人库已有作者(该批次涟漪将自动指向该作者)。"""
+    owner = user["id"]
+    now = db_sqlite.now_iso()
+    reuse_id = (body.reuse_id or "").strip() or None
+    if not reuse_id:
+        raise HTTPException(status_code=400, detail="缺少 reuse_id(库中已有作者 id)")
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        _reuse_draft_row(
+            conn, "authors", item_id, reuse_id, owner, now, user["email"],
+            "该批次涟漪将自动指向该作者",
+        )
+    return {"ok": True, "reuse_id": reuse_id}
 
 
 def _publish_draft_entity(
@@ -517,6 +797,10 @@ def _publish_draft_entity(
     发布目标 owner = admin_id(调用方传入的上传者 id;admin 的星云即官方图谱)。
     返回发布行 id;审计 create / llm_publish / llm_reuse 留痕。
     """
+    # 非 AI 草稿行(个人库既有记录,如编辑涟漪时把端点改为个人库作品)
+    # → 直接作为发布端点复用,不复制、不修改原行
+    if draft.get("created_by") != "llm":
+        return draft["id"]
     existing = draft.get("published_to_id")
     if existing:
         return existing

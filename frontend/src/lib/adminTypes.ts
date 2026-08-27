@@ -147,6 +147,7 @@ export interface LlmDraftsData {
     published: number;
   };
   space_counts: { authors: number; works: number }; // 审核人(上传者)自己星云的数据量
+  space: { authors: AuthorRow[]; works: WorkRow[] }; // 审核人个人库全量(排除 AI 草稿),供编辑弹窗下拉
 }
 
 export interface LlmDraftBatch {

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import os
 import sqlite3
 import tempfile
@@ -11,8 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.backups as backups
-import app.data_store as ds
-from app import auth, db_sqlite, sqlite_store
+from app import db_sqlite
 
 
 class BackupsTest(unittest.TestCase):
@@ -38,34 +36,20 @@ class BackupsTest(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    @staticmethod
-    def _write_csv(path: Path, header: list[str], rows: list[dict]) -> None:
-        with path.open("w", encoding="utf-8-sig", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=header, extrasaction="ignore")
-            writer.writeheader()
-            for r in rows:
-                writer.writerow(r)
-
     def test_list_snapshots_includes_backups_and_versions(self) -> None:
         self._make_db(self.backups_dir / "echo-graph-20260821-030000.db", "b1")
         vdir = self.versions_dir / "20260820-120000-admin"
         vdir.mkdir()
         self._make_db(vdir / "echo-graph.db", "v1")
-        csvdir = self.versions_dir / "20260819-100000-hygiene"
-        csvdir.mkdir()
-        for n in ("authors.csv", "works.csv", "edges.csv"):
-            (csvdir / n).write_text("id\n", encoding="utf-8")
         items = backups.list_snapshots()
         names = {i["name"] for i in items}
         self.assertEqual(names, {
             "backups/echo-graph-20260821-030000.db",
             "versions/20260820-120000-admin/echo-graph.db",
-            "versions/20260819-100000-hygiene",
         })
         kinds = {i["name"]: i["kind"] for i in items}
         self.assertEqual(kinds["backups/echo-graph-20260821-030000.db"], "db")
         self.assertEqual(kinds["versions/20260820-120000-admin/echo-graph.db"], "db")
-        self.assertEqual(kinds["versions/20260819-100000-hygiene"], "csv")
         self.assertTrue(all(i["size"] > 0 for i in items))
 
     def test_restore_replaces_db_and_creates_safety_backup(self) -> None:
@@ -111,57 +95,6 @@ class BackupsTest(unittest.TestCase):
     def test_create_snapshot_requires_db(self) -> None:
         with self.assertRaises(ValueError):
             backups.create_snapshot()
-
-    def test_restore_csv_snapshot_rebuilds_db(self) -> None:
-        # 补丁保持到测试结束(setUp 的 stopall 会复原),保证恢复时 admin 上下文一致
-        patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local").start()
-        auth.register("admin@test.local", "admin-password-123", username="admin")
-        vdir = self.versions_dir / "20260820-120000-admin"
-        vdir.mkdir()
-        export_dir = self.root / "export"
-        export_dir.mkdir()
-        patch.object(backups, "EXPORT_DIR", export_dir).start()
-        patch.object(ds, "EXPORT_DIR", export_dir).start()  # migrate_from_csv 内部读取 data_store.EXPORT_DIR
-
-        a1 = "01a013e6-e885-766b-b9db-315d518adeeb"
-        w1 = "01a013e8-907e-77f3-83c6-bce355a36268"
-        authors = [{"id": a1, "originalName": "Albert Camus", "Name_CN": "加缪", "nationality": "FR"}]
-        works = [{
-            "id": w1, "language": "fr", "originalTitle": "L'Étranger",
-            "Title_CN": "局外人", "author_id": a1,
-        }]
-        self._write_csv(vdir / "authors.csv", ds.AUTHOR_HEADER, authors)
-        self._write_csv(vdir / "works.csv", ds.WORK_HEADER, works)
-        self._write_csv(vdir / "edges.csv", ds.EDGE_HEADER, [])
-
-        self._make_db(db_sqlite.DB_PATH, "current")
-        # 用户私有行:CSV 恢复后必须原样保留
-        user = auth.register("user@test.local", "user-password-123", username="user01")
-        sqlite_store.rewrite_all(
-            [{
-                "id": "01a013e6-e885-766b-b9db-315d518adeec",
-                "originalName": "私有作者",
-                "Name_CN": "私有作者",
-                "owner_id": user["id"],
-            }],
-            [],
-            [],
-        )
-        result = backups.restore_snapshot("versions/20260820-120000-admin")
-        self.assertEqual(result["kind"], "csv")
-        self.assertTrue(result["safety_backup"])
-        conn = sqlite3.connect(db_sqlite.DB_PATH)
-        try:
-            # 1 条公共(来自 CSV)+ 1 条用户私有(保留)
-            self.assertEqual(conn.execute("SELECT count(*) FROM authors").fetchone()[0], 2)
-            self.assertEqual(conn.execute("SELECT count(*) FROM works").fetchone()[0], 1)
-            user_rows = conn.execute(
-                "SELECT count(*) FROM authors WHERE owner_id = ?", (user["id"],)
-            ).fetchone()[0]
-            self.assertEqual(user_rows, 1)
-        finally:
-            conn.close()
-        self.assertTrue((export_dir / "authors.csv").exists())
 
     def test_restore_rejects_invalid_names(self) -> None:
         for bad in ("../pyproject.toml", "echo-graph.db", "data/echo-graph.db", "unknown.db"):

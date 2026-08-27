@@ -1,14 +1,18 @@
 """个人空间 API:登录用户自己的星云(私有,仅本人可见)。
 
-与公共星云共用同一套读取/写路径,只是 owner 上下文不同:
+与 admin 星云(官方图谱)共用同一套读取/写路径,只是 owner 上下文不同:
 - 读取:SqliteStore(owner_id=当前用户),严格过滤本人数据;
 - 写入:app.space_crud(owner_id=当前用户),不接纳未认领行,行不属于本人一律 404。
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+import datetime as dt
 
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
+
+from app import data_store
 from app.auth import require_user
 from app.db import SqliteStore
 from app.read_routes import register_read_routes
@@ -16,6 +20,7 @@ from app.space_crud import (
     Kind,
     create_row,
     delete_row,
+    permanent_delete_row,
     restore_row,
     space_data,
     update_row,
@@ -55,9 +60,16 @@ def my_data(
     return space_data(user["id"], include_deleted)
 
 
-@router.get("/stats")
-def my_stats(user: dict = Depends(require_user)) -> dict:  # noqa: B008
-    return SqliteStore(owner_id=user["id"]).stats()
+@router.get("/export")
+def my_export(user: dict = Depends(require_user)) -> Response:  # noqa: B008
+    """导出自己星云的三张表为 CSV zip(数据管理页「导出 CSV」按钮,所有登录用户可用)。"""
+    buf = data_store.space_csv_zip(user["id"])
+    filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{kind}")
@@ -82,7 +94,13 @@ def my_restore(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> 
     return restore_row(kind, item_id, user["id"], user["email"])
 
 
-# 只读五件套(与 /api、/api/space 共用同一套实现,见 app/read_routes.py)
+@router.delete("/{kind}/{item_id}/permanent")
+def my_permanent_delete(kind: Kind, item_id: str, user: dict = Depends(require_user)) -> dict:  # noqa: B008
+    """永久删除自己星云中一条已软删除的行(物理删除,不可恢复)。"""
+    return permanent_delete_row(kind, item_id, user["id"], user["email"])
+
+
+# 只读六件套(与 /api、/api/space 共用同一套实现,见 app/read_routes.py)
 register_read_routes(
     router,
     _me_store,

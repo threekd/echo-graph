@@ -1,4 +1,4 @@
-"""空间隔离测试:公共星云(admin)与个人空间互不可见、不可修改。"""
+"""空间隔离测试:admin 星云(官方图谱)与个人空间互不可见、不可修改。"""
 
 from __future__ import annotations
 
@@ -75,7 +75,6 @@ class SpaceIsolationTest(unittest.TestCase):
         patch.object(auth, "BOOTSTRAP_EMAIL", self.ADMIN).start()
         # 隔离测试不依赖机器 .env 的审核过滤开关,新建草稿即可见
         patch.dict(os.environ, {"PUBLIC_REVIEWED_ONLY": "0"}, clear=False).start()
-        patch("app.space_crud.export_csv_files", lambda: None).start()
         self.addCleanup(patch.stopall)
         self.admin = auth.register(self.ADMIN, "admin-password-123", username="admin")
         self.alice = auth.register(self.ALICE, "alice-password-123", username="alice")
@@ -87,7 +86,7 @@ class SpaceIsolationTest(unittest.TestCase):
             "authors", {"originalName": "A", "Name_CN": "爱丽丝的作者"}, user=self.alice
         )
         aid = created["row"]["id"]
-        # 公共星云与第三方空间均不可见
+        # 默认视图(admin 星云)与第三方空间均不可见
         self.assertEqual(SqliteStore().graph()["nodes"], [])
         self.assertEqual(SqliteStore(owner_id=self.bob["id"]).graph()["nodes"], [])
         self.assertEqual(admin.get_data()["authors"], [])
@@ -270,6 +269,33 @@ class SpaceIsolationTest(unittest.TestCase):
         r = space.random_space_graph(_FakeReq())
         self.assertEqual(r["spaceId"], self.alice["id"])
 
+    def test_disabled_user_space_not_accessible(self) -> None:
+        """禁用用户(status='disabled')的星云对游客/本人/admin 一律 404,随机跃迁排除。"""
+        my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "UPDATE users SET space_visibility = 'private' WHERE id IN (?, ?)",
+                (self.admin["id"], self.bob["id"]),
+            )
+            conn.execute("UPDATE users SET status = 'disabled' WHERE id = ?", (self.alice["id"],))
+        # 游客访问已禁用用户的公开星云:404(与关注语义一致,不暴露存在性)
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq(), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 本人(会话已失效)与 admin 同样 404,空间访问统一按 active 用户判定
+        alice_token = auth.create_session(self.alice["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq({auth.SESSION_COOKIE: alice_token}), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        admin_token = auth.create_session(self.admin["id"])
+        with self.assertRaises(HTTPException) as ctx:
+            _space_graph(_FakeReq({auth.SESSION_COOKIE: admin_token}), self.alice["id"])
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 随机跃迁排除禁用用户:无可用星云时 404
+        with self.assertRaises(HTTPException) as ctx:
+            space.random_space_graph(_FakeReq())
+        self.assertEqual(ctx.exception.status_code, 404)
+
     def test_space_read_endpoints_for_visitors(self) -> None:
         """星际跃迁后的完整交互:搜索/详情/扩散/路径全部路由到目标星云。"""
         a1 = my_create("authors", {"originalName": "甲", "Name_CN": "甲"}, user=self.alice)["row"]
@@ -314,3 +340,41 @@ class SpaceIsolationTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             _space_work_detail(req, self.alice["id"], "no-such-id")
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_edge_evidence_too_long_returns_400(self) -> None:
+        """涟漪 evidence 超过 2000 字符返回 400(与 DB CHECK 对齐,不落 500)。"""
+        a1 = my_create(
+            "authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice
+        )["row"]
+        w1 = my_create(
+            "works", {
+                "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        w2 = my_create(
+            "works", {
+                "language": "en", "originalTitle": "B书", "Title_CN": "乙书",
+                "author_id": a1["id"],
+            },
+            user=self.alice,
+        )["row"]
+        with self.assertRaises(HTTPException) as ctx:
+            my_create(
+                "edges", {
+                    "source_work_id": w1["id"], "target_work_id": w2["id"],
+                    "evidence": "x" * 2001, "evidenceSource": "c1",
+                },
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        # 恰好 2000 字符可通过
+        ok = my_create(
+            "edges", {
+                "source_work_id": w1["id"], "target_work_id": w2["id"],
+                "evidence": "x" * 2000, "evidenceSource": "c1",
+            },
+            user=self.alice,
+        )["row"]
+        self.assertEqual(len(ok["evidence"]), 2000)

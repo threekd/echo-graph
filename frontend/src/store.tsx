@@ -64,18 +64,47 @@ export interface AppState {
   panel: PanelState;
   toast: ToastPayload | null;
   adminOpen: boolean;
+  userAdminOpen: boolean; // 独立用户管理窗口(仅 admin)
+  opsOpen: boolean; // 独立运维管理窗口(日志/快照,仅 admin)
   contributeOpen: boolean; // "点亮星空(添加到我的星云)"弹窗
   authOpen: boolean; // 登录/注册弹窗
   user: AuthUser | null; // 当前登录用户(未登录为 null)
-  space: Space; // 当前浏览空间:public | mine | "space:<userId>"(星际跃迁)
-  spaceOwner: string; // 数据源显示:公共星云为 "public",个人/跃迁星云为账号
+  space: Space; // 当前浏览空间:public(默认视图=admin 星云) | mine | "space:<userId>"
+  spaceOwner: string; // 数据源显示:默认视图为 "public",个人/跃迁星云为账号
   pinLeft: boolean; // 左侧功能栏钉住(不再自动隐藏)
   pinRight: boolean; // 右侧详情栏钉住(不再自动隐藏)
   spaceProfile: { username?: string; nickname?: string | null; bio?: string | null } | null; // 当前星云所有者的公开资料
   guideVisible: boolean;
 }
 
-export type AppAction = { type: string; [key: string]: any };
+export type AppAction =
+  | { type: "SET_DATA"; data: GraphData }
+  | { type: "SET_VIEW_DATA"; data: GraphData }
+  | { type: "SET_VIEW"; view: string }
+  | { type: "SET_RIPPLE_CENTER"; id: string | null }
+  | { type: "SET_AUTHOR"; id: string | null }
+  | { type: "SET_PATH"; from: string | null; to: string | null }
+  | { type: "SET_PATH_INPUTS"; inputs: { from: string; to: string } }
+  | { type: "SET_STORE"; name: string }
+  | { type: "SET_CAMERA"; camera: CameraState }
+  | { type: "SET_HIDE_ISLANDS"; value: boolean }
+  | { type: "SET_SHOW_AUTHORS"; value: boolean }
+  | { type: "SET_EXPAND"; value: number }
+  | { type: "SET_EXPAND_MAX"; value: number }
+  | { type: "SET_PANEL"; panel: PanelState }
+  | { type: "SET_TOAST"; msg: string | null; kind?: ToastKind }
+  | { type: "SET_ADMIN"; open: boolean }
+  | { type: "SET_USER_ADMIN"; open: boolean }
+  | { type: "SET_OPS"; open: boolean }
+  | { type: "SET_CONTRIBUTE"; open: boolean }
+  | { type: "SET_AUTH"; open: boolean }
+  | { type: "SET_USER"; user: AuthUser | null }
+  | { type: "SET_SPACE"; space: Space }
+  | { type: "SET_SPACE_OWNER"; owner: string }
+  | { type: "SET_PIN_LEFT"; value: boolean }
+  | { type: "SET_PIN_RIGHT"; value: boolean }
+  | { type: "SET_SPACE_PROFILE"; profile: AppState["spaceProfile"] }
+  | { type: "SET_GUIDE"; value: boolean };
 
 export const initialState: AppState = {
   fullData: { nodes: [], edges: [] },
@@ -96,6 +125,8 @@ export const initialState: AppState = {
   panel: { type: "empty" },
   toast: null,
   adminOpen: false,
+  userAdminOpen: false,
+  opsOpen: false,
   contributeOpen: false,
   authOpen: false,
   user: null,
@@ -145,6 +176,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     case "SET_ADMIN":
       return { ...state, adminOpen: action.open };
+    case "SET_USER_ADMIN":
+      return { ...state, userAdminOpen: action.open };
+    case "SET_OPS":
+      return { ...state, opsOpen: action.open };
     case "SET_CONTRIBUTE":
       return { ...state, contributeOpen: action.open };
     case "SET_AUTH":

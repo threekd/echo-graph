@@ -1,6 +1,6 @@
 # Litnebula 运维手册
 
-> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与 [`deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套。
+> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与 [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套。
 > 部署上线流程见 DEPLOY.md;本文覆盖日常运维、备份恢复、用户数据迁移与故障排查。
 
 ## 1. 架构与数据全景
@@ -9,23 +9,23 @@
 浏览器 → nginx(80/443,静态资源 + 反代 /api/)
               └→ uvicorn(127.0.0.1:8000,单 worker)
                     └→ data/echo-graph.db(SQLite,WAL,唯一权威)
-公共星云写入后自动导出 data/export/*.csv(git 跟踪,仅公共数据)
+备份:整库快照 backups/echo-graph-*.db(sqlite3 .backup)+ 管理端「快照」恢复
 ```
 
 数据存放位置:
 
 | 数据 | 位置 | 是否进 git | 说明 |
 |---|---|---|---|
-| 权威库(全部数据) | `data/echo-graph.db` | 否 | 公共星云 / 用户星云 / 贡献收件箱 / 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
-| 公共星云导出 | `data/export/*.csv` | **是** | 确定性导出产物,审计与跨机器传输通道 |
+| 权威库(全部数据) | `data/echo-graph.db` | 否 | 官方图谱(admin 星云)/ 用户星云 / 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
 | 整库快照 | `backups/echo-graph-*.db` | 否 | 管理端快照 + `deploy.sh` 自动备份 |
 | 历史快照 | `data/versions/` | 否 | 只读恢复来源(旧机制遗留,新代码不再写入;**当前环境不存在此目录,仅有旧机器残留时才有内容**) |
 | 部署备份包 | `backups/data-*.tgz` | 否 | `deploy.sh` 对数据目录的打包 |
 
 关键语义:
 
-- **公共星云 = 引导管理员(`ADMIN_BOOTSTRAP_EMAIL`)的空间 + 未认领历史行**;启动时自动认领。
-- **用户星云 = `authors/works/edges` 中 `owner_id=用户id` 的行**,只存在 SQLite 中,不进 CSV、不进 git。
+- **默认视图(功能栏「公共星云」标签)= admin 星云(官方图谱)**:`owner_id = 引导管理员`
+  的行;公共星云/未认领行概念已于 2026-08-27 移除,启动时仅对旧库遗留 NULL 行做一次性兼容认领。
+- **用户星云 = `authors/works/edges` 中 `owner_id=用户id` 的行**,只存在 SQLite 中,不进 git。
 - 单 worker 是设计约束:限流(进程内滑动窗口)与写锁(`_write_lock`)都依赖单进程语义,不要增加 uvicorn worker。
 
 ## 2. 备份体系
@@ -36,7 +36,6 @@
 |---|---|---|---|
 | 管理端快照(UI / API) | 整库(含用户星云) | 手动 | 最近 30 份(`SNAPSHOT_RETENTION`) |
 | `deploy.sh` | 整库 `.db` + 数据目录 `.tgz` | 每次更新部署 | 各 14 份 |
-| 自动 CSV 导出 | 公共星云 | 每次公共星云写入 | git 历史 |
 | `scripts/prune_audit.py` | `audit_log` | cron(建议每日) | 默认保留 90 天 |
 
 ### 2.2 手动备份(推荐 sqlite3 .backup)
@@ -58,8 +57,8 @@ curl -X POST -b cookies.txt http://127.0.0.1:8000/api/admin/backups/create
 
 每次部署前自动执行:
 
-- `backups/data-<时间戳>.tgz`:打包**实际存在**的 `data/export`、`data/versions`、`data/snapshots`
-  (目录不存在时自动跳过;当前环境只有 `data/export` 会被打包);
+- `backups/data-<时间戳>.tgz`:打包**实际存在**的 `data/versions`、`data/snapshots`
+  (目录不存在时自动跳过;`data/export` CSV 备份层已于 2026-08-27 移除);
 - `backups/echo-graph-<时间戳>.db`:SQLite `.backup` 一致性快照;
 - 各自只保留最近 14 份,旧文件自动删除。
 
@@ -87,7 +86,7 @@ UNION ALL SELECT 'users', count(*) FROM users;"
 管理端「数据管理 → 快照」Tab(或 `GET /api/admin/backups`)会列出两类:
 
 - `db`:`backups/echo-graph-*.db`(当前实际来源);
-- `db` / `csv`:`data/versions/<目录>/` 下的历史快照(旧机制遗留,**仅当该目录存在时**才会出现;
+- `db`:`data/versions/<目录>/echo-graph.db` 历史库快照(旧机制遗留,**仅当该目录存在时**才会出现;
   当前环境没有 `data/versions`,可恢复来源只有 `backups/` 下的 db 快照)。
 
 路径白名单:只允许 `backups/` 与 `data/versions/` 下的快照,防止任意文件覆盖。
@@ -107,37 +106,22 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 
 语义与护栏:
 
-- 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 贡献 / 审计 / 会话一并回退);
+- 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 审计 / 会话一并回退);
 - 恢复前自动生成安全备份 `backups/echo-graph-pre-restore-<时间戳>.db`;
 - 恢复全程与所有写事务互斥,**恢复期间请勿编辑数据**;
-- 成功后自动重新认领未归属行、重新导出 CSV、清空读缓存。
+- 成功后自动清空读缓存(旧库遗留未归属行由启动引导一次性认领)。
 
-### 3.3 公共星云恢复(csv 类型)
+### 3.3 全新环境引导(不是恢复,谨慎!)
 
-仅用于 **`data/versions/<目录>/` 下含三份 CSV 的历史快照**(该目录当前不存在,以下为旧机器
-残留目录的恢复方式):
-
-- 先 `parse_rows` 全量校验,坏快照不落盘;
-- 校验通过后把三份 CSV 复制进 `data/export`,再**只重建公共星云**(admin 空间 + 未认领行);
-- **用户星云原样保留**,不受影响;
-- 前置条件:引导管理员(`ADMIN_BOOTSTRAP_EMAIL`)已注册,否则拒绝执行。
-
-### 3.4 全新环境引导(不是恢复,谨慎!)
-
-```bash
-uv run python scripts/migrate_csv_to_sqlite.py
-```
-
-从仓库 CSV **整库重建**策展三表。注意:
-
-- **会清空所有用户星云**(用户星云就存在这三张表里);`contributions` / `audit_log` 不受影响;
-- 仅限全新环境初始化与 CI 导出新鲜度门禁;日常部署与恢复**禁止执行**;
-- 有用户数据的环境误执行后,只能从 `backups/*.db` 整库恢复。
+服务首次启动会自动创建并迁移 SQLite schema(**空库**)。全新环境的数据需要从
+整库备份恢复:把 `backups/echo-graph-*.db` 放到目标机器后,用管理端「快照」恢复,
+或停服后直接替换 `data/echo-graph.db`(建议先跑 `PRAGMA integrity_check`)。
+跨机器的整库备份/恢复方案见 `to-do.md` 的「整库备份」待办。
 
 ## 4. 用户数据的备份与导入(重点)
 
 用户数据 = 每个账号的个人星云(`authors/works/edges` 中 `owner_id=该用户` 的行)+ 用户表 / 会话。
-它们**只存在于 SQLite,不进 CSV、不进 git**——git 仓库、`data/export` 都无法携带用户数据。
+它们**只存在于 SQLite,不进 git**——代码仓库无法携带用户数据,备份必须走整库快照。
 
 ### 4.1 用户数据备份
 
@@ -149,7 +133,8 @@ sqlite3 data/echo-graph.db ".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'"
 ```
 
 或使用管理端快照 / `deploy.sh` 自动备份(见 2.2、2.3)。备份粒度是"全库",包含全部用户;
-**当前产品没有按单个用户导出的现成功能**。
+单用户导出:登录后数据管理页「导出 CSV」按钮,可把本人星云三张表打包为 zip
+(`GET /api/me/export`,admin 为 `GET /api/admin/export`)。
 
 ### 4.2 用户数据导入
 
@@ -274,9 +259,9 @@ ls -lt backups | head -20
 ## 6. 更新 / 回滚
 
 - **日常更新**:`sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh`(自动备份 → `git pull --ff-only` → 装依赖 → 构建前端 → 重启 → 健康检查)。
-- **git pull 失败**:多为 `data/export` 有本地改动(在 VPS 上改过数据)。先按 DEPLOY.md「数据回传」提交推送,再部署。
+- **git pull 失败**:多为本地有未推送的提交或未提交改动;先提交推送再部署(`data/export` 已随 CSV 备份层移除,不再因此冲突)。
 - **代码回滚**:`git -C /opt/echo-graph checkout <旧commit> -- .` 后重新执行 `deploy.sh`(数据目录已由 deploy 自动备份)。
-- **数据回滚**:整库用 db 快照恢复(3.2);仅公共星云用 csv 快照恢复(3.3)。
+- **数据回滚**:整库用 db 快照恢复(3.2)。
 
 ## 7. 故障排查速查
 
@@ -284,7 +269,7 @@ ls -lt backups | head -20
 |---|---|
 | 页面空图,`/api/health` 正常 | 检查 `PUBLIC_REVIEWED_ONLY`(draft 未审核时公开视图接近空图);确认 `data/echo-graph.db` 存在且有数据;`journalctl -u echo-graph -e` |
 | 服务起不来 | `.env` 是否配置 `ADMIN_BOOTSTRAP_EMAIL`;uv/pnpm 路径;`uv run --frozen python -c "from app.main import app"` 做导入自检 |
-| git pull 报本地修改冲突 | `data/export` 有未提交改动,先提交推送(DEPLOY.md 第 4 节) |
+| git pull 报本地修改冲突 | 本地有未推送提交或未提交改动,先提交推送再部署 |
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
 | 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 的行数 |
 | 想导出单个用户数据 | 见 4.4(仅查看)或 4.3(完整迁移) |
@@ -293,10 +278,10 @@ ls -lt backups | head -20
 
 | 变量 | 作用 | 运维注意 |
 |---|---|---|
-| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(公共星云所有者) | 必须配置;恢复 csv 快照依赖它 |
+| `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(官方图谱/默认视图所有者) | 必须配置 |
 | `PUBLIC_REVIEWED_ONLY` | 公开视图只显示已审核数据 | 生产开启前需先完成数据审核 |
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
-| `TURNSTILE_*` | 注册人机验证 | 不配置则注册跳过验证(仅本地) |
+| `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |
 
 ## 9. 快速命令参考
@@ -314,6 +299,6 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 uv run python scripts/prune_audit.py --days 90 --dry-run   # 先统计
 uv run python scripts/prune_audit.py --days 90             # 再执行
 
-# CSV 与库一致性门禁
-uv run python scripts/export_csv.py --check
+# 用户数据导出(数据管理页「导出 CSV」按钮)
+curl -b cookies.txt http://127.0.0.1:8000/api/me/export -o my-nebula.zip
 ```

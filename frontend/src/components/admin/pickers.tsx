@@ -278,6 +278,100 @@ function parseAuthorIds(value: string, authorsList: AuthorRow[]): { value: strin
     });
 }
 
+// 作者单选选择器:输入筛选,只能点选/回车选择已存在条目(复用源书作者用)
+export function AuthorPickerSingle({
+  value,
+  onChange,
+  authorsList,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  authorsList: AuthorRow[];
+  placeholder: string;
+}) {
+  // 软删除行不可作为引用目标
+  const activeAuthors = useMemo(() => authorsList.filter((a) => !a.deletedAt), [authorsList]);
+  const [query, setQuery] = useState(() => {
+    const a = activeAuthors.find((x) => x.id === value);
+    return a ? authorLabelOf(a) : "";
+  });
+  const [open, setOpen] = useState(false);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    if (value !== lastValue.current) {
+      lastValue.current = value;
+      const a = activeAuthors.find((x) => x.id === value);
+      if (a) setQuery(authorLabelOf(a));
+    }
+  }, [value, activeAuthors]);
+
+  const rawQuery = query.trim();
+  const q = rawQuery.toLowerCase();
+  const filtered = q
+    ? activeAuthors.filter((a) =>
+        [authorLabelOf(a), a.originalName, a.Name_EN].filter(Boolean).join(" ").toLowerCase().includes(q)
+      )
+    : activeAuthors;
+
+  const pick = (a: AuthorRow) => {
+    onChange(a.id);
+    setQuery(authorLabelOf(a));
+    setOpen(false);
+  };
+
+  // 已选中作者时再次聚焦:清空筛选词打开完整列表
+  const handleFocus = () => {
+    const a = activeAuthors.find((x) => x.id === value);
+    if (a && query === authorLabelOf(a)) setQuery("");
+    setOpen(true);
+  };
+
+  return (
+    <div className="work-picker">
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          if (value) onChange(""); // 手动编辑即取消已选,必须重新选择已存在条目
+          setOpen(true);
+        }}
+        onFocus={handleFocus}
+        onBlur={() => {
+          const a = activeAuthors.find((x) => x.id === value);
+          setQuery(a ? authorLabelOf(a) : "");
+          setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter" && open && filtered.length) {
+            e.preventDefault();
+            pick(filtered[0]);
+          }
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <ul className="work-picker-results" style={{ display: "block" }}>
+          {filtered.slice(0, 80).map((a) => (
+            <li
+              key={a.id}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 先于 blur 触发,避免失焦清空
+                pick(a);
+              }}
+            >
+              {authorLabelOf(a)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // 作者多选选择器:从作者表筛选,可添加多个作者(存储为逗号分隔的原文名)
 export function AuthorPicker({
   value,

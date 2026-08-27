@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../store";
 import type {
-  AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, ContributionRow, EdgeRow, WorkRow,
+  AdminData, AdminKind, AdminRow, AdminTab, AuthorRow, EdgeRow, WorkRow,
 } from "../lib/adminTypes";
 import AdminTable from "./admin/AdminTable";
-import AuditPanel from "./admin/AuditPanel";
-import ContributionsPanel from "./admin/ContributionsPanel";
-import SnapshotsPanel from "./admin/SnapshotsPanel";
+import LlmDraftsPanel from "./admin/LlmDraftsPanel";
 import NodeFormModal, { type NodeKind } from "./admin/NodeFormModal";
+import ImportBookModal from "./admin/ImportBookModal";
 import { refreshSpaceGraph } from "../lib/graph";
 import {
   authorLabelOf,
@@ -29,9 +28,7 @@ const KINDS: { key: AdminTab; label: string }[] = [
   { key: "authors", label: "作者" },
   { key: "works", label: "作品" },
   { key: "edges", label: "涟漪" },
-  { key: "contributions", label: "贡献" },
-  { key: "audit", label: "日志" },
-  { key: "snapshots", label: "快照" },
+  { key: "llm", label: "AI草稿" },
 ];
 
 // 作者/作品/涟漪表默认按修改时间从新到旧排序(updatedAt 为 UTC ISO 字符串,字典序即时间序);其余 Tab 不默认排序
@@ -81,31 +78,23 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
           { key: "target_work_id", label: "目标作品" },
           { key: "evidenceSource", label: "出处" },
         ],
-    contributions: [],
-    audit: [],
-    snapshots: [],
+    llm: [],
   };
-}
-
-function contributionStatusLabel(s: string): string {
-  return s === "approved" ? "已通过" : s === "rejected" ? "已驳回" : "待审核";
 }
 
 export default function Admin() {
   const { state, dispatch } = useApp();
   // 数据管理对所有登录用户开放:非 admin 管理自己的空间(/api/me),
-  // admin 管理公共星云(/api/admin,即其名下数据);贡献/日志/快照仅 admin。
+  // admin 管理官方图谱(/api/admin,即其名下星云);日志/快照仅 admin。
   const isAdmin = state.user?.role === "admin";
+  const isVip = Boolean(state.user?.vip);
   const apiBase = isAdmin ? "/api/admin" : "/api/me";
-  const tabs = isAdmin ? KINDS : KINDS.filter((k) => !["contributions", "audit", "snapshots"].includes(k.key));
+  // AI 草稿页签:admin 与 VIP 均可审核自己上传的草稿
+  const tabs = isAdmin || isVip ? KINDS : KINDS.filter((k) => k.key !== "llm");
   const [kind, setKind] = useState<AdminTab>("authors");
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [contribs, setContribs] = useState<ContributionRow[]>([]);
-  const [contribsLoading, setContribsLoading] = useState(false);
-  const [contribCount, setContribCount] = useState(0);
-  const [viewContrib, setViewContrib] = useState<ContributionRow | null>(null);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message: string;
@@ -118,6 +107,9 @@ export default function Admin() {
   const [warnings, setWarnings] = useState<AdminData["warnings"] | null>(null);
   // { mode: "add" | "edit", row: 表单初始值(编辑时为完整行) }
   const [modal, setModal] = useState<{ mode: "add" | "edit"; row: Partial<AdminRow> } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  // AI 草稿页导入完成后,通过更换 key 强制 LlmDraftsPanel 重新加载
+  const [llmReloadKey, setLlmReloadKey] = useState(0);
 
   // 非 admin 用户的管理面板只面向自己的星云,给出明确提示
   useEffect(() => {
@@ -134,6 +126,38 @@ export default function Admin() {
       return true;
     }
     return false;
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // 导出自己星云的三张表(作者/作品/涟漪)为 CSV zip
+  const exportCsv = () => {
+    setStatus("正在导出…");
+    authFetch(apiBase + "/export")
+      .then((r) => {
+        if (!r.ok) {
+          handleAuthError(r);
+          throw new Error("导出失败(" + r.status + ")");
+        }
+        const disposition = r.headers.get("Content-Disposition") || "";
+        const m = disposition.match(/filename="?([^";]+)"?/);
+        const name = m ? m[1] : "echo-graph-export.zip";
+        return r.blob().then((b) => ({ blob: b, name }));
+      })
+      .then(({ blob, name }) => {
+        downloadBlob(blob, name);
+        setStatus("已导出:" + name);
+      })
+      .catch(() => setStatus("导出失败,请重试"));
   };
 
   // 关闭管理页;同时清理 URL 中的 admin 入口参数/片段
@@ -165,40 +189,15 @@ export default function Admin() {
 
   useEffect(() => { load(); }, [load]);
 
-  // 贡献收件箱:按状态拉取列表(供"贡献"Tab 使用)
-  const loadContribs = useCallback(() => {
-    setContribsLoading(true);
-    authFetch("/api/admin/contributions?limit=500")
-      .then((r) => r.json())
-      .then((d) => {
-        const items = d.items || [];
-        setContribs(items);
-        // Tab 角标保持"待审核"数(筛选/排序由表格内完成)
-        setContribCount(items.filter((c: ContributionRow) => c.status === "pending").length);
-        setContribsLoading(false);
-      })
-      .catch((e) => { setStatus("加载贡献失败: " + e.message); setContribsLoading(false); });
-  }, [authFetch]);
-
-  useEffect(() => {
-    if (isAdmin && kind === "contributions") loadContribs();
-  }, [isAdmin, kind, loadContribs]);
-
-  // 打开管理页即加载待审核数,让"贡献"Tab 角标未切换过去时也显示正确数字
-  useEffect(() => {
-    if (isAdmin) loadContribs();
-  }, [isAdmin, loadContribs]);
-
   if (!state.adminOpen) return null;
 
   const allRows: AdminRow[] = data ? (data[kind as AdminKind] || []) : [];
   const cols = colsFor(isAdmin)[kind];
   const counts = data ? data.counts : undefined;
 
-  // Tab 角标计数:贡献/日志为特殊 Tab,避免对不存在的 data[k] 取值
+  // Tab 角标计数:日志/快照为特殊 Tab,避免对不存在的 data[k] 取值
   const tabCount = (k: AdminTab): string => {
-    if (k === "contributions") return String(contribCount);
-    if (k === "audit" || k === "snapshots") return "";
+    if (k === "llm") return "";
     const n = counts ? (counts as Record<AdminKind, number>)[k as AdminKind] : undefined;
     if (n != null) return String(n);
     return data ? String((data[k as AdminKind] || []).length) : "";
@@ -228,6 +227,9 @@ export default function Admin() {
           { key: "target_work_id", type: "text" as const },
           { key: "evidenceSource", type: "text" as const },
         ],
+        llm: [],
+        audit: [],
+        snapshots: [],
       }
     : {
         authors: [
@@ -249,6 +251,9 @@ export default function Admin() {
           { key: "target_work_id", type: "text" as const },
           { key: "evidenceSource", type: "text" as const },
         ],
+        llm: [],
+        audit: [],
+        snapshots: [],
       }) as Record<AdminTab, { key: string; type: "select" | "text" }[]>;
   const uniqueValues = (key: string): string[] =>
     Array.from(
@@ -284,7 +289,7 @@ export default function Admin() {
   };
 
   // 数据写入后刷新星云图(仅当管理空间与当前浏览空间一致时才有意义:
-  // admin 管理公共星云,其「我的星云」同源;普通用户管理自己的星云)
+  // admin 管理官方图谱,其「我的星云」同源;普通用户管理自己的星云)
   const refreshGraphAfterWrite = () => {
     const relevant = isAdmin
       ? state.space === "public" || state.space === "mine"
@@ -357,6 +362,34 @@ export default function Admin() {
       .catch((e) => setStatus("恢复失败: " + e.message));
   };
 
+  // 永久删除:物理删除已软删除的行(不可恢复),级联清理关联数据
+  const doPermanentDelete = (row: AdminRow) => {
+    const id = row.id;
+    setConfirmState({
+      title: "确认永久删除",
+      message: `将从数据库中彻底删除「${rowLabel(row)}」及其软删除的关联数据,不可恢复。确定继续吗?`,
+      danger: true,
+      onConfirm: () => {
+        authFetch(apiBase + "/" + kind + "/" + encodeURIComponent(id) + "/permanent", { method: "DELETE" })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.ok) {
+              setStatus(`已永久删除「${rowLabel(row)}」`);
+              const key = kind as "authors" | "works" | "edges";
+              applyLocal((prev) => ({
+                ...prev,
+                [key]: (prev[key] || []).filter((r: AdminRow) => r.id !== id),
+              }));
+              refreshGraphAfterWrite();
+            } else {
+              setStatus(d.detail || "永久删除失败");
+            }
+          })
+          .catch((e) => setStatus("永久删除失败: " + e.message));
+      },
+    });
+  };
+
   const worksList: WorkRow[] = data ? data.works || [] : [];
   const authorsList: AuthorRow[] = data ? data.authors || [] : [];
   const worksById: Record<string, WorkRow> = {};
@@ -409,7 +442,13 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-actions">
-            {kind !== "contributions" && kind !== "audit" && kind !== "snapshots" && <button onClick={openAdd}>＋ 新增</button>}
+            {(isAdmin || isVip) && <button onClick={() => setImportOpen(true)}>导入</button>}
+            {kind !== "llm" && (
+              <>
+                <button onClick={openAdd}>＋ 新增</button>
+                <button onClick={exportCsv}>导出 CSV</button>
+              </>
+            )}
             <button id="admin-close" onClick={closeAdmin}>关闭</button>
           </div>
         </div>
@@ -444,30 +483,13 @@ export default function Admin() {
           </div>
         )}
         <div className="admin-body">
-          {kind === "contributions" ? (
-            <ContributionsPanel
-              items={contribs}
-              loading={contribsLoading}
-              sort={sort}
-              filters={filters}
-              textFilters={textFilters}
-              onSort={toggleSort}
-              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
-              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
-              onView={setViewContrib}
-            />
-          ) : kind === "audit" ? (
-            <AuditPanel
+          {kind === "llm" ? (
+            <LlmDraftsPanel
+              key={llmReloadKey}
               authFetch={authFetch}
-              sort={sort}
-              filters={filters}
-              textFilters={textFilters}
-              onSort={toggleSort}
-              onFilter={(k, v) => setFilters((f) => ({ ...f, [k]: v }))}
-              onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
+              onStatus={setStatus}
+              onPublicChanged={load}
             />
-          ) : kind === "snapshots" ? (
-            <SnapshotsPanel authFetch={authFetch} />
           ) : loading ? <p>加载中…</p> : (
             <AdminTable
               kind={kind}
@@ -484,64 +506,17 @@ export default function Admin() {
               onTextFilter={(k, v) => setTextFilters((f) => ({ ...f, [k]: v }))}
               renderActions={(r) =>
                 r.deletedAt
-                  ? <button onClick={() => doRestore(r.id)}>恢复</button>
+                  ? (
+                    <>
+                      <button onClick={() => doRestore(r.id)}>恢复</button>
+                      <button className="del" onClick={() => doPermanentDelete(r)}>永久删除</button>
+                    </>
+                  )
                   : <button onClick={() => openEdit(r)}>编辑</button>
               }
             />
           )}
         </div>
-        {viewContrib && (
-          <div id="admin-modal" style={{ display: "flex" }}>
-            <div className="admin-modal-card">
-              <h3>贡献详情</h3>
-              <div id="admin-form">
-                <label>
-                  <span>源作品(提及方)</span>
-                  <input readOnly value={viewContrib.source_work || ""} />
-                </label>
-                <label>
-                  <span>源作品作者</span>
-                  <input readOnly value={viewContrib.source_author || ""} />
-                </label>
-                <label>
-                  <span>目标作品(被提及方)</span>
-                  <input readOnly value={viewContrib.target_work || ""} />
-                </label>
-                <label>
-                  <span>目标作品作者</span>
-                  <input readOnly value={viewContrib.target_author || ""} />
-                </label>
-                <label className="full">
-                  <span>原文片段</span>
-                  <textarea readOnly value={viewContrib.evidence || ""} />
-                </label>
-                <label>
-                  <span>出处(章节/页码/译本)</span>
-                  <input readOnly value={viewContrib.evidence_source || ""} />
-                </label>
-                <label className="full">
-                  <span>备注</span>
-                  <textarea readOnly value={viewContrib.note || ""} />
-                </label>
-                <label>
-                  <span>联系方式</span>
-                  <input readOnly value={viewContrib.contact || ""} />
-                </label>
-                <label>
-                  <span>提交时间</span>
-                  <input readOnly value={viewContrib.created_at || ""} />
-                </label>
-                <label>
-                  <span>审核状态</span>
-                  <input readOnly value={contributionStatusLabel(viewContrib.status || "")} />
-                </label>
-              </div>
-              <div className="admin-modal-actions">
-                <button onClick={() => setViewContrib(null)}>关闭</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {modal && (
@@ -583,6 +558,17 @@ export default function Admin() {
           onDelete={modal.mode === "edit" ? () => doDelete(modal.row as AdminRow) : undefined}
         />
       )}
+
+      {importOpen && (
+        <ImportBookModal
+          authFetch={authFetch}
+          onClose={() => setImportOpen(false)}
+          onStatus={setStatus}
+          onImported={() => setLlmReloadKey((k) => k + 1)}
+        />
+      )}
     </div>
   );
 }
+
+

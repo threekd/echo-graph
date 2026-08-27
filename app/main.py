@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,9 +14,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.admin import router as admin_router
 from app.auth import admin_profile, bootstrap_admin
 from app.auth import router as auth_router
-from app.contributions import router as contributions_router
+from app.book_import import router as book_import_router
 from app.db import get_store
 from app.follows import router as follows_router
+from app.llm_account import migrate_legacy_llm_drafts
+from app.llm_review import router as llm_review_router
 from app.me import router as me_router
 from app.read_routes import register_read_routes
 from app.security import is_state_changing, same_origin_allowed
@@ -43,8 +46,16 @@ def _app_version() -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色并认领未归属数据(公共星云)
+    # 启动引导:ADMIN_BOOTSTRAP_EMAIL 已注册则补 admin 角色,
+    # 并兼容迁移旧库遗留未归属数据(公共星云概念已移除)
     bootstrap_admin()
+    # 旧 system_llm 共享草稿一次性改挂到引导管理员(GET 端点保持只读,迁移只在启动执行)
+    migrate_legacy_llm_drafts()
+    if os.getenv("COOKIE_SECURE", "").strip().lower() not in ("1", "true", "yes", "on"):
+        logger.warning(
+            "COOKIE_SECURE 未开启:会话 Cookie 允许经非 HTTPS 连接传输,"
+            "生产环境必须设 COOKIE_SECURE=1"
+        )
     yield
     close = getattr(store, "close", None)
     if callable(close):
@@ -64,7 +75,7 @@ store = get_store()
 @app.middleware("http")
 async def csrf_same_origin_guard(request: Request, call_next):
     """全局 CSRF 同源校验:所有状态变更请求(POST/PUT/PATCH/DELETE)带 Origin 头时
-    必须与本站同源,否则 403。覆盖 /api/auth、/api/me、/api/admin、/api/contribute 全部写接口。"""
+    必须与本站同源,否则 403。覆盖 /api/auth、/api/me、/api/admin 全部写接口。"""
     if is_state_changing(request.method) and not same_origin_allowed(request):
         return JSONResponse(status_code=403, content={"detail": "跨站请求被拒绝"})
     return await call_next(request)
@@ -110,25 +121,21 @@ def apple_touch_icon() -> FileResponse:
     return _serve_static("root", "apple-touch-icon.png")
 
 
-@app.get("/api/stats")
-def stats() -> dict:
-    return store.stats()
-
-
 @app.get("/api/health")
 def health() -> dict:
     """健康检查:返回当前存储后端(SQLite)。"""
     return {"status": "ok", "store": store.name}
 
 
+app.include_router(book_import_router)
 app.include_router(admin_router)
-app.include_router(contributions_router)
+app.include_router(llm_review_router)
 app.include_router(auth_router)
 app.include_router(follows_router)
 app.include_router(me_router)
 app.include_router(space_router)
 
-# 公共只读五件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
+# 公共只读六件套(与 /api/me、/api/space 共用同一套实现,见 app/read_routes.py)
 register_read_routes(
     app,
     lambda request, user_id: get_store(),
@@ -141,3 +148,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+

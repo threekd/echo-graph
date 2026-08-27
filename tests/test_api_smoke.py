@@ -10,9 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 import app.main as main  # noqa: E402
 from app import auth, db_sqlite, sqlite_store  # noqa: E402
+from tests._helpers import rewrite_all  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -26,7 +28,6 @@ class ApiSmokeTest(unittest.TestCase):
         auth.register(self.admin_email, "admin-password-123", username="admin")
         self.admin_id = auth.admin_user_id()
         self.assertIsNotNone(self.admin_id)
-        patch("app.space_crud.export_csv_files", lambda: None).start()
         # 所有 setUp 补丁必须在测试结束时复原,避免泄漏影响后续模块(顺序无关)
         self.addCleanup(patch.stopall)
         self.addCleanup(self.tmp.cleanup)
@@ -34,7 +35,7 @@ class ApiSmokeTest(unittest.TestCase):
     def seed(self, authors=(), works=(), edges=(), owner_id: str | None = None) -> None:
         """按 admin 空间造数:所有行显式归属,避免依赖未认领过渡态。"""
         owner = owner_id if owner_id is not None else self.admin_id
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{**r, "owner_id": owner} for r in authors],
             [{**r, "owner_id": owner} for r in works],
             [{**r, "owner_id": owner} for r in edges],
@@ -59,11 +60,9 @@ class ApiSmokeTest(unittest.TestCase):
         ):
             self.assertIn(expected, paths)
 
-    def test_contribute_and_admin_routes_registered(self) -> None:
-        """贡献与管理的路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
+    def test_admin_and_auth_routes_registered(self) -> None:
+        """管理/账号路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
         paths = main.app.openapi()["paths"]
-        self.assertIn("/api/contribute/echo", paths)
-        self.assertIn("/api/admin/contributions", paths)
         self.assertIn("/api/admin/data", paths)
         self.assertIn("/api/admin/backups", paths)
         self.assertIn("/api/admin/audit", paths)
@@ -86,6 +85,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("/api/space/{user_id}/work/{work_id}", paths)
         self.assertIn("/api/space/{user_id}/expansion/{work_id}", paths)
         self.assertIn("/api/space/{user_id}/path", paths)
+        self.assertIn("/api/space/{user_id}/stats", paths)
 
     def test_version_matches_pyproject(self) -> None:
         pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -132,6 +132,17 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn("authors", stats["reviewStatus"])
         self.assertIn("works", stats["reviewStatus"])
         self.assertIn("edges", stats["reviewStatus"])
+
+    def test_search_blank_returns_empty(self) -> None:
+        """路由层对纯空白 q 返回空结果,而不是全量命中。"""
+        client = TestClient(main.app)
+        for q in ("   ", "\t\n ", "a b"):
+            resp = client.get("/api/search", params={"q": q})
+            self.assertEqual(resp.status_code, 200, q)
+            if q.strip() == "":
+                self.assertEqual(resp.json(), {"hits": []}, q)
+            else:
+                self.assertIsInstance(resp.json()["hits"], list, q)
 
     def test_admin_create_sets_timestamps_and_reviewed_status(self) -> None:
         import app.admin as admin
@@ -367,6 +378,61 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertFalse(next(r for r in saved_works if r["id"] == w1).get("deletedAt"))
         self.assertFalse(next(r for r in saved_works if r["id"] == w2).get("deletedAt"))
 
+    def test_admin_permanent_delete_requires_soft_deleted(self) -> None:
+        """未软删除的行不允许永久删除(400)。"""
+        import app.admin as admin
+
+        author = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
+        self.seed([author])
+        with self.assertRaises(HTTPException) as ctx:
+            admin.permanent_delete("authors", author["id"])
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_admin_permanent_delete_work_and_edges(self) -> None:
+        """软删作品后永久删除:作品与相关涟漪均物理消失,无关作品保留。"""
+        import app.admin as admin
+
+        w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
+        works = [
+            {"id": w1, "language": "en", "originalTitle": "A", "Title_CN": "甲书"},
+            {"id": w2, "language": "en", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"}]
+        self.seed([], works, edges)
+        admin.delete("works", w1)
+        res = admin.permanent_delete("works", w1)
+        self.assertTrue(res["ok"])
+        data = sqlite_store.list_all()
+        work_ids = [r["id"] for r in data["works"]]
+        edge_ids = [r["id"] for r in data["edges"]]
+        self.assertNotIn(w1, work_ids)
+        self.assertNotIn(e1, edge_ids)
+        self.assertIn(w2, work_ids)
+
+    def test_admin_permanent_delete_author_cascades(self) -> None:
+        """软删作者后永久删除:作者/名下作品/相关涟漪全部物理消失。"""
+        import app.admin as admin
+
+        a1, w1, w2, e1 = (str(uuid.uuid4()) for _ in range(4))
+        authors = [{"id": a1, "originalName": "A", "Name_CN": "甲"}]
+        works = [
+            {"id": w1, "language": "en", "originalTitle": "A", "Title_CN": "甲书", "author_id": a1},
+            {"id": w2, "language": "en", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"}]
+        self.seed(authors, works, edges)
+        admin.delete("authors", a1)
+        res = admin.permanent_delete("authors", a1)
+        self.assertTrue(res["ok"])
+        data = sqlite_store.list_all()
+        author_ids = {r["id"] for r in data["authors"]}
+        work_ids = {r["id"] for r in data["works"]}
+        edge_ids = {r["id"] for r in data["edges"]}
+        self.assertNotIn(a1, author_ids)
+        self.assertNotIn(w1, work_ids)
+        self.assertNotIn(e1, edge_ids)
+        self.assertIn(w2, work_ids)  # 无关作品保留
+
     def test_admin_create_persists_and_audits(self) -> None:
         import app.admin as admin
 
@@ -381,25 +447,6 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(audit["items"][0]["kind"], "authors")
         self.assertIn("新增", audit["items"][0]["detail"])
         self.assertIsNotNone(audit["items"][0]["after"])
-
-    def test_admin_approve_contribution_writes_audit(self) -> None:
-        import app.admin as admin
-        from app.contributions import submit_contribution
-
-        row = submit_contribution({
-            "source_work": "甲书",
-            "target_work": "乙书",
-            "source_author": "甲",
-            "target_author": "乙",
-            "evidence": "x",
-            "evidence_source": "c1",
-        })
-        self.assertTrue(admin.approve_contribution(row["id"])["ok"])
-        audit = sqlite_store.list_audit()
-        self.assertEqual(audit["items"][0]["action"], "approve")
-        self.assertEqual(audit["items"][0]["kind"], "contributions")
-        self.assertIn("甲书 → 乙书", audit["items"][0]["detail"])
-        self.assertEqual(audit["items"][0]["after"], '{"status": "approved"}')
 
 if __name__ == "__main__":
     unittest.main()

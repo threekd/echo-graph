@@ -60,6 +60,14 @@ class ParseRowsTest(unittest.TestCase):
             parse_rows(a, w, e)
         self.assertIn("不存在的目标作品", str(ctx.exception))
 
+    def test_edge_evidence_too_long_rejected(self) -> None:
+        """evidence 超过 2000 字符在模型层即拒绝(与 DB CHECK 对齐,避免 500)。"""
+        a, w, e = _fixture()
+        e[0]["evidence"] = "x" * 2001
+        with self.assertRaises(ValueError) as ctx:
+            parse_rows(a, w, e)
+        self.assertIn("evidence", str(ctx.exception).lower())
+
     def test_unknown_author_rejected(self) -> None:
         a, w, e = _fixture()
         w[0]["author_id"] = _u()  # 不存在的作者 id

@@ -1,10 +1,8 @@
-"""空间数据 CRUD:公共星云(admin)与个人空间(me)共用的行级写路径。
+"""空间数据 CRUD:admin 星云(官方图谱)与个人空间(me)共用的行级写路径。
 
-隔离规则:所有写操作必须带 owner_id。admin 空间 = admin 认领的数据
-(owner_id 为空的历史行在 admin 写入时自动认领);个人空间 = 精确匹配 owner_id。
-行不属于该空间一律视为不存在(404),不暴露存在性,防越权探测。
-
-CSV 导出只针对公共星云(admin 空间),用户私有数据不进 git 审计产物。
+隔离规则:所有写操作必须带 owner_id,精确匹配 owner_id;行不属于该空间一律
+视为不存在(404),不暴露存在性,防越权探测。公共星云/未认领行概念已于
+2026-08-27 移除,不再有 adopt_unowned 逻辑。
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ from fastapi import HTTPException
 from app import db_sqlite, sqlite_store
 from app.auth import admin_user_id
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
-from app.data_store import clean_row, export_csv_files
+from app.data_store import clean_row
 from app.db import invalidate_cache
 
 Kind = Literal["authors", "works", "edges"]
@@ -41,6 +39,19 @@ AUDIT_FIELDS: dict[Kind, list[str]] = {
 
 _now = db_sqlite.now_iso
 _new_uuid = db_sqlite.new_uuid
+
+
+CREATED_BY_VALUES = ("curated", "user", "llm")
+
+
+def _created_by_for(row: dict, owner_id: str) -> str:
+    """溯源值:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)。"""
+    value = str(row.get("created_by") or "").strip()
+    if value:
+        if value not in CREATED_BY_VALUES:
+            raise HTTPException(status_code=400, detail="created_by 取值仅支持 curated / user / llm")
+        return value
+    return "curated" if owner_id == admin_user_id() else "user"
 
 
 def _author_id_list(value) -> list[str]:
@@ -82,21 +93,12 @@ def _audit_changes(kind: Kind, before: dict, after: dict) -> str:
     return "；".join(parts)
 
 
-def _resolve_row(
-    conn, kind: Kind, row_id: str, owner_id: str, adopt_unowned: bool = False
-) -> dict | None:
-    """按空间取行:精确 owner 匹配;admin 空间额外接纳未认领历史行(认领后归 admin)。"""
+def _resolve_row(conn, kind: Kind, row_id: str, owner_id: str) -> dict | None:
+    """按空间取行:精确 owner 匹配,不属于该空间视为不存在。"""
     row = sqlite_store.get_row(conn, kind, row_id)
     if row is None:
         return None
     if row.get("owner_id") == owner_id:
-        return row
-    if adopt_unowned and owner_id is not None and row.get("owner_id") is None:
-        conn.execute(
-            f"UPDATE {KIND_TABLE[kind]} SET owner_id = ? WHERE id = ?",
-            (owner_id, row_id),
-        )
-        row["owner_id"] = owner_id
         return row
     return None
 
@@ -145,11 +147,12 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None, owne
     return errors
 
 
-def _after_write(owner_id: str) -> None:
-    """写入后的收尾:任何空间都失效读缓存;只有公共星云(admin 空间)刷新 CSV 导出。"""
+def after_write(owner_id: str) -> None:
+    """写入后的收尾:失效读缓存,保证编辑保存后即时可读。
+
+    CSV 自动导出层已于 2026-08-27 移除(改为整库备份 + 用户手动导出,见 docs/to-do.md)。
+    """
     invalidate_cache()
-    if owner_id == admin_user_id():
-        export_csv_files()
 
 
 def space_data(owner_id: str, include_deleted: bool = True) -> dict:
@@ -157,8 +160,20 @@ def space_data(owner_id: str, include_deleted: bool = True) -> dict:
 
     计数(含 deleted)基于全量行统计,不随 include_deleted 过滤变化:
     include_deleted=False 时只裁剪返回列表,deleted 计数仍反映真实软删除行数。
+    AI 草稿(created_by='llm' 未发布/保留映射)不属于策展/个人空间视图,一律剔除
+    (草稿在「AI 草稿」页按 owner_id=上传者 单独展示)。
     """
     all_a, all_w, all_e = sqlite_store.load_rows(owner_id=owner_id)
+
+    def _not_ai_draft(r: dict) -> bool:
+        return not (
+            r.get("created_by") == "llm"
+            and (r.get("reviewStatus") != "reviewed" or r.get("published_to_id"))
+        )
+
+    all_a = [r for r in all_a if _not_ai_draft(r)]
+    all_w = [r for r in all_w if _not_ai_draft(r)]
+    all_e = [r for r in all_e if _not_ai_draft(r)]
     deleted = {
         "authors": sum(1 for r in all_a if r.get("deletedAt")),
         "works": sum(1 for r in all_w if r.get("deletedAt")),
@@ -183,14 +198,17 @@ def space_data(owner_id: str, include_deleted: bool = True) -> dict:
     }
 
 
-def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: bool = False) -> dict:
+def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
-    # 输入即确认:新增(含管理员手动新增)默认 reviewed;显式传 draft 仍可保留草稿
+    # 溯源列:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)
+    row["created_by"] = _created_by_for(row, owner_id)
+    # 输入即确认:created_by=user/curated 默认 reviewed(用户手动新增即确认);
+    # created_by=llm 默认 draft(AI 提取进入草稿态);显式传 reviewStatus 仍可覆盖
     if not row.get("reviewStatus"):
-        row["reviewStatus"] = "reviewed"
-    extra: dict | None = None
+        row["reviewStatus"] = "draft" if row["created_by"] == "llm" else "reviewed"
+    extra: dict = {"created_by": row["created_by"]}
     if kind == "works":
         reading_status = row.get("readingStatus")
         if reading_status is not None and reading_status not in ("read", "reading", "unread"):
@@ -204,7 +222,11 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
         row["readingStatus"] = reading_status
         row["recommendation"] = recommendation
         row["review"] = review
-        extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
+        extra.update({
+            "readingStatus": reading_status,
+            "recommendation": recommendation,
+            "review": review,
+        })
     now = _now()
     row.setdefault("createdAt", now)
     row["updatedAt"] = now
@@ -226,14 +248,15 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str, adopt_unowned: 
         db_sqlite.audit(
             conn, "create", kind, row.get("id"), f"新增「{label}」", after=row, actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "row": row}
 
 
 def update_row(
-    kind: Kind, item_id: str, row: dict, owner_id: str, actor: str, adopt_unowned: bool = False
+    kind: Kind, item_id: str, row: dict, owner_id: str, actor: str
 ) -> dict:
     row = clean_row(row)
+    row.pop("created_by", None)  # 溯源列创建后不可修改(与 createdAt 同策略)
     now = _now()
     is_admin_space = owner_id == admin_user_id()
     extra: dict | None = None
@@ -253,9 +276,10 @@ def update_row(
         # 用户表单总会携带这两个字段:空值代表清除(显式写 NULL)
         extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        existing = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        existing = _resolve_row(conn, kind, item_id, owner_id)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        row["created_by"] = existing.get("created_by")  # 返回行携带库内真实溯源值
         if not is_admin_space:
             row["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
         expected_ts = row.get("updatedAt") or existing.get("updatedAt")
@@ -281,16 +305,16 @@ def update_row(
         db_sqlite.audit(
             conn, "update", kind, item_id, detail, before=existing, after=row, actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "row": row}
 
 
-def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowned: bool = False) -> dict:
+def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) -> dict:
     """软删除。作品连带其涟漪边;作者连带其名下作品与这些作品的涟漪边。"""
     now = _now()
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        row = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        row = _resolve_row(conn, kind, item_id, owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
@@ -319,17 +343,17 @@ def delete_row(kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowne
             after={**row, "deletedAt": now},
             actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "deletedAt": now, "cascade": cascade}
 
 
 def restore_row(
-    kind: Kind, item_id: str, owner_id: str, actor: str, adopt_unowned: bool = False
+    kind: Kind, item_id: str, owner_id: str, actor: str
 ) -> dict:
     """恢复软删除。同一删除动作级联删除的作品/涟漪(相同 deletedAt)一并恢复。"""
     cascade: dict[str, list[str]] = {"works": [], "edges": []}
     with db_sqlite._write_lock, db_sqlite._db() as conn:
-        row = _resolve_row(conn, kind, item_id, owner_id, adopt_unowned)
+        row = _resolve_row(conn, kind, item_id, owner_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         ts = row.get("deletedAt")
@@ -366,5 +390,89 @@ def restore_row(
             after={**row, "deletedAt": None},
             actor=actor,
         )
-    _after_write(owner_id)
+    after_write(owner_id)
     return {"ok": True, "cascade": cascade}
+
+
+def permanent_delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) -> dict:
+    """永久删除(物理删除)一条**已软删除**的行,并级联清理引用,不可恢复。
+
+    仅允许软删除行(deletedAt 非空)。作品级联物理删除引用它的涟漪与作者关联;
+    作者级联物理删除其名下作品及相关涟漪与关联。若存在活跃引用(理论不应发生)
+    则拒绝,避免破坏活跃数据。
+    """
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = _resolve_row(conn, kind, item_id, owner_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        if not row.get("deletedAt"):
+            raise HTTPException(status_code=400, detail="仅可永久删除已软删除的条目(请先软删除)")
+
+        def _delete_work(wid: str) -> None:
+            conn.execute("DELETE FROM work_authors WHERE work_id = ?", (wid,))
+            conn.execute(
+                "DELETE FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                (wid, wid),
+            )
+            conn.execute("DELETE FROM works WHERE id = ?", (wid,))
+
+        cascade: dict[str, list[str]] = {"works": [], "edges": []}
+        if kind == "edges":
+            conn.execute("DELETE FROM edges WHERE id = ?", (item_id,))
+        elif kind == "works":
+            active = conn.execute(
+                "SELECT 1 FROM edges WHERE (source_work_id = ? OR target_work_id = ?)"
+                " AND deletedAt IS NULL LIMIT 1",
+                (item_id, item_id),
+            ).fetchone()
+            if active:
+                raise HTTPException(status_code=409, detail="该作品仍被活跃涟漪引用,无法永久删除")
+            cascade["edges"] = [
+                r["id"]
+                for r in conn.execute(
+                    "SELECT id FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                    (item_id, item_id),
+                ).fetchall()
+            ]
+            _delete_work(item_id)
+        else:  # authors
+            work_ids = [
+                r["id"]
+                for r in conn.execute(
+                    "SELECT id FROM works WHERE id IN"
+                    " (SELECT work_id FROM work_authors WHERE author_id = ?)",
+                    (item_id,),
+                ).fetchall()
+            ]
+            active = conn.execute(
+                "SELECT 1 FROM works WHERE deletedAt IS NULL AND id IN"
+                " (SELECT work_id FROM work_authors WHERE author_id = ?) LIMIT 1",
+                (item_id,),
+            ).fetchone()
+            if active:
+                raise HTTPException(status_code=409, detail="该作者名下仍有活跃作品,无法永久删除")
+            for wid in work_ids:
+                cascade["works"].append(wid)
+                cascade["edges"].extend(
+                    r["id"]
+                    for r in conn.execute(
+                        "SELECT id FROM edges WHERE source_work_id = ? OR target_work_id = ?",
+                        (wid, wid),
+                    ).fetchall()
+                )
+                _delete_work(wid)
+            conn.execute("DELETE FROM work_authors WHERE author_id = ?", (item_id,))
+            conn.execute("DELETE FROM authors WHERE id = ?", (item_id,))
+
+        db_sqlite.audit(
+            conn, "delete", kind, item_id,
+            f"永久删除「{_audit_label(conn, kind, row, owner_id)}」"
+            + (
+                f"(连带 works={len(cascade['works'])} edges={len(cascade['edges'])})"
+                if any(cascade.values()) else ""
+            ),
+            before=row,
+            actor=actor,
+        )
+    after_write(owner_id)
+    return {"ok": True, "deleted": {"kind": kind, "id": item_id, "cascade": cascade}}

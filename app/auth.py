@@ -3,8 +3,10 @@
 - 密码:argon2id(依赖 argon2-cffi),库中只存哈希,不存明文。
 - 会话:随机 token 只放在 httpOnly + SameSite=Lax Cookie 中;数据库只存其
   SHA-256 哈希,泄露 DB 也无法伪造会话;30 天过期,登出立即失效。
-- 注册人机验证:Cloudflare Turnstile(服务端 siteverify)。未配置
-  TURNSTILE_SECRET_KEY 时跳过验证(便于本地开发),生产环境务必配置。
+- 注册人机验证:Cloudflare Turnstile(服务端 siteverify)。生产环境必须配置
+  TURNSTILE_SECRET_KEY——未配置且未显式设置 TURNSTILE_ALLOW_SKIP=1 时注册
+  按失败处理(fail-closed),避免生产漏配导致机器人可随意注册;仅本地开发
+  用 TURNSTILE_ALLOW_SKIP=1 临时放行。
 - 限流:注册/登录按 IP 滑动窗口,复用 app.ratelimit(单 worker 精确)。
 - CSRF:SameSite=Lax 之外的补充防线由全局中间件(app/security.py)统一执行——
   所有状态变更请求(含本模块的 register/login/logout/PATCH /me)带 Origin 头时
@@ -35,7 +37,7 @@ logger = logging.getLogger("echo_graph")
 
 SESSION_COOKIE = "echo_graph_session"
 SESSION_DAYS = 30
-# 引导管理员邮箱:该邮箱注册自动提权为 admin,并认领全部未归属数据(公共星云)
+# 引导管理员邮箱:该邮箱注册自动提权为 admin(官方图谱 = admin 星云由 admin 维护)
 BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 # 每 IP 每小时注册 / 登录尝试上限(与贡献限流同一套进程内滑动窗口)
 REGISTER_LIMIT = 10
@@ -79,7 +81,7 @@ def admin_user_id() -> str | None:
 
 
 def admin_profile() -> dict | None:
-    """引导管理员(公共星云所有者)的公开资料:用户名/昵称/简介(不含邮箱)。"""
+    """引导管理员(默认视图 = 官方图谱所有者)的公开资料:用户名/昵称/简介(不含邮箱)。"""
     if not BOOTSTRAP_EMAIL:
         return None
     with db_sqlite._db() as conn:
@@ -96,8 +98,12 @@ def admin_profile() -> dict | None:
     }
 
 
-def claim_public_rows(conn, admin_id: str) -> int:
-    """把尚未认领(owner_id 为空)的业务行划归引导管理员(公共星云)。"""
+def claim_unowned_rows(conn, admin_id: str) -> int:
+    """兼容旧库:把 owner_id 为空的遗留业务行一次性划归引导管理员。
+
+    公共星云/未认领行概念已于 2026-08-27 移除,读取层不再支持 NULL owner;
+    此函数仅在启动/注册引导管理员时兜底迁移旧数据,避免遗留行成为孤儿。
+    """
     total = 0
     for table in ("authors", "works", "edges"):
         cur = conn.execute(
@@ -108,7 +114,7 @@ def claim_public_rows(conn, admin_id: str) -> int:
 
 
 def bootstrap_admin() -> dict | None:
-    """启动时执行引导:补 admin 角色并认领未归属数据。返回管理员用户(若有)。"""
+    """启动时执行引导:补 admin 角色并兼容迁移旧库遗留未归属数据。返回管理员用户(若有)。"""
     if not BOOTSTRAP_EMAIL:
         return None
     with db_sqlite._write_lock, db_sqlite._db() as conn:
@@ -122,7 +128,7 @@ def bootstrap_admin() -> dict | None:
                 "UPDATE users SET role = 'admin', updatedAt = ? WHERE id = ?",
                 (_now(), row["id"]),
             )
-        claim_public_rows(conn, row["id"])
+        claim_unowned_rows(conn, row["id"])
     return {"id": row["id"], "email": row["email"], "role": "admin"}
 
 
@@ -224,11 +230,25 @@ def _turnstile_siteverify(secret: str, token: str, remote_ip: str) -> bool:
 
 
 def verify_turnstile(token: str | None, remote_ip: str) -> bool:
-    """校验人机验证 token。未配置密钥时跳过(仅限本地开发)。"""
+    """校验人机验证 token。
+
+    未配置 TURNSTILE_SECRET_KEY 时默认拒绝(fail-closed);仅当显式设置
+    TURNSTILE_ALLOW_SKIP=1(本地开发)时才跳过验证。
+    """
     secret = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
     if not secret:
-        logger.warning("TURNSTILE_SECRET_KEY 未配置,注册人机验证已跳过")
-        return True
+        if os.getenv("TURNSTILE_ALLOW_SKIP", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        ):
+            logger.warning(
+                "TURNSTILE_SECRET_KEY 未配置,且 TURNSTILE_ALLOW_SKIP=1,"
+                "注册人机验证已跳过(仅限本地开发)"
+            )
+            return True
+        logger.error(
+            "TURNSTILE_SECRET_KEY 未配置,注册人机验证按失败处理(fail-closed)"
+        )
+        return False
     if not token:
         return False
     return _turnstile_siteverify(secret, token, remote_ip)
@@ -268,7 +288,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         return None
     row = conn.execute(
         "SELECT u.id, u.email, u.username, u.nickname, u.role, u.space_visibility,"
-        " u.bio, u.status, s.expires_at"
+        " u.bio, u.status, u.vip, s.expires_at"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ?",
         (_token_hash(token),),
@@ -288,6 +308,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
+        "vip": bool(row["vip"]),
     }
 
 
@@ -309,6 +330,14 @@ def require_admin(request: Request) -> dict:
     user = require_user(request)
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
+def require_admin_or_vip(request: Request) -> dict:
+    """FastAPI 依赖:管理员或 VIP 用户(未登录 401,普通用户 403)。"""
+    user = require_user(request)
+    if user["role"] != "admin" and not user.get("vip"):
+        raise HTTPException(status_code=403, detail="需要管理员或 VIP 权限")
     return user
 
 
@@ -351,7 +380,7 @@ def register(
             (user_id, email, password_hash, username, nickname, bio, role, now, now),
         )
         if role == "admin":
-            claim_public_rows(conn, user_id)
+            claim_unowned_rows(conn, user_id)
     return {
         "id": user_id,
         "email": email,
@@ -360,6 +389,7 @@ def register(
         "bio": bio,
         "role": role,
         "space_visibility": "public",
+        "vip": False,
     }
 
 
@@ -385,6 +415,7 @@ def login(identifier: str, password: str) -> dict | None:
         "bio": row["bio"],
         "role": row["role"],
         "space_visibility": row["space_visibility"],
+        "vip": bool(row["vip"]),
     }
 
 

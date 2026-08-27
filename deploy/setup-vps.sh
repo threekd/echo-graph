@@ -19,27 +19,27 @@ if [[ "$REPO_URL" == *"你的仓库地址"* ]]; then
   exit 1
 fi
 
-echo "==> 1/10 安装系统依赖"
+echo "==> 1/9 安装系统依赖"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y git curl ca-certificates nginx certbot python3-certbot-nginx
 
-echo "==> 2/10 安装 Node.js 24 + pnpm"
+echo "==> 2/9 安装 Node.js 24 + pnpm"
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
   apt-get install -y nodejs
 fi
 npm install -g pnpm@11
 
-echo "==> 3/10 创建应用用户 $APP_USER"
+echo "==> 3/9 创建应用用户 $APP_USER"
 if ! id "$APP_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$APP_USER"
 fi
 
-echo "==> 4/10 安装 uv(Python 3.14 由 uv 托管下载)"
+echo "==> 4/9 安装 uv(Python 3.14 由 uv 托管下载)"
 sudo -u "$APP_USER" bash -lc 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 
-echo "==> 5/10 拉取代码"
+echo "==> 5/9 拉取代码"
 if [[ ! -d "$APP_DIR/.git" ]]; then
   git clone "$REPO_URL" "$APP_DIR"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -47,33 +47,28 @@ else
   sudo -u "$APP_USER" git -C "$APP_DIR" pull --ff-only
 fi
 
-echo "==> 6/10 安装后端依赖(自动下载 Python 3.14)"
+echo "==> 6/9 安装后端依赖(自动下载 Python 3.14)"
 sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv sync --frozen"
 
-echo "==> 7/10 从仓库 CSV 重建 SQLite(权威库引导,贡献表为空属正常)"
-sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && ~/.local/bin/uv run python scripts/migrate_csv_to_sqlite.py"
-
-echo "==> 8/10 配置 .env"
+echo "==> 7/9 配置 .env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   sudo -u "$APP_USER" cp "$APP_DIR/.env.example" "$APP_DIR/.env"
   echo "!! 已生成 $APP_DIR/.env,请先填入 ADMIN_BOOTSTRAP_EMAIL 后再启动服务"
 fi
 
-echo "==> 9/10 构建前端"
+echo "==> 8/9 构建前端"
 sudo -u "$APP_USER" bash -lc "cd '$APP_DIR/frontend' && pnpm install --frozen-lockfile && pnpm build"
 
-echo "==> 10/10 安装 systemd 服务 + nginx + HTTPS"
+echo "==> 9/9 安装 systemd 服务 + nginx + HTTPS"
 install -m 644 "$APP_DIR/deploy/echo-graph.service" /etc/systemd/system/echo-graph.service
 systemctl daemon-reload
 systemctl enable echo-graph
 
-# 贡献接口限流 zone(http 层共享内存,粗粒度防洪;细粒度策略在应用层)
-cat > /etc/nginx/conf.d/echo-graph-ratelimit.conf <<'EOF'
-limit_req_zone $binary_remote_addr zone=echo_contribute:10m rate=10r/m;
-EOF
-
 tee /etc/nginx/sites-available/echo-graph >/dev/null <<EOF
 # 由 setup-vps.sh 自动生成
+# X-Forwarded-For 直接用 \$remote_addr(单层代理):不要用
+# \$proxy_add_x_forwarded_for 追加客户端可控值,否则可伪造最左 IP
+# 绕过应用层限流(app/ratelimit.py 从右向左解析)。
 server {
     listen 80;
     server_name $DOMAIN;
@@ -81,29 +76,31 @@ server {
     root $APP_DIR/frontend/dist;
     index index.html;
 
+    # 安全响应头(HTTPS 部署时 HSTS 生效;CSP 若引入新外部资源需同步调整)
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 60s;
-    }
-
-    # 贡献提交限流:粗粒度防洪;细粒度策略(每 IP 每小时 20 条)在应用层
-    location = /api/contribute/echo {
-        limit_req zone=echo_contribute burst=20 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location /assets/ {
         expires 30d;
         add_header Cache-Control "public, immutable";
+        # 子块定义 add_header 后不再继承 server 级头,需重复安全头
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'" always;
     }
 
     location / {

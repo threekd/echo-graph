@@ -1,23 +1,34 @@
-"""数据管理 API(admin 角色):公共星云三张表的增删改查、软删除、审计、贡献审核、快照。
+"""数据管理 API(admin 角色):admin 星云(官方图谱)三张表的增删改查、软删除、审计、快照。
 
 鉴权:admin 角色登录态(httpOnly Cookie),不再使用 ADMIN_TOKEN。
-写路径复用 app/space_crud(owner=引导管理员);每次公共星云写入自动导出 CSV(git 审计)。
+写路径复用 app/space_crud(owner=当前 admin);公共星云概念已于 2026-08-27
+移除,admin 星云与其他用户星云在数据语义上完全一致。
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import datetime as dt
+from typing import Literal
 
-from app import db_sqlite, sqlite_store
-from app.auth import admin_user_id, bootstrap_admin, bootstrap_email, require_admin
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from pydantic import BaseModel
+
+from app import data_store, db_sqlite, sqlite_store
+from app.auth import (
+    admin_user_id,
+    bootstrap_admin,
+    bootstrap_email,
+    is_bootstrap_email,
+    require_admin,
+)
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
-from app.contributions import get_contribution, list_contributions, set_status
-from app.data_store import export_csv_files
 from app.db import invalidate_cache
 from app.space_crud import (
     Kind,
     create_row,
     delete_row,
+    permanent_delete_row,
     restore_row,
     space_data,
     update_row,
@@ -38,24 +49,6 @@ def _admin_context(user) -> dict:
     if admin is None:
         raise HTTPException(status_code=401, detail="未登录")
     return {"id": admin, "email": bootstrap_email(), "role": "admin"}
-
-
-def _review_contribution(item_id: str, status: str, actor: str) -> bool:
-    """审核贡献并写审计(通过/驳回)。"""
-    contrib = get_contribution(item_id)
-    if contrib is None or not set_status(item_id, status):
-        return False
-    action = "approve" if status == "approved" else "reject"
-    label = f"{contrib.get('source_work')} → {contrib.get('target_work')}"
-    detail = f"审核「{label}」: {contrib.get('status')} → {status}"
-    with db_sqlite._write_lock, db_sqlite._db() as conn:
-        db_sqlite.audit(
-            conn, action, "contributions", item_id, detail,
-            before={"status": contrib.get("status")},
-            after={"status": status},
-            actor=actor,
-        )
-    return True
 
 
 @router.get("/data")
@@ -94,10 +87,22 @@ def admin_restore(body: dict) -> dict:
         raise HTTPException(status_code=400, detail=f"恢复失败:\n{exc}") from exc
     except Exception as exc:  # noqa: BLE001 - 文件/数据库错误转 500
         raise HTTPException(status_code=500, detail=f"恢复失败:{exc}") from exc
-    bootstrap_admin()  # CSV 恢复后重新认领未归属数据到引导管理员
-    export_csv_files()
+    bootstrap_admin()  # 快照恢复后兜底迁移旧库遗留未归属数据
     invalidate_cache()
     return result
+
+
+@router.get("/export")
+def admin_export(user: dict | None = Depends(require_admin)) -> Response:  # noqa: B008
+    """导出 admin 星云(官方图谱)三张表为 CSV zip(数据管理页「导出 CSV」按钮)。"""
+    admin = _admin_context(user)
+    buf = data_store.space_csv_zip(admin["id"])
+    filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{kind}")
@@ -111,53 +116,168 @@ def update(
     kind: Kind, item_id: str, row: dict, user: dict | None = Depends(require_admin)  # noqa: B008
 ) -> dict:
     admin = _admin_context(user)
-    return update_row(kind, item_id, row, admin["id"], admin["email"], adopt_unowned=True)
+    return update_row(kind, item_id, row, admin["id"], admin["email"])
 
 
 @router.delete("/{kind}/{item_id}")
 def delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
-    return delete_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
+    return delete_row(kind, item_id, admin["id"], admin["email"])
 
 
 @router.post("/{kind}/{item_id}/restore")
 def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
     admin = _admin_context(user)
-    return restore_row(kind, item_id, admin["id"], admin["email"], adopt_unowned=True)
+    return restore_row(kind, item_id, admin["id"], admin["email"])
 
 
-@router.get("/contributions")
-def admin_contributions(
-    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
-    limit: int = Query(200, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+@router.delete("/{kind}/{item_id}/permanent")
+def permanent_delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
+    """永久删除一条已软删除的行(物理删除,不可恢复),级联清理引用。"""
+    admin = _admin_context(user)
+    return permanent_delete_row(kind, item_id, admin["id"], admin["email"])
+
+
+@router.post("/users/{user_id}/vip")
+def admin_set_vip(
+    user_id: str,
+    body: dict,
+    user: dict | None = Depends(require_admin),  # noqa: B008
 ) -> dict:
-    """贡献收件箱列表(按审核状态过滤)。"""
-    return list_contributions(status, limit, offset)
+    """标记/取消用户 VIP(admin)。VIP 用户拥有 AI 书籍导入与本人 AI 草稿审核权限。"""
+    vip = bool((body or {}).get("vip"))
+    return admin_update_user(user_id, UserPatchBody(vip=vip), user)
 
 
-@router.post("/contributions/{item_id}/approve")
-def approve_contribution(item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
+class UserPatchBody(BaseModel):
+    """用户管理可修改字段(至少一项;取值由 Literal 校验)。"""
+
+    status: Literal["active", "disabled"] | None = None
+    role: Literal["user", "admin"] | None = None
+    space_visibility: Literal["public", "private"] | None = None
+    vip: bool | None = None
+
+
+def _safe_user_row(row: dict) -> dict:
+    """审计记录排除密码哈希等敏感字段。"""
+    return {k: v for k, v in row.items() if k != "password_hash"}
+
+
+def _space_counts(conn) -> dict[str, dict[str, int]]:
+    """每个 owner 的活跃星云数据量(作者/作品/涟漪)。"""
+    counts: dict[str, dict[str, int]] = {}
+    for table in ("authors", "works", "edges"):
+        for r in conn.execute(
+            f"SELECT owner_id AS uid, count(*) AS c FROM {table}"
+            " WHERE deletedAt IS NULL GROUP BY owner_id"
+        ):
+            counts.setdefault(r["uid"], {})[table] = r["c"]
+    return counts
+
+
+@router.get("/users")
+def admin_users(user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
+    """用户列表(含角色/状态/星云可见性/VIP 与星云数据量,仅 admin)。"""
+    _admin_context(user)
+    with db_sqlite._db() as conn:
+        rows = conn.execute(
+            "SELECT id, email, username, nickname, bio, role, status,"
+            " space_visibility, vip, createdAt, updatedAt"
+            " FROM users ORDER BY createdAt DESC, id DESC"
+        ).fetchall()
+        counts = _space_counts(conn)
+    return {
+        "items": [
+            {
+                "id": r["id"],
+                "email": r["email"],
+                "username": r["username"],
+                "nickname": r["nickname"],
+                "bio": r["bio"],
+                "role": r["role"],
+                "status": r["status"],
+                "space_visibility": r["space_visibility"],
+                "vip": bool(r["vip"]),
+                "createdAt": r["createdAt"],
+                "updatedAt": r["updatedAt"],
+                "counts": {
+                    "authors": counts.get(r["id"], {}).get("authors", 0),
+                    "works": counts.get(r["id"], {}).get("works", 0),
+                    "edges": counts.get(r["id"], {}).get("edges", 0),
+                },
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@router.patch("/users/{user_id}")
+def admin_update_user(
+    user_id: str,
+    body: UserPatchBody,
+    user: dict | None = Depends(require_admin),  # noqa: B008
+) -> dict:
+    """修改用户状态/角色/星云可见性/VIP(至少一项)。
+
+    保护规则:
+    - 不能修改自己的 role/status(防止最后一个管理员把自己锁出系统);
+    - 引导管理员(官方图谱所有者)不能被禁用或降级;
+    - 系统至少保留一名可用管理员(防御性兜底)。
+    """
     admin = _admin_context(user)
-    if not _review_contribution(item_id, "approved", admin["email"]):
-        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-    return {"ok": True}
-
-
-@router.post("/contributions/{item_id}/reject")
-def reject_contribution(item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    if not _review_contribution(item_id, "rejected", admin["email"]):
-        raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
-    return {"ok": True}
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        return {"ok": True, "user_id": user_id, "changed": []}
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        row = dict(row)
+        if user_id == admin["id"] and (updates.get("status") or updates.get("role")):
+            raise HTTPException(status_code=400, detail="不能修改自己的角色或状态")
+        if is_bootstrap_email(row["email"]) and (
+            updates.get("status") == "disabled" or updates.get("role") == "user"
+        ):
+            raise HTTPException(status_code=400, detail="不能禁用或降级引导管理员(官方图谱所有者)")
+        if row["role"] == "admin" and (
+            updates.get("role") == "user" or updates.get("status") == "disabled"
+        ):
+            active_admins = conn.execute(
+                "SELECT count(*) AS c FROM users"
+                " WHERE role = 'admin' AND status = 'active'"
+            ).fetchone()["c"]
+            if active_admins <= 1:
+                raise HTTPException(status_code=400, detail="系统至少需要保留一名可用管理员")
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE users SET {sets}, updatedAt = ? WHERE id = ?",
+            [*updates.values(), db_sqlite.now_iso(), user_id],
+        )
+        label = row.get("username") or row.get("email") or user_id
+        detail = (
+            f"用户管理「{label}」:"
+            + "；".join(f"{k}: {row.get(k)} → {v}" for k, v in updates.items())
+        )
+        db_sqlite.audit(
+            conn, "update", "users", user_id, detail,
+            before=_safe_user_row(row),
+            after=_safe_user_row({**row, **updates}),
+            actor=admin["email"],
+        )
+    return {"ok": True, "user_id": user_id, "changed": list(updates)}
 
 
 @router.get("/audit")
 def admin_audit(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    action: str | None = Query(None, pattern="^(create|update|delete|restore|approve|reject)$"),
-    kind: str | None = Query(None, pattern="^(authors|works|edges|contributions)$"),
+    action: str | None = Query(
+        None,
+        pattern="^(create|update|delete|restore|approve|reject|"
+        "llm_ingest|llm_publish|llm_reuse|llm_reject|llm_reopen)$",
+    ),
+    kind: str | None = Query(None, pattern="^(authors|works|edges|users)$"),
 ) -> dict:
     """管理写操作审计记录。"""
     return sqlite_store.list_audit(limit, offset, action, kind)

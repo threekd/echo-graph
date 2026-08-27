@@ -3,8 +3,8 @@
 import type { GraphData } from "../store";
 import type { AuthorRow, EdgeRow, WorkRow } from "./adminTypes";
 
-// 浏览空间三元状态:public = 公共星云;mine = 我的星云(私有);
-// "space:<userId>" = 星际跃迁后正在浏览的他人星云。
+// 浏览空间三元状态:public = 默认视图(admin 星云/官方图谱,功能栏仍叫「公共星云」);
+// mine = 我的星云(私有);"space:<userId>" = 星际跃迁后正在浏览的他人星云。
 export type Space = "public" | "mine" | `space:${string}`;
 
 export interface SearchHit {

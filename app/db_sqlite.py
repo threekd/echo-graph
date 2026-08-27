@@ -48,6 +48,23 @@ def now_iso() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
+def ai_draft_clause(alias: str = "", negate: bool = False) -> str:
+    """AI 草稿判定 SQL 片段:created_by='llm' 且未发布(或已发布但保留映射)的行。
+
+    negate=False 返回「是 AI 草稿」条件(草稿区读取用);
+    negate=True 返回「非 AI 草稿」条件(官方图谱/admin 星云与策展读取用,
+    保证草稿不会因为 owner_id=上传者(admin 空间即官方图谱)而泄露)。
+    alias 为表别名(如 'w.'),用于联表查询。
+    """
+    prefix = f"{alias}." if alias else ""
+    inner = (
+        f"({prefix}created_by = 'llm'"
+        f" AND ({prefix}reviewStatus != 'reviewed'"
+        f" OR {prefix}published_to_id IS NOT NULL))"
+    )
+    return ("NOT " if negate else "") + inner
+
+
 def new_uuid() -> str:
     """统一的主键生成:优先 UUID v7(时间有序),环境不支持时回退 UUID v4。"""
     try:
@@ -549,6 +566,85 @@ def _migration_v21(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} DROP COLUMN visibility")
 
 
+def _migration_v22(conn: sqlite3.Connection) -> None:
+    """删除贡献收件箱表(contributions)。
+
+    前端「点亮星空」已改道直写个人空间(/api/me/edges),公共提交入口
+    /api/contribute/echo 与 admin「贡献」审核面板同步移除;后续书籍解析
+    管线将直接以专用用户空间承载,不再需要自由文本收件箱。
+    历史审计行(kind='contributions')仅作记录保留,不再产生新行。
+    """
+    conn.execute("DROP TABLE IF EXISTS contributions")
+
+
+def _migration_v23(conn: sqlite3.Connection) -> None:
+    """作者/作品/涟漪增加溯源列 created_by(curated/user/llm)。
+
+    created_by 记录数据生成来源:curated = 人工策展(admin 维护/历史 CSV)、
+    user = 用户空间直接写入(点亮星空/个人数据管理)、llm = 书籍解析管线
+    AI 提取(预留)。默认由写入方按 owner 推导(space_crud.create_row);
+    存量行回填 curated。不进 CSV(与 recommendation/review/readingStatus 同策略)。
+    """
+    for table in ("authors", "works", "edges"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "created_by" not in cols:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'curated'"
+                " CHECK (created_by IN ('curated','user','llm'))"
+            )
+
+
+def _migration_v24(conn: sqlite3.Connection) -> None:
+    """AI 草稿审核:作者/作品/涟漪增加 published_to_id,记录草稿发布到官方图谱后的映射。
+
+    system_llm 私有空间存放 AI 提取草稿(reviewStatus='draft', created_by='llm'),
+    admin 审核批准后复制进自己的星云(admin 即官方图谱;created_by='llm', reviewStatus='reviewed'),
+    并在草稿行上回写 published_to_id(公共行 id),防止同一草稿重复发布;
+    审核复用现有公共记录时,published_to_id 记被复用的公共行 id。
+    仅草稿区行有值,公共行恒为 NULL;不进 CSV(导出表头显式枚举)。
+    """
+    for table in ("authors", "works", "edges"):
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "published_to_id" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN published_to_id TEXT")
+
+
+def _migration_v25(conn: sqlite3.Connection) -> None:
+    """语义去重向量缓存:embeddings 表。
+
+    dedupe_check 语义校验把库内作品/作者标题向量落库,避免每次管线运行
+    对全库重复调用阿里云百炼 embedding。缓存键 = entity_type + entity_id
+    + model + version;text_hash 感知标题/作者字段变更,变化即失效重嵌。
+    vector 存 JSON 文本(1024 维约 8KB/行;当前量级下线性余弦扫描足够)。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS embeddings (
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            text_hash TEXT NOT NULL,
+            vector TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (entity_type, entity_id, model, version)
+        )
+        """
+    )
+def _migration_v26(conn: sqlite3.Connection) -> None:
+    """VIP 标记:users.vip(布尔,默认 0)。
+
+    VIP 用户拥有 AI 书籍导入权限,并在「AI 草稿」页审核自己上传的草稿,
+    批准后发布到自己的星云(admin 整合用户数据进官方图谱的通道为后续规划)。
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "vip" not in cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN vip INTEGER NOT NULL DEFAULT 0"
+            " CHECK (vip IN (0, 1))"
+        )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -571,6 +667,11 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (19, _migration_v19),
     (20, _migration_v20),
     (21, _migration_v21),
+    (22, _migration_v22),
+    (23, _migration_v23),
+    (24, _migration_v24),
+    (25, _migration_v25),
+    (26, _migration_v26),
 ]
 
 
@@ -615,3 +716,4 @@ def _migrate(conn: sqlite3.Connection) -> None:
     bad = conn.execute("PRAGMA foreign_key_check").fetchall()
     if bad:
         raise RuntimeError(f"迁移后外键校验失败:{bad}")
+

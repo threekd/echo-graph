@@ -1,4 +1,4 @@
-"""只读五件套路由工厂:graph / search / work / expansion / path。
+"""只读六件套路由工厂:graph / search / work / expansion / path / stats。
 
 `/api`(公共)、`/api/me`(个人空间)、`/api/space/{user_id}`(星际跃迁)三套端点
 此前各自实现一份(参数校验与 404 处理逐行重复),统一收敛到本模块:
@@ -35,13 +35,13 @@ def register_read_routes(
     name_prefix: str = "",
     tag: str | None = None,
 ) -> None:
-    """注册只读五件套。
+    """注册只读六件套。
 
     target:FastAPI 实例或 APIRouter。
     path_prefix:目标完整前缀(FastAPI 实例用 /api;APIRouter 自带前缀时传空串)。
     user_id_path:为 True 时路径为 {prefix}/{{user_id}}/graph 等(星际跃迁)。
     store_factory(request, user_id) 每次请求调用;owner_provider(request, user_id)
-    返回图谱附带的 owner 公开资料(公共星云 = 引导管理员,个人空间 = 本人,
+    返回图谱附带的 owner 公开资料(默认视图 = 引导管理员(admin 星云),个人空间 = 本人,
     他人星云 = 目标用户),为 None 时图谱响应不附 owner 字段;graph_extra(request, user_id)
     返回并入图谱响应的顶层字段(星际跃迁需要 spaceId / displayName)。
     """
@@ -81,7 +81,11 @@ def register_read_routes(
         q: str = Query(..., min_length=1),
         limit: int = Query(20, ge=1, le=50),
     ) -> dict:
-        return {"hits": store_factory(request, _user_id(request)).search(q.strip(), limit)}
+        query = q.strip()
+        if not query:
+            # 纯空白查询不命中任何数据(避免空串子串匹配返回全量)
+            return {"hits": []}
+        return {"hits": store_factory(request, _user_id(request)).search(query, limit)}
 
     @_register("/work/{work_id}", "work_detail")
     def work_detail(request: Request, work_id: str) -> dict:
@@ -100,6 +104,10 @@ def register_read_routes(
         if data is None:
             raise HTTPException(status_code=404, detail=f"work not found: {work_id}")
         return data
+
+    @_register("/stats", "stats")
+    def stats(request: Request) -> dict:
+        return store_factory(request, _user_id(request)).stats()
 
     @_register("/path", "path")
     def path(

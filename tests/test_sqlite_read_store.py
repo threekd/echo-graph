@@ -9,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app.db as db
-from app import db_sqlite, sqlite_store
+from app import auth, db_sqlite
+from tests._helpers import rewrite_all
 
 A1 = "01a013e6-e885-766b-b9db-315d518adeeb"
 A2 = "01a013e6-e885-766b-b9db-315d518adeec"
@@ -50,10 +51,23 @@ class SqliteStoreTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         patcher = patch.object(db_sqlite, "DB_PATH", Path(self.tmp.name) / "echo-graph.db")
         patcher.start()
+        self.email_patcher = patch.object(auth, "BOOTSTRAP_EMAIL", "admin@test.local")
+        self.email_patcher.start()
+        self.addCleanup(self.email_patcher.stop)
+        self.admin = auth.register("admin@test.local", "admin-password-123", username="admin")
+        a, w, e = _fixture()
+
+        def _own(rows):
+            return [{**r, "owner_id": self.admin["id"]} for r in rows]
+
+        rewrite_all(_own(a), _own(w), _own(e))
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
-        sqlite_store.rewrite_all(*_fixture())
         self.store = db.SqliteStore(reviewed_only=False)
+
+    def _own(self, rows):
+        """测试数据统一归属 admin(默认视图 = admin 星云)。"""
+        return [{**r, "owner_id": self.admin["id"]} for r in rows]
 
     def test_graph_shape(self) -> None:
         g = self.store.graph()
@@ -85,6 +99,12 @@ class SqliteStoreTest(unittest.TestCase):
         self.assertTrue(any(h["type"] == "work" for h in work_hits))
         self.assertIn("加缪", work_hits[0]["sub"])
         self.assertEqual(self.store.search("不存在的关键词"), [])
+
+    def test_search_blank_returns_empty(self) -> None:
+        """空串 / 纯空白查询不应命中全量数据。"""
+        self.assertEqual(self.store.search(""), [])
+        self.assertEqual(self.store.search("   "), [])
+        self.assertEqual(self.store.search("\t\n "), [])
 
     def test_path_boundaries(self) -> None:
         self.assertIsNone(self.store.path(W1, W3, 1))
@@ -131,7 +151,7 @@ class SqliteStoreTest(unittest.TestCase):
         for row in a:
             row["reviewStatus"] = "reviewed"
         w[0]["reviewStatus"] = "reviewed"  # 只有局外人 reviewed
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(self._own(a), self._own(w), self._own(e))
         store = db.SqliteStore(reviewed_only=True)
 
         g = store.graph()
@@ -158,7 +178,7 @@ class SqliteStoreTest(unittest.TestCase):
         for row in a:
             row["reviewStatus"] = "reviewed"
         w[0]["reviewStatus"] = "reviewed"  # W1 reviewed;e1(W2->W1) reviewed,但 W2 是 draft
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(self._own(a), self._own(w), self._own(e))
         store = db.SqliteStore(reviewed_only=True)
         out = store.expansion(W1, 2)
         self.assertIsNotNone(out)
@@ -183,7 +203,8 @@ class SqliteStoreTest(unittest.TestCase):
             (str(db_sqlite.DB_PATH), "public", self.store.reviewed_only),
             db._read_cache,
         )
-        sqlite_store.rewrite_all(*_fixture())
+        a, w, e = _fixture()
+        rewrite_all(self._own(a), self._own(w), self._own(e))
         self.assertEqual(db._read_cache, {})
 
     def test_read_cache_refreshes_after_rewrite(self) -> None:
@@ -191,7 +212,7 @@ class SqliteStoreTest(unittest.TestCase):
         self.store.graph()  # 先填充缓存
         a, w, e = _fixture()
         w[0]["Title_CN"] = "局外人(改)"
-        sqlite_store.rewrite_all(a, w, e)
+        rewrite_all(self._own(a), self._own(w), self._own(e))
         titles = [n["label"] for n in self.store.graph()["nodes"] if n["type"] == "work"]
         self.assertIn("局外人(改)", titles)
 

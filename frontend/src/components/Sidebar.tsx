@@ -1,3 +1,11 @@
+/* 侧边栏容器:Tab 外壳 + 全部状态与处理函数。
+
+   Tab 内容按职责拆分到 components/sidebar/:
+   - SpaceTab.tsx    星云(品牌/切换/跃迁/搜索/路径/扩散/过滤)
+   - MineTab.tsx     我的(个人资料 + 关注/粉丝)
+   - SettingsTab.tsx 设置(账号 + 星云可见性 + 退出入口)
+   - LogoutModal.tsx 退出确认弹窗 */
+
 import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent } from "react";
 import { useApp } from "../store";
 import {
@@ -11,6 +19,10 @@ import PinButton from "./PinButton";
 import {
   renderMain, renderPath, selectNode, expandRippleDebounced, expandAuthorDebounced, reRenderRipple, reRenderAuthor, syncUrl,
 } from "../lib/graph";
+import SpaceTab from "./sidebar/SpaceTab";
+import MineTab from "./sidebar/MineTab";
+import SettingsTab from "./sidebar/SettingsTab";
+import LogoutModal from "./sidebar/LogoutModal";
 
 export default function Sidebar() {
   const { state, dispatch } = useApp();
@@ -445,315 +457,50 @@ export default function Sidebar() {
         </div>
         <div className="sidebar-content">
           {tab === "space" ? (
-            <>
-        <div className="brand">
-          <h1>Litnebula</h1>
-          <span className="beta-badge">beta</span>
-          {/* 账号入口已移入「设置」Tab,品牌行不再显示账号角标 */}
-          <div className="store-badge">
-            数据源:{state.spaceOwner || "public"}
-          </div>
-        </div>
-        <div className="space-switch">
-          <button
-            className={"space-btn" + (state.space === "public" ? " active" : "")}
-            onClick={() => switchSpace("public")}
-          >
-            公共星云
-          </button>
-          <button
-            className={"space-btn" + (state.space === "mine" ? " active" : "")}
-            onClick={() => switchSpace("mine")}
-          >
-            我的星云
-          </button>
-        </div>
-        <button id="btn-jump" className="side-btn jump-btn" onClick={doJump}>
-          <svg
-            className="jump-btn-icon"
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-            <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-            <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-            <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-          </svg>
-          星际跃迁
-        </button>
-        <nav>
-          <div id="view-status">视图:{viewLabel(state.currentView)}</div>
-          <button
-            id="btn-back-main" className="side-btn"
-            style={{ display: state.currentView === "main" ? "none" : "block" }}
-            onClick={backMain}
-          >
-            返回全部图谱
-          </button>
-          <div className="field">
-            <input
-              id="q"
-              value={q}
-              placeholder="搜索作家 / 作品…"
-              onChange={(e) => setQ(e.target.value)}
-              onKeyDown={onSearchKeyDown}
-              onBlur={() => {
-                // 点击外部关闭下拉(150ms 让点击项先触发,onMouseDown preventDefault 已阻止失焦)
-                setTimeout(() => { setQResults([]); setQActive(-1); }, 150);
-              }}
+            <SpaceTab
+              state={state}
+              dispatch={dispatch}
+              q={q}
+              setQ={setQ}
+              qResults={qResults}
+              qActive={qActive}
+              setQResults={setQResults}
+              setQActive={setQActive}
+              from={from}
+              setFrom={setFrom}
+              to={to}
+              setTo={setTo}
+              fromOpen={fromOpen}
+              setFromOpen={setFromOpen}
+              toOpen={toOpen}
+              setToOpen={setToOpen}
+              expandInput={expandInput}
+              filterOptions={filterOptions}
+              chooseHit={chooseHit}
+              onSearchKeyDown={onSearchKeyDown}
+              doPath={doPath}
+              doJump={doJump}
+              backMain={backMain}
+              stepExpand={stepExpand}
+              onExpandInputChange={onExpandInputChange}
+              commitExpandInput={commitExpandInput}
+              onToggleAuthors={onToggleAuthors}
+              onToggleIslands={onToggleIslands}
+              switchSpace={switchSpace}
             />
-            {qResults.length > 0 && (
-              <ul id="q-results" style={{ display: "block" }}>
-                {qResults.map((h, i) => (
-                  <li
-                    key={h.id}
-                    className={i === qActive ? "active" : undefined}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => chooseHit(h)}
-                  >
-                    <strong>{h.label}</strong> <small>{h.sub || ""}</small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="path-box">
-            <div className="path-fields">
-              <div className="path-field">
-                <input
-                  id="from"
-                  value={from}
-                  placeholder="起点作品"
-                  onChange={(e) => setFrom(e.target.value)}
-                  onFocus={() => setFromOpen(true)}
-                  onBlur={() => setFromOpen(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") setFromOpen(false);
-                    if (e.key === "Enter") { e.preventDefault(); doPath(); }
-                  }}
-                />
-                {fromOpen && filterOptions(from).length > 0 && (
-                  <ul id="from-results" style={{ display: "block" }}>
-                    {filterOptions(from).map((o) => (
-                      <li
-                        key={o.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // 先于 blur 触发,避免失焦关闭
-                          setFrom(o.value);
-                          setFromOpen(false);
-                        }}
-                      >
-                        {o.value}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <button id="btn-swap" title="交换起终点" onClick={() => { setFrom(to); setTo(from); }}>⇅</button>
-              <div className="path-field">
-                <input
-                  id="to"
-                  value={to}
-                  placeholder="终点作品"
-                  onChange={(e) => setTo(e.target.value)}
-                  onFocus={() => setToOpen(true)}
-                  onBlur={() => setToOpen(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") setToOpen(false);
-                    if (e.key === "Enter") { e.preventDefault(); doPath(); }
-                  }}
-                />
-                {toOpen && filterOptions(to).length > 0 && (
-                  <ul id="to-results" style={{ display: "block" }}>
-                    {filterOptions(to).map((o) => (
-                      <li
-                        key={o.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // 先于 blur 触发,避免失焦关闭
-                          setTo(o.value);
-                          setToOpen(false);
-                        }}
-                      >
-                        {o.value}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-            <button id="btn-path" onClick={doPath}>寻找路径</button>
-          </div>
-          <div id="expand-bar" style={{ display: state.currentView === "ripple" || state.currentView === "author" ? "flex" : "none" }}>
-            <span className="expand-label">扩散范围</span>
-            <div className="expand-stepper">
-              <button
-                type="button"
-                className="expand-step"
-                aria-label="减小扩散范围"
-                onClick={() => stepExpand(-1)}
-                disabled={state.expandHops <= 1}
-              >◀</button>
-              <input
-                type="number"
-                id="expand-input"
-                min={1}
-                max={state.expandMax}
-                step={1}
-                value={expandInput}
-                onChange={(e) => onExpandInputChange(e.target.value)}
-                onBlur={commitExpandInput}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                }}
-              />
-              <button
-                type="button"
-                className="expand-step"
-                aria-label="增大扩散范围"
-                onClick={() => stepExpand(1)}
-                disabled={state.expandHops >= state.expandMax}
-              >▶</button>
-            </div>
-          </div>
-        </nav>
-        <div className="sidebar-bottom">
-          <label className="opt">
-            <input
-              type="checkbox" id="show-authors" checked={state.showAuthors}
-              onChange={onToggleAuthors}
-            />
-            <span>显示作家节点</span>
-          </label>
-          <label className="opt">
-            <input
-              type="checkbox" id="hide-islands" checked={state.hideIslands}
-              onChange={onToggleIslands}
-            />
-            <span>隐藏孤岛节点</span>
-          </label>
-          <button
-            id="btn-contribute"
-            className="side-btn"
-            onClick={() => {
-              if (!state.user) {
-                dispatch({ type: "SET_AUTH", open: true });
-                dispatch({ type: "SET_TOAST", msg: "请先登录,再往你的星云添加数据", kind: "info" });
-                return;
-              }
-              dispatch({ type: "SET_CONTRIBUTE", open: true });
-            }}
-          >
-            点亮星空
-          </button>
-          {state.user && (
-            <button id="btn-admin" className="side-btn" onClick={() => dispatch({ type: "SET_ADMIN", open: true })}>数据管理</button>
-          )}
-        </div>
-            </>
           ) : tab === "mine" ? (
-            <div className="settings-pane">
-              {state.user ? (
-                <>
-                  <div className="settings-section">
-                    <h3>个人资料</h3>
-                    <label className="settings-field">
-                      <span>昵称</span>
-                      <input
-                        type="text"
-                        value={profileForm.nickname}
-                        maxLength={32}
-                        onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
-                        placeholder="展示用昵称(可选,默认用用户名)"
-                      />
-                    </label>
-                    <label className="settings-field">
-                      <span>简介</span>
-                      <textarea
-                        value={profileForm.bio}
-                        maxLength={500}
-                        rows={4}
-                        onChange={(e) => setProfileForm((f) => ({ ...f, bio: e.target.value }))}
-                        placeholder="介绍一下自己(可选,最多 500 字)"
-                      />
-                    </label>
-                    {profileError && <div className="auth-error">{profileError}</div>}
-                    <button
-                      id="btn-save-profile"
-                      className="side-btn"
-                      onClick={saveProfile}
-                      disabled={profileBusy}
-                    >
-                      {profileBusy ? "保存中…" : "保存个人资料"}
-                    </button>
-                  </div>
-                  <div className="settings-section">
-                    <h3>关注 <span className="follow-count">{following.length}</span></h3>
-                    {following.length === 0 ? (
-                      <p className="settings-hint">还没有关注任何人,去他人星云点「关注」吧。</p>
-                    ) : (
-                      <ul className="follow-list">
-                        {following.map((u) => (
-                          <li key={u.id} className="follow-item">
-                            <button
-                              className="follow-name"
-                              title="跃迁到 TA 的星云"
-                              onClick={() => jumpToSpace(u.id, u.displayName)}
-                            >
-                              {u.displayName}
-                            </button>
-                            <button className="follow-jump" onClick={() => jumpToSpace(u.id, u.displayName)}>
-                              跃迁
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <div className="settings-section">
-                    <h3>粉丝 <span className="follow-count">{followers.length}</span></h3>
-                    {followers.length === 0 ? (
-                      <p className="settings-hint">还没有粉丝。</p>
-                    ) : (
-                      <ul className="follow-list">
-                        {followers.map((u) => (
-                          <li key={u.id} className="follow-item">
-                            <button
-                              className="follow-name"
-                              title="跃迁到 TA 的星云"
-                              onClick={() => jumpToSpace(u.id, u.displayName)}
-                            >
-                              {u.displayName}
-                            </button>
-                            <button className="follow-jump" onClick={() => jumpToSpace(u.id, u.displayName)}>
-                              跃迁
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="settings-section">
-                  <h3>我的</h3>
-                  <p className="settings-hint">请先登录,即可编辑个人资料并查看关注/粉丝。</p>
-                  <button
-                    id="btn-mine-login"
-                    className="side-btn"
-                    onClick={() => dispatch({ type: "SET_AUTH", open: true })}
-                  >
-                    登录 / 注册
-                  </button>
-                </div>
-              )}
-            </div>
+            <MineTab
+              state={state}
+              dispatch={dispatch}
+              profileForm={profileForm}
+              setProfileForm={setProfileForm}
+              profileError={profileError}
+              profileBusy={profileBusy}
+              saveProfile={saveProfile}
+              following={following}
+              followers={followers}
+              jumpToSpace={jumpToSpace}
+            />
           ) : tab === "messages" ? (
             <div className="settings-pane">
               <div className="settings-section">
@@ -762,78 +509,25 @@ export default function Sidebar() {
               </div>
             </div>
           ) : (
-            <div className="settings-pane">
-              {state.user ? (
-                <>
-                  <div className="settings-section">
-                    <h3>账号</h3>
-                    <div className="auth-username">用户名:{state.user.username || "—"}</div>
-                    <button
-                      id="btn-logout"
-                      className="side-btn"
-                      onClick={() => setLogoutConfirm(true)}
-                    >
-                      退出登录
-                    </button>
-                  </div>
-                  <div className="settings-section">
-                    <h3>星云可见性</h3>
-                    <p className="settings-hint">
-                    </p>
-                    <label className="settings-field">
-                      <select
-                        value={(state.user.space_visibility ?? "public") === "private" ? "private" : "public"}
-                        onChange={(e) => setSpaceVisibility(e.target.value as "public" | "private")}
-                      >
-                        <option value="public">公开(可被访问)</option>
-                        <option value="private">仅自己可见</option>
-                      </select>
-                    </label>
-                  </div>
-                </>
-              ) : (
-                <div className="settings-section">
-                  <h3>设置</h3>
-                  <p className="settings-hint">请先登录,即可管理账号与星云可见性。</p>
-                  <button
-                    id="btn-settings-login"
-                    className="side-btn"
-                    onClick={() => dispatch({ type: "SET_AUTH", open: true })}
-                  >
-                    登录 / 注册
-                  </button>
-                </div>
-              )}
-            </div>
+            <SettingsTab
+              state={state}
+              dispatch={dispatch}
+              setSpaceVisibility={setSpaceVisibility}
+              onRequestLogout={() => setLogoutConfirm(true)}
+            />
           )}
         </div>
       </aside>
-      {logoutConfirm && (
-        <div id="auth-modal">
-          <div className="auth-modal-card">
-            <h3>退出登录</h3>
-            <p>确定退出当前账号吗?</p>
-            <div className="admin-modal-actions">
-              <button
-                className="del"
-                onClick={() => {
-                  setLogoutConfirm(false);
-                  logout().finally(() => dispatch({ type: "SET_USER", user: null }));
-                  setTab("space"); // 退出后回到星云 Tab
-                  dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
-                }}
-              >
-                确认退出
-              </button>
-              <button onClick={() => setLogoutConfirm(false)}>取消</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LogoutModal
+        open={logoutConfirm}
+        onCancel={() => setLogoutConfirm(false)}
+        onConfirm={() => {
+          setLogoutConfirm(false);
+          logout().finally(() => dispatch({ type: "SET_USER", user: null }));
+          setTab("space"); // 退出后回到星云 Tab
+          dispatch({ type: "SET_TOAST", msg: "已退出登录", kind: "info" });
+        }}
+      />
     </>
   );
-}
-
-function viewLabel(view: string): string {
-  return view === "main" ? "全图谱" : view === "ripple" ? "涟漪" : view === "author" ? "作者" : "提及链";
 }

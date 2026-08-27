@@ -12,7 +12,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, Response
 
-from app import auth, db_sqlite, ratelimit, sqlite_store
+from app import auth, db_sqlite, ratelimit
+from tests._helpers import rewrite_all
 
 
 class _FakeClient:
@@ -57,6 +58,29 @@ class AuthStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             auth.register("DUP@example.com", "password123", username="dupper2")  # 邮箱大小写归一后判重
 
+    def test_vip_flag_roundtrip(self) -> None:
+        """users.vip:注册默认 False;标记后 login/me 返回 True;require_admin_or_vip 放行 VIP。"""
+        user = auth.register("vip@example.com", "password123", username="vipuser")
+        self.assertFalse(user["vip"])
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (user["id"],))
+        logged = auth.login("vip@example.com", "password123")
+        self.assertTrue(logged["vip"])
+        req = _FakeRequest(cookies={auth.SESSION_COOKIE: auth.create_session(user["id"])})
+        self.assertEqual(auth.require_admin_or_vip(req)["id"], user["id"])
+
+        # 普通用户 403
+        plain = auth.register("plain@example.com", "password123", username="plainuser")
+        req2 = _FakeRequest(cookies={auth.SESSION_COOKIE: auth.create_session(plain["id"])})
+        with self.assertRaises(HTTPException) as ctx:
+            auth.require_admin_or_vip(req2)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+        # 未登录 401
+        with self.assertRaises(HTTPException) as ctx2:
+            auth.require_admin_or_vip(_FakeRequest())
+        self.assertEqual(ctx2.exception.status_code, 401)
+
     def test_login(self) -> None:
         auth.register("user@example.com", "password123", username="user01")
         user = auth.login("USER@example.com", "password123")
@@ -75,7 +99,7 @@ class AuthStoreTest(unittest.TestCase):
         self.assertEqual(auth.current_user(token), {
             "id": user["id"], "email": "session@example.com",
             "username": "session", "nickname": None, "bio": None,
-            "role": "user", "space_visibility": "public",
+            "role": "user", "space_visibility": "public", "vip": False,
         })
         auth.delete_session(token)
         self.assertIsNone(auth.current_user(token))
@@ -135,8 +159,14 @@ class AuthStoreTest(unittest.TestCase):
                 )
             self.assertEqual(ctx.exception.status_code, 429)
 
-    def test_turnstile_skip_without_secret(self) -> None:
+    def test_turnstile_fail_closed_without_secret(self) -> None:
+        """生产漏配密钥:注册人机验证默认失败(fail-closed,不再静默跳过)。"""
         with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(auth.verify_turnstile(None, "127.0.0.1"))
+
+    def test_turnstile_skip_only_when_explicitly_allowed(self) -> None:
+        """仅 TURNSTILE_ALLOW_SKIP=1(本地开发)时跳过验证。"""
+        with patch.dict(os.environ, {"TURNSTILE_ALLOW_SKIP": "1"}, clear=True):
             self.assertTrue(auth.verify_turnstile(None, "127.0.0.1"))
 
     def test_turnstile_requires_token_when_configured(self) -> None:
@@ -284,7 +314,7 @@ class AuthStoreTest(unittest.TestCase):
 
     def test_bootstrap_email_registers_as_admin_and_claims_rows(self) -> None:
         with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
-            sqlite_store.rewrite_all(
+            rewrite_all(
                 [{"id": "01a00000-0000-7000-8000-000000000001", "originalName": "X", "Name_CN": "甲"}],
                 [],
                 [],
@@ -302,7 +332,7 @@ class AuthStoreTest(unittest.TestCase):
         with patch.object(auth, "BOOTSTRAP_EMAIL", ""):
             user = auth.register("boss@test.local", "password123", username="boss01")
             self.assertEqual(user["role"], "user")
-        sqlite_store.rewrite_all(
+        rewrite_all(
             [{"id": "01a00000-0000-7000-8000-000000000002", "originalName": "X", "Name_CN": "甲"}],
             [],
             [],
@@ -350,3 +380,27 @@ class RateLimitTest(unittest.TestCase):
             headers={"x-forwarded-for": "6.6.6.6"},
         )
         self.assertEqual(ratelimit.client_ip(req), "203.0.113.9")
+
+    def test_client_ip_from_right_to_left_skipping_trusted(self) -> None:
+        """可信对端:从右向左跳过可信代理段,取第一个不可信 IP(左侧伪造值无效)。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "6.6.6.6, 203.0.113.9"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "203.0.113.9")
+
+    def test_client_ip_all_trusted_hops_falls_back_leftmost(self) -> None:
+        """全部为可信代理时回退最左值(与 uvicorn 语义一致)。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "127.0.0.1, ::1"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "127.0.0.1")
+
+    def test_client_ip_skips_invalid_hops(self) -> None:
+        """非法 IP 跳被跳过,不影响取到有效客户端 IP。"""
+        req = _FakeRequest(
+            host="127.0.0.1",
+            headers={"x-forwarded-for": "not-an-ip, 198.51.100.7"},
+        )
+        self.assertEqual(ratelimit.client_ip(req), "198.51.100.7")

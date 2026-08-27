@@ -244,27 +244,29 @@ export default function SpaceTab(props: SpaceTabProps) {
             <option value="unread">未读</option>
           </select>
         </label>
-        <label className="opt">
-          <input
-            type="checkbox" id="show-authors" checked={state.showAuthors}
-            onChange={onToggleAuthors}
-          />
-          <span>显示作家节点</span>
-        </label>
-        <label className="opt">
-          <input
-            type="checkbox" id="show-work-labels" checked={state.showWorkLabels}
-            onChange={onToggleWorkLabels}
-          />
-          <span>显示作品名称</span>
-        </label>
-        <label className="opt">
-          <input
-            type="checkbox" id="hide-islands" checked={state.hideIslands}
-            onChange={onToggleIslands}
-          />
-          <span>隐藏孤岛节点</span>
-        </label>
+        <div className="opt-grid">
+          <label className="opt">
+            <input
+              type="checkbox" id="show-authors" checked={state.showAuthors}
+              onChange={onToggleAuthors}
+            />
+            <span>作家节点</span>
+          </label>
+          <label className="opt">
+            <input
+              type="checkbox" id="show-work-labels" checked={state.showWorkLabels}
+              onChange={onToggleWorkLabels}
+            />
+            <span>作品名称</span>
+          </label>
+          <label className="opt">
+            <input
+              type="checkbox" id="hide-islands" checked={state.hideIslands}
+              onChange={onToggleIslands}
+            />
+            <span>孤岛节点</span>
+          </label>
+        </div>
         <button
           id="btn-contribute"
           className="side-btn"

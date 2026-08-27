@@ -80,6 +80,12 @@ main { height: 100%; position: relative; min-height: 0; }
   font-size: 12px;
   cursor: pointer;
 }
+.opt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
 .sidebar-bottom {
   margin-top: auto; /* 固定在侧边栏底部 */
   display: flex;

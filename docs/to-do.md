@@ -11,7 +11,7 @@
 - [x] 数据模型按 `data_schema.md`(schemaVersion 1.1)规范:`Author` / `Work` 节点及属性
   - Work:`id`、`language`(ISO 639-1)、`originalTitle`、`Title_CN`、`Title_EN`、`publicationYear`、`creationYear`、时间戳
   - 补充:`genre`(体裁)、可选 `deletedAt`;`id` 为 UUID(新增自动生成 UUID v7),URL 直接使用 UUID
-- [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 1:N(允许合著)
+- [x] 结构关系 `(Work)-[:AUTHORED_BY]->(Author)`,基数 N:N(允许合著)
 - [x] 回声关系 `(Work)-[:ECHO]->(Work)`:A 在书中提及 B 即建立 A→B;属性含 `evidence`、`evidenceSource`(出处/章节/译本)、`note`、`reviewStatus` 与时间戳
 - [x] 涟漪关系(边)增加 `id`(UUID v7):`edges.csv` 新增 `id` 列并回填存量 3 条;管理页新增/编辑/删除按 `id` 定位,与作者/作品一致
 - [x] 作者/作品增加 `reviewStatus` 审核状态(默认 `draft`),管理页作者/作品表格列由「删除时间」改为「审核状态」,编辑表单同步支持
@@ -48,31 +48,16 @@
       私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);默认视图 = admin 星云(官方图谱)
       (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 旧库遗留数据一次性兼容认领);隔离测试
       (越权 404/403、跨空间引用拒绝)
-- [x] 角色迁移(阶段 2):移除 ADMIN_TOKEN / 管理令牌弹窗;管理接口只认 admin 角色
-      登录态;前端「数据管理」按用户角色显隐,左侧栏新增「公共星云 / 我的星云」切换
-- [x] 阶段 2 后续:个人空间数据管理 UI(复用 Admin 组件按空间切换,非 admin
-      经 `/api/me/*` 管理自己的星云——见下方「数据管理视图开放给所有登录用户」)
 - ⬜ 阶段 2 后续:发布/聚合到官方图谱(阶段 4)
 - ⬜ 后台发布管线(暂缓,已确认设计):用户星云数据 → 后台采集 →
       AI 预审(查重/纠错) → 人工确认 → 复制进官方图谱(owner=admin,内部留溯源);
       公共行只取客观字段,不含用户隐私;不拆表、用户无需手动提交
 - [x] 数据管理视图开放给所有登录用户:非 admin 用 `/api/me/*` 管理自己的
       作者/作品/涟漪(日志/快照仅 admin 可见),新增 `/api/me/data`
-- [x] 点亮星空改为「添加到我的星云」:登录后直接写入本人空间(/api/me),
-      不再进贡献收件箱;下拉框搜不到时第一行提供「添加新作品 / 新作者」,
-      弹出与数据管理共用的标准新增弹窗(NodeFormModal 抽取复用)
 - [x] 星际跃迁:左侧栏「公共星云 / 我的星云」下方新增跃迁按钮(随机访问公开星云);
       数据源标签显示所在星云账号(默认视图显示 public);`/api/space/*` 附 displayName
-- [x] 同步状态提示:管理页将 CSV 活跃数据与 Neo4j 规范化比对(忽略时间戳),不一致时显示「数据未上传」小字提醒(与重复提醒同区;Phase 4 已随 Neo4j 退役移除)
-- [x] 策展数据迁移 SQLite(Phase 1-3 完成):SQLite 主存(`app/sqlite_store.py`)+ 迁移脚本 + admin/importer/sync 切换 + 每次写入自动 CSV 导出 + CI 导出新鲜度门禁 + 贡献表并入同库(方案见 `migration/sqlite-migration.md`)
 - [x] SQLite 迁移后优化(P0-P2):行级 CRUD 消除整库重写与并发丢更新;统一连接层(`app/db_sqlite.py`);schema 迁移 runner(v1-v3,迁移前自动备份);索引补齐;DB CHECK 补充;时间戳归一 UTC;`audit_log` 日志表;同步计数预检
 - [x] SQLite 迁移后优化(P3a-e):级联删除/恢复纯 SQL;行级校验(目标行+SQL 交叉引用);乐观并发(updatedAt 守卫 409);快照降频+分层清理(load_rows 迁入 sqlite_store,移除 save_rows,删除更新 updatedAt);`GET /api/admin/audit` 日志查询
-- [x] 前端优化(A/B):数据行类型化(`lib/adminTypes.ts`)+ Admin 拆分(AdminTable/ContributionsPanel/AuditPanel)+ jsdom 组件测试;Admin/Contribute 懒加载(首屏减约 30KB);乐观更新+409 版本冲突弹窗;日志 Tab;导出 JSON/CSV 按钮已移除(自动 CSV 导出 + git 备份足够);`author_ids` 数组化;`/api/admin/data?include_deleted=` 按需拉取
-- [x] Neo4j 查询层退役(Phase 4,P1-P3 清理):公开读取全部由 SQLite 提供(`app/db.py` → `SqliteStore`);删除 importer / export_seed / `/api/admin/sync` / `/api/admin/import` 与管理页「上传↑」;部署收敛为单 worker + SQLite `.backup` 备份 + CSV 重建;依赖清理(neo4j/openpyxl 移除、pydantic 显式声明);清理死代码(snapshot / migrate_contributions / merge_legacy_db)与过期文档;版本 0.5.0
-- [x] 移除贡献收件箱(2026-08-24,schema v22):删除 `contributions` 表、`app/contributions.py`、
-      `POST /api/contribute/echo`、admin「贡献」审核接口与前端「贡献」Tab/面板;
-      「点亮星空」早已直写个人空间,不再需要自由文本收件箱;书籍解析管线后续以
-      专用用户空间承载(见 ai_assistant 评估,暂缓实现)
 - [x] 溯源列 `created_by`(2026-08-24,schema v23):作者/作品/涟漪三表新增
       `created_by`(curated 人工策展 / user 用户空间写入 / llm AI 提取预留);
       显式传值优先、缺省按 owner 推导(admin=curated,其他=user),创建后不可修改、

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BookImportTask } from "../../lib/adminTypes";
 
 const ACCEPT = ".epub,.txt,.mobi,.azw,.azw3,.fb2,.html,.htm";
+const MAX_BOOK_BYTES = 20 * 1024 * 1024; // 与后端 app/book_import.MAX_BOOK_BYTES 一致(20MB)
 const POLL_MS = 1500;
 
 const fmtSize = (n: number): string =>
@@ -26,6 +27,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
   const [phase, setPhase] = useState<"form" | "running" | "done" | "error">("form");
   const [task, setTask] = useState<BookImportTask | null>(null);
   const [message, setMessage] = useState("");
+  const [fileError, setFileError] = useState("");
   const timerRef = useRef<number | null>(null);
   const logRef = useRef<HTMLPreElement | null>(null);
 
@@ -85,8 +87,16 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
       body: file,
     })
       .then(async (r) => {
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || "提交失败(HTTP " + r.status + ")");
+        const d = await r.json().catch(() => null);
+        if (!r.ok) {
+          const detail = d && typeof d.detail === "string" && d.detail ? d.detail : null;
+          throw new Error(
+            detail ||
+              (r.status === 413
+                ? "上传被网关拒绝(文件过大)。请确认 nginx 已配置 client_max_body_size 20m 并 reload"
+                : "提交失败(HTTP " + r.status + ")")
+          );
+        }
         return d as { task_id: string };
       })
       .then((d) => poll(d.task_id))
@@ -101,6 +111,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
     setPhase("form");
     setTask(null);
     setMessage("");
+    setFileError("");
   };
 
   return (
@@ -111,13 +122,23 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
         {phase === "form" && (
           <>
             <label>
-              电子书文件(epub / txt 最佳;mobi 等需服务器 calibre)
+              电子书文件(epub / txt 最佳;mobi 等需服务器 calibre;≤ 20MB)
               <input
                 type="file"
                 accept={ACCEPT}
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  if (f && f.size > MAX_BOOK_BYTES) {
+                    setFile(null);
+                    setFileError("文件过大(上限 20MB),请压缩或拆分后重试");
+                    return;
+                  }
+                  setFile(f);
+                  setFileError("");
+                }}
               />
             </label>
+            {fileError && <p className="import-error">{fileError}</p>}
             {file && <p className="import-file">已选择:{file.name}({fmtSize(file.size)})</p>}
             <label>
               书名(可选,覆盖元数据)

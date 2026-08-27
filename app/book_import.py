@@ -16,7 +16,7 @@
 安全与资源约束:
 - 任务按创建者(user_id)归属,非创建者(非 admin)查询一律 404,不暴露存在性;
 - 每用户每小时导入次数限流 + 全局并发上限(防止 API 费用与磁盘被滥用);
-- 上传文件流式落盘(不整块驻留内存,单文件上限 200MB),任务结束即删除
+- 上传文件流式落盘(不整块驻留内存,单文件上限 20MB),任务结束即删除
   上传目录(含转换产物),并定期清理孤儿目录,避免磁盘无限增长;
 - 错误响应只暴露类型与摘要,完整堆栈写入服务端日志。
 
@@ -60,7 +60,7 @@ logger = logging.getLogger("echo_graph")
 
 ROOT = Path(__file__).resolve().parent.parent
 IMPORT_DIR = ROOT / "app" / "ai_assistant" / "output" / "imports"
-MAX_BOOK_BYTES = 200 * 1024 * 1024  # 200MB 防滥用上限
+MAX_BOOK_BYTES = 20 * 1024 * 1024  # 20MB 防滥用上限
 MAX_CONCURRENT_IMPORTS = 2  # 全局同时执行的导入任务上限(单 worker 资源约束)
 IMPORT_LIMIT_PER_USER = 10  # 每用户每小时导入次数上限
 IMPORT_RATE_WINDOW_SECONDS = 3600.0
@@ -326,7 +326,7 @@ async def _save_upload(request: Request, target: Path) -> None:
         async for chunk in request.stream():
             total += len(chunk)
             if total > MAX_BOOK_BYTES:
-                raise HTTPException(status_code=413, detail="电子书文件过大(上限 200MB)")
+                raise HTTPException(status_code=413, detail="电子书文件过大(上限 20MB)")
             fh.write(chunk)
 
 

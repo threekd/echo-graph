@@ -894,6 +894,7 @@ th.sortable.active .sort-icon {
   color-scheme: dark; /* 原生控件(文件选择等)按深色主题渲染 */
 }
 .import-card .import-file { margin: 0; color: #9cc3ff; font-size: 12px; }
+.import-card .import-error { margin: 0; color: #fca5a5; font-size: 12px; }
 .import-card .import-check { flex-direction: row; align-items: center; gap: 6px; }
 .import-card .import-check span {
   display: inline-flex;

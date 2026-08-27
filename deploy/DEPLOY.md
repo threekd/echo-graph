@@ -28,7 +28,7 @@
    写入 `.env`(**未配置密钥时注册默认失败**,仅本地开发可设
    `TURNSTILE_ALLOW_SKIP=1` 临时跳过,请勿在生产设置);HTTPS 部署**必须**设
    `COOKIE_SECURE=1`(未设置时服务启动会输出告警日志)。
-5. **书籍导入上传大小**:nginx 模板已内置 `client_max_body_size 200m`(与后端
+5. **书籍导入上传大小**:nginx 模板已内置 `client_max_body_size 20m`(与后端
    `MAX_BOOK_BYTES` 一致);若手动配置 nginx,需同步添加该指令,否则 >1MB 的
    电子书会被 nginx 以 413 拒绝。
 

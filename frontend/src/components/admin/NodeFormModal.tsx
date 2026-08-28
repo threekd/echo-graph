@@ -191,10 +191,10 @@ export default function NodeFormModal({
   // 新增涟漪时源/目标作品搜不到:内嵌「添加新作品」弹窗(与点亮星空同一模式)
   const [workAdd, setWorkAdd] = useState<{ field: string; query: string } | null>(null);
 
-  // 普通用户空间:审核状态与备注隐藏(用户输入即确认);作者/作品提供可见性,
-  // 作品额外提供评分(推荐/不推荐)与评价(长文本);admin 保持策展语义。
+  // 手工新增/编辑一律已审核(所有用户一致,admin 不做特殊化):审核状态不提供编辑;
+  // 普通用户空间额外隐藏备注(用户输入即确认);作品提供评分与评价(长文本)。
   const fields = FIELDS[kind].filter(
-    (f) => !(!isAdmin && (f.key === "reviewStatus" || f.key === "note"))
+    (f) => f.key !== "reviewStatus" && !(!isAdmin && f.key === "note")
   );
   const selfId = mode === "edit" ? initial.id : undefined;
   const fieldHasDup = (field: string, value: string): boolean => {

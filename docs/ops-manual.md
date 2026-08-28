@@ -111,7 +111,7 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 - 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 审计 / 会话一并回退);
 - 恢复前自动生成安全备份 `backups/echo-graph-pre-restore-<时间戳>.db`;
 - 恢复全程与所有写事务互斥,**恢复期间请勿编辑数据**;
-- 成功后自动清空读缓存(旧库遗留未归属行由启动引导一次性认领)。
+- 成功后自动清空读缓存;引导管理员角色由 `bootstrap_admin()` 在恢复后兜底补齐。
 
 ### 3.3 全新环境引导(不是恢复,谨慎!)
 

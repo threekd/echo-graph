@@ -330,6 +330,16 @@
 
 ## 最近变更(2026-08-28)
 
+- [x] **手工新增审核语义收口 + 并发一致性修复(审查跟进)**:API 手工新增/编辑
+      作者/作品/涟漪一律强制 `reviewed`(所有用户一致,admin 不做特殊化,显式
+      `draft`/`rejected` 回正);`created_by` 显式传 `llm` 被 API 拒绝(仅 AI 管线
+      内部使用),溯源列仍创建后不可修改;乐观并发守卫改为必传 `updatedAt`
+      (缺失 400);书籍导入并发上限检查与任务登记原子化(撞线 429);
+      API 响应统一 `Cache-Control: no-store`;文档同步(`introduction.md` /
+      `data_schema.md` / `ops-manual.md`);`EMAIL_VERIFY_REQUIRED=0` 时注册即信任
+      (`email_verified_at` 以 `createdAt` 标记,与存量回填策略一致),修复
+      `test_auth.py` 缺失 `import re` 与未验证登录 403 断言越出 env patch 的
+      测试缺陷(后端 286/286 全绿)。
 - [x] **公共星云/官方图谱概念移除(架构变更,审查跟进)**:不再存在「默认视图」——
   - 前端:功能栏「公共星云」按钮删除;`Space` 收敛为 `mine | space:<userId>` 二元态,
     未登录无默认图谱(空图 + 登录提示),可通过星际跃迁浏览公开星云;

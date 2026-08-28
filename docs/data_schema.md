@@ -38,8 +38,9 @@
   仅本人可见,他人公开星云经 `/api/space/*` 按可见性访问。
 - **溯源列**:`authors` / `works` / `edges` 含 `created_by`(默认 `curated`);
   取值 `curated`(人工策展)/ `user`(用户空间写入)/ `llm`(AI 提取,经 admin 审核发布)。
-  显式传值优先,缺省按 owner 推导(admin 空间 = `curated`,其他 = `user`);
-  创建后不可修改,不进公共导出(与个人字段同策略)。
+  API 手工写入不允许显式传 `llm`(仅 AI 管线内部使用),显式 `curated`/`user` 或缺省按
+  owner 推导(admin 空间 = `curated`,其他 = `user`);创建后不可修改,
+  不进公共导出(与个人字段同策略)。
 - **命名风格**:通用属性使用 camelCase(`originalTitle`、`publicationYear`);
   中英文标题/姓名使用大写前缀约定(`Title_CN`、`Title_EN`、`Name_CN`、`Name_EN`),
   作为对外展示字段。
@@ -60,7 +61,7 @@
 | `email` | TEXT | 是(UNIQUE) | 登录邮箱,统一小写 |
 | `password_hash` | TEXT | 是 | Argon2 密码哈希,不存明文 |
 | `role` | TEXT | 是 | `user` / `admin`,默认 `user`(引导管理员邮箱注册自动为 admin;开启邮箱验证时改为验证通过后提权) |
-| `email_verified_at` | TEXT | 否 | 邮箱验证时间(UTC);`EMAIL_VERIFY_REQUIRED=1` 时新注册用户未验证不可登录,存量用户迁移时回填 createdAt 视为已信任 |
+| `email_verified_at` | TEXT | 否 | 邮箱验证时间(UTC);`EMAIL_VERIFY_REQUIRED=1` 时新注册用户未验证不可登录;`EMAIL_VERIFY_REQUIRED=0` 时注册即信任(以 createdAt 标记,与存量用户迁移回填策略一致);存量用户迁移时回填 createdAt 视为已信任 |
 | `status` | TEXT | 是 | `active` / `disabled`,默认 `active`;禁用用户不可登录,其星云不可访问(2026-08-24 起空间访问统一按 active 判定) |
 | `createdAt` / `updatedAt` | TEXT | 否 | 时间戳(UTC ISO-8601) |
 | `space_visibility` | TEXT | 是 | `public`(默认,星际跃迁可访问)/ `private`(仅本人与 admin) |
@@ -114,8 +115,8 @@
 | `nationality` | TEXT | 否 | 国家(ISO 3166-1 alpha-2 大写,如 `CN`、`US`;留空表示无/未知) |
 | `birthYear` / `deathYear` | INTEGER | 否 | 出生/去世年份(应用层校验 -9999 ~ 9999 且出生早于去世) |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;admin 空间显式传值可覆盖,非 admin 空间手工新增一律强制 `reviewed`(输入即确认);历史存量数据保持 `draft` 待审核 |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated`(人工录入)默认 `reviewed`,`llm`(AI 提取)默认 `draft`;手工新增/编辑(经 `/api/me`、`/api/admin` 的 API)一律强制 `reviewed`,admin 不做特殊化,显式传 `draft`/`rejected` 会被回正;历史存量数据保持 `draft` 待审核 |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;API 手工写入不允许显式传 `llm`(仅 AI 管线内部使用),显式 `curated`/`user` 或缺省按 owner 推导;创建后不可修改;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 是 | 引用 `users.id`;admin 星云与其他用户星云语义一致,不存在默认视图 |
 | `published_to_id` | TEXT | 否 | AI 草稿发布映射:上传者空间草稿(owner_id=上传者、created_by='llm')批准后回写公共行 id(复用场景为被复用行 id);仅草稿区行有值,公共行恒为 NULL,不进公共导出 |
@@ -138,7 +139,7 @@
 | `genre` | TEXT | 否 | `Fiction` / `Non-fiction` / `Poetry` / `Drama` |
 | `note` | TEXT | 否 | 备注(内部说明,不参与图谱展示) |
 | `reviewStatus` | TEXT | 是 | 同 authors 的审核状态语义 |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;API 手工写入不允许显式传 `llm`(仅 AI 管线内部使用),显式 `curated`/`user` 或缺省按 owner 推导;创建后不可修改;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 是 | 引用 `users.id`;admin 星云与其他用户星云语义一致 |
 | `recommendation` | TEXT | 否 | 个人评分 `recommend` / `not_recommend`;仅用户空间语义(用户导出 CSV 会包含,不进公共导出) |
@@ -180,8 +181,8 @@
 | `evidence` | TEXT | 是 | 原文片段(摘抄文本);DB 层 CHECK 长度 ≤ 2000,应用层 Pydantic 同上限校验(超长 400) |
 | `evidenceSource` | TEXT | 否 | 证据出处:作品章节 / 页码 / 译本版本 |
 | `note` | TEXT | 否 | 备注或补充说明 |
-| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;历史存量保持 `draft` |
-| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;显式传值优先,缺省按 owner 推导;不进公共导出 |
+| `reviewStatus` | TEXT | 是 | `draft` / `reviewed` / `rejected`,默认 `draft`;新增按 `created_by` 推导默认值:`user` / `curated` 默认 `reviewed`,`llm` 默认 `draft`;手工新增(API)一律强制 `reviewed`,admin 不做特殊化;历史存量保持 `draft` |
+| `created_by` | TEXT | 是 | 溯源:`curated` / `user` / `llm`,默认 `curated`;API 手工写入不允许显式传 `llm`(仅 AI 管线内部使用),显式 `curated`/`user` 或缺省按 owner 推导;创建后不可修改;不进公共导出 |
 | `createdAt` / `updatedAt` / `deletedAt` | TEXT | 否 | 时间戳;`deletedAt` 非空 = 软删除 |
 | `owner_id` | TEXT | 是 | 引用 `users.id`;admin 星云与其他用户星云语义一致 |
 | `published_to_id` | TEXT | 否 | AI 草稿发布映射:同 authors,草稿批准后回写公共行 id;仅草稿区行有值,不进公共导出 |

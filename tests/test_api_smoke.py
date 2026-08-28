@@ -191,9 +191,12 @@ class ApiSmokeTest(unittest.TestCase):
             "originalTitle": "T",
             "Title_CN": "某书",
             "author_id": a["id"],
+            "updatedAt": "2026-08-20T08:00:00+00:00",
         }
         self.seed([a], [w], [])
-        res = admin.update("works", w["id"], {"readingStatus": "read"})
+        res = admin.update(
+            "works", w["id"], {"readingStatus": "read", "updatedAt": w["updatedAt"]}
+        )
         row = res["row"]
         self.assertEqual(row["readingStatus"], "read")
         self.assertEqual(row["Title_CN"], "某书")
@@ -209,12 +212,17 @@ class ApiSmokeTest(unittest.TestCase):
             "originalName": "旧名",
             "Name_CN": "旧中文名",
             "createdAt": "2026-01-01T00:00:00+00:00",
+            "updatedAt": "2026-01-01T00:00:00+00:00",
         }
         self.seed([author])
         res = admin.update(
             "authors",
             author["id"],
-            {"originalName": "新名", "Name_CN": "新中文名"},
+            {
+                "originalName": "新名",
+                "Name_CN": "新中文名",
+                "updatedAt": author["updatedAt"],
+            },
         )
         row = res["row"]
         self.assertEqual(row["createdAt"], "2026-01-01T00:00:00+00:00")
@@ -225,6 +233,22 @@ class ApiSmokeTest(unittest.TestCase):
         audit = sqlite_store.list_audit()
         self.assertEqual(audit["items"][0]["action"], "update")
         self.assertIn("Name_CN: 旧中文名 → 新中文名", audit["items"][0]["detail"])
+
+    def test_admin_update_requires_updated_at(self) -> None:
+        """乐观并发守卫:编辑必须携带 updatedAt,缺失 400。"""
+        import app.admin as admin
+
+        author = {
+            "id": "01a013e6-e885-766b-b9db-315d518adeeb",
+            "originalName": "A",
+            "Name_CN": "甲",
+            "updatedAt": "2026-08-20T08:00:00+00:00",
+        }
+        self.seed([author])
+        with self.assertRaises(HTTPException) as ctx:
+            admin.update("authors", author["id"], {"originalName": "B", "Name_CN": "乙"})
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("updatedAt", ctx.exception.detail)
 
     def test_admin_update_optimistic_lock_conflict(self) -> None:
         """更新时 updatedAt 已被他人改动 -> 409 乐观锁冲突。"""

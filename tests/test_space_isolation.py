@@ -94,7 +94,9 @@ class SpaceIsolationTest(unittest.TestCase):
         # 本人可见可改可删
         self.assertEqual(len(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"]), 1)
         my_update(
-            "authors", aid, {"originalName": "A2", "Name_CN": "改了"}, user=self.alice
+            "authors", aid,
+            {"originalName": "A2", "Name_CN": "改了", "updatedAt": created["row"]["updatedAt"]},
+            user=self.alice,
         )
         my_delete("authors", aid, user=self.alice)
         self.assertEqual(SqliteStore(owner_id=self.alice["id"]).graph()["nodes"], [])
@@ -139,7 +141,12 @@ class SpaceIsolationTest(unittest.TestCase):
         # 用户不能把数据改回草稿
         updated = my_update(
             "authors", row["id"],
-            {"originalName": "A", "Name_CN": "甲2", "reviewStatus": "draft"},
+            {
+                "originalName": "A",
+                "Name_CN": "甲2",
+                "reviewStatus": "draft",
+                "updatedAt": row["updatedAt"],
+            },
             user=self.alice,
         )
         self.assertEqual(updated["row"]["reviewStatus"], "reviewed")
@@ -194,6 +201,7 @@ class SpaceIsolationTest(unittest.TestCase):
                 "language": "zh", "originalTitle": "A书", "Title_CN": "甲书",
                 "author_id": a1["id"],
                 "readingStatus": "", "recommendation": "", "review": "",
+                "updatedAt": w["updatedAt"],
             },
             user=self.alice,
         )

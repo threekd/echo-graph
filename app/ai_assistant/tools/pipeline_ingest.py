@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一键管线:源电子书 → AI 提取 → 去重校验 → system_llm 草稿区(admin 审核)。
+"""一键管线:源电子书 → AI 提取 → 去重校验 → 上传者空间 AI 草稿区(admin/VIP 审核)。
 
 把三段既有工具串成一条命令(进程内直接调用,不再 subprocess 拼命令):
     1) extract_source_book.run_extract  读取书籍信息 + 调用 LLM 提取 作者/作品/涟漪
@@ -50,7 +50,7 @@ _BATCH_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="一键管线:书籍 → AI 提取(作者/作品/涟漪) → 去重 → 发布到 system_llm 草稿区",
+        description="一键管线:书籍 → AI 提取(作者/作品/涟漪) → 去重 → 发布到上传者空间 AI 草稿区",
         epilog="示例:\n"
                "  uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/三体.epub\n"
                "  uv run python -m app.ai_assistant.tools.pipeline_ingest app/ai_assistant/books/1Q84.mobi "
@@ -117,7 +117,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="只执行 提取+去重+生成批次,不 ingest 进 system_llm 空间(调试用)",
+        help="只执行 提取+去重+生成批次,不 ingest 进上传者空间草稿区(调试用)",
     )
     return parser.parse_args()
 
@@ -224,7 +224,7 @@ def main() -> None:
         log("失败条目保留 error,修复批次后重跑 ingest 即可重试")
 
     print("\n" + "=" * 70)
-    print(f"完成:批次 {batch_id} 已进入 system_llm 私有空间(draft)")
+    print(f"完成:批次 {batch_id} 已进入上传者空间 AI 草稿区(draft)")
     print("下一步:admin/VIP 登录后在管理端「AI 草稿」页审核/批准(发布到自己的星云)")
     print(f"  提取结果:{extract_out}")
     print(f"  去重报告:{dedupe_out}")

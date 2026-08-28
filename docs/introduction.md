@@ -13,7 +13,7 @@
 
 已按实施路线搭建出可运行的 MVP 骨架：
 
-- **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
+- **数据模型**：按 `data_schema.md`(schemaVersion 1.8)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
 - **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**公共星云/官方图谱概念已移除(2026-08-28)**:不存在默认视图,admin 的星云与其他用户星云在数据语义上完全一致;登录用户首页即自己的星云(`/api/me/*`),游客默认空图 + 登录提示,可通过星际跃迁浏览其他用户的公开星云(`/api/space/*`);若配置 `LANDING_SPACE`(用户名),游客打开首页自动进入该展示星云。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
@@ -40,12 +40,6 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 SQLite 库缺失时服务启动会自动创建并迁移 schema(空库);全新环境的**数据**需从
 整库备份恢复(`backups/echo-graph-*.db`,管理端「快照」恢复或直接替换库文件,
 见 `ops-manual.md` 与 `to-do.md` 的整库备份待办)。
-
-**Windows 本地环境提示**:若仓库/虚拟环境报"dubious ownership"或 `uv` 无法启动
-`.venv` 里的 Python(常见于 Windows 账户变更),先执行
-`git config --global --add safe.directory E:/Code/echo-graph` 放行仓库;随后备份并重建虚拟环境:
-`Rename-Item .venv .venv-broken`(或直接删除后)`uv sync --frozen`。`.venv` 为可再生构建产物,
-重建不影响 `data/echo-graph.db`。
 
 质量检查(已在 CI 中自动执行):
 
@@ -122,7 +116,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   `deploy/DEPLOY.md` 0.5 节)或 `MAILER=smtp` 后,`EMAIL_VERIFY_REQUIRED=1` 时新注册
   用户需点击邮件验证链接才能登录(登录弹窗可重发);登录页「忘记密码?」通过邮件
   深链 `#v=reset:TOKEN` 重置密码,重置后自动吊销该用户全部会话。引导管理员在邮箱
-  验证通过后才获得 admin 角色(未开启验证时保持注册即提权)。
+  验证通过后才获得 admin 角色(未开启验证时保持注册即提权);`EMAIL_VERIFY_REQUIRED=0`
+  时新注册用户以 `createdAt` 标记为已信任(注册即登录,与存量用户回填策略一致)。
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
   (未配置密钥时注册默认失败 fail-closed,仅本地开发可设
   `TURNSTILE_ALLOW_SKIP=1` 临时跳过);HTTPS 部署时设置 `COOKIE_SECURE=1`
@@ -164,10 +159,12 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   接口:`POST/DELETE /api/follow/{user_id}`(关注/取关,幂等)、`GET /api/follow/following|followers`
   (我的关注 / 粉丝列表)、`GET /api/follow/relation/{user_id}`(我与该用户的关系)。
   关注/粉丝列表展示在左侧栏「我的」Tab,点击条目可直接跃迁到对方星云。
-- 用户数据语义:作者/作品/涟漪**新增即「已审核」**(输入即确认,`created_by=user/curated`
-  默认 `reviewed`;`created_by=llm` 即 AI 提取,默认 `draft` 进入草稿态;admin 空间显式传值
-  可覆盖,非 admin 空间手工新增一律强制 `reviewed`,不允许通过 API 显式传 `draft`/`rejected`
-  制造公开可见的"草稿";普通用户管理界面不显示审核状态,admin 显式传 `draft` 仍可保留草稿);
+- 用户数据语义:作者/作品/涟漪**手工新增/编辑即「已审核」**(输入即确认,所有用户一致,
+  admin 不做特殊化):经 `/api/me/*`、`/api/admin/*` 手工写入的作者/作品/涟漪一律强制
+  `reviewStatus='reviewed'`,显式传 `draft`/`rejected` 会被回正,不允许制造"草稿"行;
+  审核状态仅对 AI 提取草稿(`created_by='llm'`、默认 `draft`)有意义,草稿只在「AI 草稿」
+  页出现,需审核后发布;溯源列 `created_by` 由服务端按 owner 推导(admin=curated,其他=user),
+  API 不允许显式传 `llm`(仅 AI 管线内部使用),创建后不可修改;
   作品另有个人阅读状态(已读/在读/未读)、评分(推荐/不推荐)与评价(长文本)字段;
   普通用户界面隐藏「备注」,admin 保持原样;阅读状态、评分与评价在右侧「书签」Tab 展示。
 - 新增作者/作品时,原文名/原著标题输入框会联想**当前空间已有数据**

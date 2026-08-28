@@ -224,8 +224,8 @@ def _run_import(
             f"作品 {kinds.get('work', 0)} · 涟漪 {kinds.get('edge', 0)}",
         )
 
-        # 4) 写入 AI 草稿(system_llm 私有空间)
-        _update_task(task_id, stage="4/4 写入 AI 草稿(system_llm)")
+        # 4) 写入 AI 草稿(上传者空间,owner_id=上传者)
+        _update_task(task_id, stage="4/4 写入 AI 草稿(上传者空间)")
         counts = review_publish.stage_batch(batch, owner)
         llm_space.save_batch(batch)
         _append_log(
@@ -279,12 +279,17 @@ def submit_import(
             f"不支持的文件类型:{path.suffix or '未知'}"
             f"(支持:{', '.join(sorted(ALLOWED_SUFFIXES))})"
         )
-    if _running_import_count() >= MAX_CONCURRENT_IMPORTS:
-        raise ValueError("已有导入任务在执行,请稍后再试")
     _cleanup_orphan_import_dirs()
     _prune_tasks()
     task_id = uuid.uuid4().hex[:12]
     with _LOCK:
+        # 并发上限检查与任务登记在同一锁内原子完成,避免两个并发请求同时通过检查
+        # (HTTP 端点另有快速预检,此处为权威判定)
+        running = sum(
+            1 for t in _TASKS.values() if t.get("status") in ("queued", "running")
+        )
+        if running >= MAX_CONCURRENT_IMPORTS:
+            raise ValueError("已有导入任务在执行,请稍后再试")
         _TASKS[task_id] = {
             "task_id": task_id,
             "status": "queued",
@@ -385,7 +390,10 @@ async def import_book(
         )
     except ValueError as exc:
         shutil.rmtree(target_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = str(exc)
+        # 并发上限被并发请求撞线时同样返回 429(而非 400)
+        status = 429 if "已有导入任务在执行" in detail else 400
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 @router.get("/import-book/{task_id}")

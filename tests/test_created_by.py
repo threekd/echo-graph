@@ -1,4 +1,4 @@
-"""溯源列 created_by 测试:curated/user/llm 的推导、显式取值与不可修改。"""
+"""溯源列 created_by 测试:curated/user 的推导、显式取值与不可修改(llm 仅内部管线)。"""
 
 from __future__ import annotations
 
@@ -36,16 +36,21 @@ class CreatedByTest(unittest.TestCase):
         self.assertEqual(row["created_by"], "user")
         self.assertEqual(row["reviewStatus"], "reviewed")  # created_by=user 默认已审核
 
-    def test_explicit_llm_respected(self) -> None:
-        row = my_create(
-            "authors", {"originalName": "C", "Name_CN": "AI作者", "created_by": "llm"},
-            user=self.alice,
-        )["row"]
-        self.assertEqual(row["created_by"], "llm")
-        self.assertEqual(row["reviewStatus"], "draft")  # created_by=llm 默认草稿
+    def test_explicit_llm_rejected(self) -> None:
+        """API 手工写入不允许显式传 created_by=llm(仅供 AI 管线内部使用)。"""
+        for user in (self.alice, self.admin):
+            with self.subTest(user=user["username"]):
+                with self.assertRaises(HTTPException) as ctx:
+                    my_create(
+                        "authors",
+                        {"originalName": "C", "Name_CN": "AI作者", "created_by": "llm"},
+                        user=user,
+                    )
+                self.assertEqual(ctx.exception.status_code, 400)
+                self.assertIn("llm", ctx.exception.detail)
 
     def test_user_cannot_override_review_status_to_unreviewed(self) -> None:
-        """输入即确认:非 admin 空间手工新增一律强制 reviewed,显式 draft/rejected 被回正。"""
+        """输入即确认:手工新增一律强制 reviewed(所有用户一致),显式 draft/rejected 被回正。"""
         for status in ("draft", "rejected"):
             with self.subTest(status=status):
                 row = my_create(
@@ -56,12 +61,12 @@ class CreatedByTest(unittest.TestCase):
                 self.assertEqual(row["created_by"], "user")
                 self.assertEqual(row["reviewStatus"], "reviewed")
 
-    def test_admin_explicit_draft_preserved(self) -> None:
-        """admin 空间保留显式传值能力:显式传 draft 仍可保留草稿。"""
+    def test_admin_explicit_draft_forced_reviewed(self) -> None:
+        """手工新增一律 reviewed,admin 不做特殊化:显式传 draft 也被回正。"""
         row = admin.create(
             "authors", {"originalName": "E", "Name_CN": "官方草稿", "reviewStatus": "draft"}
         )["row"]
-        self.assertEqual(row["reviewStatus"], "draft")
+        self.assertEqual(row["reviewStatus"], "reviewed")
 
     def test_invalid_created_by_rejected(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
@@ -76,7 +81,12 @@ class CreatedByTest(unittest.TestCase):
         row = my_create("authors", {"originalName": "E", "Name_CN": "原名"}, user=self.alice)["row"]
         updated = my_update(
             "authors", row["id"],
-            {"originalName": "E", "Name_CN": "改名", "created_by": "llm"},
+            {
+                "originalName": "E",
+                "Name_CN": "改名",
+                "created_by": "curated",
+                "updatedAt": row["updatedAt"],
+            },
             user=self.alice,
         )["row"]
         self.assertEqual(updated["created_by"], "user")  # 响应携带库内真实值
@@ -85,6 +95,30 @@ class CreatedByTest(unittest.TestCase):
                 "SELECT created_by FROM authors WHERE id = ?", (row["id"],)
             ).fetchone()["created_by"]
         self.assertEqual(stored, "user")  # 不可被更新覆盖
+
+    def test_update_rejects_explicit_llm(self) -> None:
+        """编辑时显式传 created_by=llm 一律 400(即使库内行不是 AI 草稿)。"""
+        row = my_create("authors", {"originalName": "E", "Name_CN": "原名"}, user=self.alice)["row"]
+        with self.assertRaises(HTTPException) as ctx:
+            my_update(
+                "authors", row["id"],
+                {"originalName": "E", "Name_CN": "改名", "created_by": "llm",
+                 "updatedAt": row["updatedAt"]},
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("llm", ctx.exception.detail)
+
+    def test_update_requires_updated_at(self) -> None:
+        """乐观并发守卫:编辑必须携带 updatedAt,缺失 400。"""
+        row = my_create("authors", {"originalName": "E", "Name_CN": "原名"}, user=self.alice)["row"]
+        with self.assertRaises(HTTPException) as ctx:
+            my_update(
+                "authors", row["id"], {"originalName": "E", "Name_CN": "改名"},
+                user=self.alice,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("updatedAt", ctx.exception.detail)
 
     def test_edge_created_by_in_both_spaces(self) -> None:
         w1 = admin.create("works", {"language": "zh", "originalTitle": "甲", "Title_CN": "甲"})["row"]

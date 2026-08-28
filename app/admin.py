@@ -79,7 +79,7 @@ def admin_create_backup() -> dict:
 
 @router.post("/backups/restore")
 def admin_restore(body: dict) -> dict:
-    """把指定快照恢复到权威库;恢复前自动安全备份当前库,成功后重新导出 CSV。"""
+    """把指定快照恢复到权威库;恢复前自动安全备份当前库,成功后清空读缓存。"""
     name = str((body or {}).get("file") or "").strip()
     try:
         result = restore_snapshot(name)

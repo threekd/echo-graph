@@ -475,10 +475,14 @@ def register(
             if is_bootstrap_email(email) and not email_verify_flag()
             else "user"
         )
+        # EMAIL_VERIFY_REQUIRED=0 时注册即信任:email_verified_at 标记为注册时间
+        # (与存量用户迁移回填 createdAt 的策略一致;=1 时保持 NULL,须验证通过)
+        verified_at = None if email_verify_flag() else now
         conn.execute(
             "INSERT INTO users (id, email, password_hash, username, nickname, bio, role,"
-            " status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
-            (user_id, email, password_hash, username, nickname, bio, role, now, now),
+            " status, email_verified_at, createdAt, updatedAt)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+            (user_id, email, password_hash, username, nickname, bio, role, verified_at, now, now),
         )
     return {
         "id": user_id,
@@ -489,7 +493,7 @@ def register(
         "role": role,
         "space_visibility": "public",
         "vip": False,
-        "email_verified_at": None,
+        "email_verified_at": verified_at,
     }
 
 

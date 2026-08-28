@@ -70,9 +70,7 @@ async def lifespan(_: FastAPI):
             "请先完成 DirectMail/SMTP 配置"
         )
     yield
-    close = getattr(store, "close", None)
-    if callable(close):
-        close()
+    # SQLite 存储无连接池,关闭阶段无需清理(SqliteStore.close 为 no-op)
 
 
 app = FastAPI(
@@ -90,6 +88,15 @@ async def csrf_same_origin_guard(request: Request, call_next):
     if is_state_changing(request.method) and not same_origin_allowed(request):
         return JSONResponse(status_code=403, content={"detail": "跨站请求被拒绝"})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def no_store_api_responses(request: Request, call_next):
+    """API 响应禁止缓存:登录态接口可能返回用户数据(共享设备场景),避免被浏览器/代理缓存。"""
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 @app.get("/")

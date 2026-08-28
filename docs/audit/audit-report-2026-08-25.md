@@ -120,11 +120,9 @@
 ### P3（本地环境 / 可选）
 
 6. **本地杂物（均被 gitignore，不入库）**
-   - `backups/venv-broken-20260822/`（约 14.2MB 损坏 venv）：应用侧快照裁剪只匹配
      `echo-graph-*.db`，不会清理它，会一直占用磁盘，可手动删除；
    - `agent_temp/books/`（约 18.1MB 电子书）与 `agent_temp/output/`（约 0.3MB JSON）：
      本地管线产物，建议定期清理；
-   - 审查期间重建了 `.venv`（旧的已改名 `.venv-broken-local`，可删除）。
 7. **`scripts/check_public_sync.py` 文档覆盖不足**
    仅在 `../to-do.md` 与 `../migration/multi-user-migration.md` 出现；建议在 `../ops-manual.md`
    例行检查一节补一句（本地库公共数据 ↔ 仓库 CSV 漂移检查）。
@@ -140,7 +138,6 @@
 | `agent_temp/tools/*`（extract / dedupe / llm_client / llm_space / read_book / pipeline_ingest / review_publish） | AI 录入管线的组成部分，README 有描述，保留 |
 | `agent_temp/tmp/e2e_llm_review.py` | 一次性校验脚本，无引用且拖垮 lint，建议删除 |
 | 前端 `lib/*`、`components/*` | 文件级无死代码；`renderer.ts` 为 `renderer/` 子模块组合入口，正常 |
-| `backups/venv-broken-20260822` | 本地损坏 venv 备份，不入库，建议手动删除 |
 
 ## 七、架构评估
 
@@ -191,4 +188,3 @@ React 19 + TS ──> /api/* ──> FastAPI（单 worker）
 2. 补 `.env.example` 的 `DEEPSEEK_*` / `ALIYUN_*`（P2-2）；
 3. 清理 `../ops-manual.md` / `../../data/export/README.md` 的「贡献收件箱」残留（P2-3）；
 4. 顺手处理 `_after_write` 命名与 `rewrite_all` 归属（P2-4/P2-5）；
-5. 删除本地 `backups/venv-broken-20260822` 与多余 venv 备份（P3-6）。

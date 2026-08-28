@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,6 @@ from unittest.mock import patch
 from fastapi import HTTPException, Response
 
 from app import auth, db_sqlite, ratelimit
-from tests._helpers import rewrite_all
 
 
 class _FakeClient:
@@ -383,14 +383,15 @@ class AuthStoreTest(unittest.TestCase):
         m = re.search(r"#v=verify:([A-Za-z0-9_-]+)", sent["html"])
         self.assertIsNotNone(m)
 
-        # 未验证登录被拒(403)
-        with self.assertRaises(HTTPException) as ctx:
-            auth.login_endpoint(
-                {"email": "verify@example.com", "password": "password123"},
-                _FakeRequest(host="127.0.0.1"),
-                Response(),
-            )
-        self.assertEqual(ctx.exception.status_code, 403)
+        # 未验证登录被拒(403)——仍在 EMAIL_VERIFY_REQUIRED=1 配置下校验
+        with patch.dict(os.environ, self.MAIL_ENV):
+            with self.assertRaises(HTTPException) as ctx:
+                auth.login_endpoint(
+                    {"email": "verify@example.com", "password": "password123"},
+                    _FakeRequest(host="127.0.0.1"),
+                    Response(),
+                )
+            self.assertEqual(ctx.exception.status_code, 403)
 
         # 验证通过:写 email_verified_at,接口登录放行
         user = auth.verify_email(m.group(1))

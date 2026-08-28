@@ -6,8 +6,8 @@ import io
 import os
 import unittest
 from unittest.mock import patch
-from urllib.parse import parse_qsl
 from urllib.error import HTTPError
+from urllib.parse import parse_qsl
 
 from app import mailer
 

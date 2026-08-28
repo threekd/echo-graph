@@ -45,11 +45,19 @@ CREATED_BY_VALUES = ("curated", "user", "llm")
 
 
 def _created_by_for(row: dict, owner_id: str) -> str:
-    """溯源值:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)。"""
+    """溯源值:API 手工写入不允许显式传 llm(仅供 AI 管线内部使用);
+
+    显式传 curated/user 校验后采用;缺省按 owner 推导(admin=策展,其他=用户)。
+    """
     value = str(row.get("created_by") or "").strip()
     if value:
+        if value == "llm":
+            raise HTTPException(
+                status_code=400,
+                detail="created_by=llm 仅限 AI 管线内部使用,手工新增不允许指定",
+            )
         if value not in CREATED_BY_VALUES:
-            raise HTTPException(status_code=400, detail="created_by 取值仅支持 curated / user / llm")
+            raise HTTPException(status_code=400, detail="created_by 取值仅支持 curated / user")
         return value
     return "curated" if owner_id == admin_user_id() else "user"
 
@@ -202,17 +210,12 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
     row = clean_row(row)  # 落盘前基础清洗:去首尾空白、空串归一 None
     if not row.get("id"):
         row["id"] = _new_uuid()
-    # 溯源列:显式传 created_by 则校验后采用;缺省按 owner 推导(admin=策展,其他=用户)
+    # 溯源列:API 手工写入不允许显式传 llm(仅 AI 管线内部使用);
+    # 缺省按 owner 推导(admin=策展,其他=用户),创建后不可修改
     row["created_by"] = _created_by_for(row, owner_id)
-    is_admin_space = owner_id == admin_user_id()
-    # 输入即确认:非 admin 空间的手工新增(created_by != llm)一律 reviewed,
-    # 显式传 draft/rejected 也不允许(与 update_row 对齐,避免公开星云出现"草稿"行);
-    # admin 空间保留显式传值能力(显式传 draft 仍可保留草稿);
-    # created_by=llm(AI 提取)默认 draft 进入草稿态
-    if not is_admin_space and row["created_by"] != "llm":
-        row["reviewStatus"] = "reviewed"
-    elif not row.get("reviewStatus"):
-        row["reviewStatus"] = "draft" if row["created_by"] == "llm" else "reviewed"
+    # 输入即确认:手工新增一律 reviewed(所有用户一致,admin 不做特殊化),
+    # 显式传 draft/rejected 也会被回正,避免空间出现"草稿"行
+    row["reviewStatus"] = "reviewed"
     extra: dict = {"created_by": row["created_by"]}
     if kind == "works":
         reading_status = row.get("readingStatus")
@@ -241,7 +244,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
         errors = validate_row(conn, kind, row, owner_id=owner_id)
         if errors:
             raise HTTPException(status_code=400, detail="校验失败:\n- " + "\n".join(errors))
-        # 行级校验只按 owner 判定 id 冲突;跨空间/未认领历史行需在此兜底,
+        # 行级校验只按 owner 判定 id 冲突;跨空间已存在的同 id 行需在此兜底,
         # 避免 INSERT 撞主键抛 IntegrityError 变成 500
         if sqlite_store.row_exists(conn, kind, row["id"]) \
                 and not sqlite_store.row_exists(conn, kind, row["id"], owner_id):
@@ -263,13 +266,21 @@ def update_row(
     kind: Kind, item_id: str, row: dict, owner_id: str, actor: str
 ) -> dict:
     row = clean_row(row)
-    row.pop("created_by", None)  # 溯源列创建后不可修改(与 createdAt 同策略)
     now = _now()
-    is_admin_space = owner_id == admin_user_id()
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         existing = _resolve_row(conn, kind, item_id, owner_id)
         if existing is None:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+        # 溯源列创建后不可修改;llm 仅供 AI 管线内部使用,API 显式指定一律拒绝
+        if (row.get("created_by") or "").strip() == "llm":
+            raise HTTPException(
+                status_code=400,
+                detail="created_by=llm 仅限 AI 管线内部使用,手工编辑不允许指定",
+            )
+        row.pop("created_by", None)
+        expected_ts = row.get("updatedAt")
+        if expected_ts is None:
+            raise HTTPException(status_code=400, detail="缺少 updatedAt,请刷新后重试")
         # 部分更新:以前端传入字段覆盖库内行,未传字段保留(支持行内编辑单字段)
         merged = clean_row({**existing, **row})
         merged.pop("created_by", None)
@@ -280,8 +291,7 @@ def update_row(
                 "SELECT author_id FROM work_authors WHERE work_id = ?", (item_id,)
             ).fetchall()
             merged["author_id"] = ",".join(r["author_id"] for r in wa)
-        if not is_admin_space:
-            merged["reviewStatus"] = "reviewed"  # 用户输入即确认,不允许改回草稿
+        merged["reviewStatus"] = "reviewed"  # 输入即确认:手工编辑一律 reviewed(所有用户一致)
         extra: dict | None = None
         if kind == "works":
             reading_status = merged.get("readingStatus")
@@ -298,7 +308,6 @@ def update_row(
             merged["review"] = review
             # 空值代表清除(显式写 NULL)
             extra = {"readingStatus": reading_status, "recommendation": recommendation, "review": review}
-        expected_ts = row.get("updatedAt") or existing.get("updatedAt")
         merged["id"] = item_id
         merged["createdAt"] = merged.get("createdAt") or existing.get("createdAt") or now
         merged["updatedAt"] = now

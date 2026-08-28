@@ -1,4 +1,4 @@
-"""书籍导入 API 测试:提交任务 → mock LLM 提取 → 轮询 → system_llm 草稿入库。
+"""书籍导入 API 测试:提交任务 → mock LLM 提取 → 轮询 → 上传者空间 AI 草稿入库。
 
 验证 app/book_import 的「上传书籍 → AI 提取 → 去重 → AI 草稿」链路:
 mock extract_source_book.run_extract 避免真实 DeepSeek 调用;去重走 basic_only
@@ -198,7 +198,7 @@ class BookImportTest(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
 
     def test_submit_import_direct_flow(self) -> None:
-        """提交任务 → 提取(mock) → 去重 → 草稿入库,结果落 system_llm 空间。"""
+        """提交任务 → 提取(mock) → 去重 → 草稿入库,结果落上传者空间。"""
         book = Path(self.tmp.name) / "测试之书.epub"
         book.write_bytes(b"fake epub bytes")  # run_extract 被 mock,不真读文件
 

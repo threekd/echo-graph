@@ -362,21 +362,24 @@ async def import_book(
 
     task_id = uuid.uuid4().hex[:12]
     target_dir = IMPORT_DIR / task_id
-    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:  # noqa: BLE001 - 目录创建失败转 500(带详情便于定位)
+        raise HTTPException(status_code=500, detail=f"创建上传目录失败:{exc}") from exc
     # 文件名去除路径成分,避免 ../ 穿越;保留原始文件名便于识别
     target = target_dir / Path(filename).name
 
     try:
         await _save_upload(request, target)
+        if not target.exists() or target.stat().st_size == 0:
+            raise HTTPException(status_code=400, detail="上传文件为空")
     except HTTPException:
         shutil.rmtree(target_dir, ignore_errors=True)
         raise
     except Exception as exc:  # noqa: BLE001 - 写盘失败统一转 500
+        logger.exception("保存导入上传文件失败")
         shutil.rmtree(target_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"保存上传文件失败:{exc}") from exc
-    if not target.exists() or target.stat().st_size == 0:
-        shutil.rmtree(target_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail="上传文件为空")
 
     author_list = [a.strip() for a in (authors or "").split(",") if a.strip()]
     try:
@@ -394,6 +397,10 @@ async def import_book(
         # 并发上限被并发请求撞线时同样返回 429(而非 400)
         status = 429 if "已有导入任务在执行" in detail else 400
         raise HTTPException(status_code=status, detail=detail) from exc
+    except Exception as exc:  # noqa: BLE001 - 任务创建失败转 500(带详情便于定位)
+        logger.exception("创建导入任务失败")
+        shutil.rmtree(target_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"创建导入任务失败:{exc}") from exc
 
 
 @router.get("/import-book/{task_id}")

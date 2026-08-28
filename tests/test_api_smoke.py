@@ -474,6 +474,34 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertNotIn(e1, edge_ids)
         self.assertIn(w2, work_ids)
 
+    def test_admin_permanent_delete_work_then_edge_idempotent(self) -> None:
+        """永久删除作品会连带物理删除其涟漪;随后再永久删除该涟漪应幂等成功而非 404。"""
+        import app.admin as admin
+
+        w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
+        works = [
+            {"id": w1, "language": "en", "originalTitle": "A", "Title_CN": "甲书"},
+            {"id": w2, "language": "en", "originalTitle": "B", "Title_CN": "乙书"},
+        ]
+        edges = [{"id": e1, "source_work_id": w1, "target_work_id": w2, "evidence": "x"}]
+        self.seed([], works, edges)
+        admin.delete("works", w1)  # 软删除作品 → 涟漪一并软删除
+        admin.permanent_delete("works", w1)  # 物理删除作品 → 涟漪被级联物理删除
+        res = admin.permanent_delete("edges", e1)
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["deleted"]["already_deleted"])
+        # 数据中确实已无该涟漪
+        edge_ids = [r["id"] for r in sqlite_store.list_all()["edges"]]
+        self.assertNotIn(e1, edge_ids)
+
+    def test_admin_permanent_delete_never_existed_idempotent(self) -> None:
+        """未在任何空间存在的 id 按幂等 DELETE 语义返回成功(already_deleted)。"""
+        import app.admin as admin
+
+        res = admin.permanent_delete("authors", str(uuid.uuid4()))
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["deleted"]["already_deleted"])
+
     def test_admin_permanent_delete_author_cascades(self) -> None:
         """软删作者后永久删除:作者/名下作品/相关涟漪全部物理消失。"""
         import app.admin as admin

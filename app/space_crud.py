@@ -426,11 +426,31 @@ def permanent_delete_row(kind: Kind, item_id: str, owner_id: str, actor: str) ->
     作者级联物理删除其名下作品及相关涟漪与关联。若存在活跃引用(理论不应发生)
     则拒绝,避免破坏活跃数据。所有级联清理严格限定在同一 owner 空间
     (owner_id 作用域),防御未来出现跨空间引用时误删他人数据。
+    若目标行已被上述级联物理删除(如先永久删除作品、再永久删除其涟漪),按
+    幂等成功处理并留审计,避免二次删除报「未找到」;该 id 仍存在于其他空间时
+    维持 404(防越权探测)。
     """
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         row = _resolve_row(conn, kind, item_id, owner_id)
         if row is None:
-            raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+            # 行已被级联物理删除:同 id 在他人空间仍存在则 404,否则幂等成功
+            if sqlite_store.row_exists(conn, kind, item_id):
+                raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
+            db_sqlite.audit(
+                conn, "delete", kind, item_id,
+                "永久删除:行已被级联物理删除,幂等成功(无实际删除)",
+                actor=actor,
+            )
+            after_write(owner_id)
+            return {
+                "ok": True,
+                "deleted": {
+                    "kind": kind,
+                    "id": item_id,
+                    "cascade": {"works": [], "edges": []},
+                    "already_deleted": True,
+                },
+            }
         if not row.get("deletedAt"):
             raise HTTPException(status_code=400, detail="仅可永久删除已软删除的条目(请先软删除)")
 

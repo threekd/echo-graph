@@ -18,6 +18,7 @@ from app.me import (
     my_create,
     my_data,
     my_delete,
+    my_permanent_delete,
     my_update,
 )
 
@@ -150,6 +151,14 @@ class SpaceIsolationTest(unittest.TestCase):
             user=self.alice,
         )
         self.assertEqual(updated["row"]["reviewStatus"], "reviewed")
+
+    def test_permanent_delete_other_space_keeps_404(self) -> None:
+        """他人空间的软删除行永久删除仍 404(隔离语义保留,不被幂等分支吞掉)。"""
+        row = my_create("authors", {"originalName": "B", "Name_CN": "鲍勃的作者"}, user=self.bob)["row"]
+        my_delete("authors", row["id"], user=self.bob)  # bob 先软删除
+        with self.assertRaises(HTTPException) as ctx:
+            my_permanent_delete("authors", row["id"], user=self.alice)
+        self.assertEqual(ctx.exception.status_code, 404)
 
     def test_work_recommendation_and_review(self) -> None:
         a1 = my_create("authors", {"originalName": "A", "Name_CN": "甲"}, user=self.alice)["row"]

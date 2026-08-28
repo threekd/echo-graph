@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  apiRoot, findPath, loadGraphData, search, spaceFromParam, spaceParamFromState, spaceUserId,
+  apiRoot, findPath, loadGraphData, loadSpaceGraphByUsername, search, spaceFromParam,
+  spaceParamFromState, spaceUserId,
 } from "./api";
 
 function mockFetch(ok: boolean, body: unknown, status = 200) {
@@ -61,5 +62,16 @@ describe("getJson HTTP error handling", () => {
   it("throws on findPath errors instead of resolving an error payload", async () => {
     mockFetch(false, { detail: "no mention path found" }, 404);
     await expect(findPath("a", "b")).rejects.toThrow("no mention path found");
+  });
+});
+
+describe("space graph by username", () => {
+  it("loads public space graph by username (游客落地星云)", async () => {
+    mockFetch(true, { spaceId: "u1", nodes: [], edges: [] });
+    await expect(loadSpaceGraphByUsername("admin")).resolves.toEqual({
+      spaceId: "u1",
+      nodes: [],
+      edges: [],
+    });
   });
 });

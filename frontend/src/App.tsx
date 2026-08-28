@@ -15,9 +15,10 @@ import Guide from "./components/Guide";
 import AuthModal from "./components/AuthModal";
 import ChunkBoundary from "./components/ChunkBoundary";
 import {
-  loadGraphData, loadSpaceGraph, spaceFromParam, spaceUserId, workDetail, type Space,
+  loadGraphData, loadSpaceGraph, loadSpaceGraphByUsername, spaceFromParam, spaceUserId,
+  workDetail, type Space,
 } from "./lib/api";
-import { fetchMe, verifyEmail } from "./lib/auth";
+import { fetchAuthConfig, fetchMe, verifyEmail } from "./lib/auth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import { parseCam, parseHashParams } from "./lib/hash";
 import {
@@ -240,6 +241,9 @@ function AppContent() {
     // 首载空间上下文:优先取 hash 的 space 参数(mine / <用户id>),默认 mine
     let target: Space = spaceFromParam(parseHashParams(location.hash).space) || "mine";
     let mineOwner = "我的星云";
+    // 游客落地星云(方案 B):仅未登录且 URL 无显式 space 参数时生效;
+    // 用户名只从服务端配置读取,不出现在 URL / 界面
+    let landingSpace: string | null = null;
 
     const loadTarget = async (): Promise<GraphData> => {
       if (target === "mine") {
@@ -250,6 +254,19 @@ function AppContent() {
           return loadGraphData("mine");
         }
         dispatch({ type: "SET_USER", user: null });
+        // 游客:若配置了 LANDING_SPACE(公开星云用户名),自动进入该展示星云
+        if (!landingSpace) {
+          landingSpace = (await fetchAuthConfig()).landingSpace || null;
+        }
+        if (landingSpace) {
+          try {
+            const d = await loadSpaceGraphByUsername(landingSpace);
+            target = "space:" + d.spaceId;
+            return d;
+          } catch {
+            // 落地星云不可用(未公开/已禁用/不存在):回退空图 + 登录提示
+          }
+        }
         dispatch({ type: "SET_TOAST", msg: "请先登录,即可创建并查看你的星云", kind: "info" });
         return { nodes: [], edges: [] };
       }

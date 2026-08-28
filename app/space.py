@@ -111,8 +111,30 @@ def random_space_graph(request: Request) -> dict:
     }
 
 
+@router.get("/by-username/{username}/graph")
+def space_graph_by_username(username: str, request: Request) -> dict:
+    """按用户名取公开星云图谱(游客落地星云用,见 .env 的 LANDING_SPACE)。
+
+    用户名大小写不敏感;不存在 / 已禁用 / 未公开一律 404(与按 id 访问同口径,
+    不暴露存在性)。用户名只作为服务端配置,不会写入前端 URL 或界面。
+    """
+    viewer = _viewer(request)
+    with db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ? COLLATE NOCASE AND status = 'active'",
+            (username.strip(),),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="星云不存在或未公开")
+    visible = _require_visible(row["id"], viewer)
+    data = _space_store(visible).graph()
+    data.update(_space_graph_extra(request, visible["id"]))
+    data["owner"] = _space_owner_provider(request, visible["id"])
+    return data
+
+
 # 只读六件套(与 /api、/api/me 共用同一套实现,见 app/read_routes.py)
-# 注意:random 路由必须注册在 {user_id} 路由之前,避免被当作用户 id 匹配
+# 注意:random / by-username 路由必须注册在 {user_id} 路由之前,避免被当作用户 id 匹配
 register_read_routes(
     router,
     _space_store_factory,

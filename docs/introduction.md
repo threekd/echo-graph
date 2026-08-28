@@ -14,7 +14,7 @@
 已按实施路线搭建出可运行的 MVP 骨架：
 
 - **数据模型**：按 `data_schema.md`(schemaVersion 1.7)实现——`Author` / `Work` 节点及属性(`id` 为 UUID,新增自动生成 UUID v7,URL 直接使用 UUID);结构关系 `(Work)-[:AUTHORED_BY]->(Author)`(N:N,允许合著,物理实现为 `work_authors`);回声关系 `(Work)-[:ECHO]->(Work)`(A 提及 B),属性含 `id`(UUID,新增自动生成)、`evidence` / `evidenceSource`、`note`、`reviewStatus` 与时间戳。图谱中**同时显示作者与作品节点**。
-- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**公共星云/官方图谱概念已移除(2026-08-28)**:不存在默认视图,admin 的星云与其他用户星云在数据语义上完全一致;登录用户首页即自己的星云(`/api/me/*`),游客无默认图谱(空图 + 登录提示),可通过星际跃迁浏览其他用户的公开星云(`/api/space/*`)。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
+- **策展数据主存与读取**：SQLite(`data/echo-graph.db`,已 gitignore)为唯一权威,所有星云同库(`owner_id` 区分)。**公共星云/官方图谱概念已移除(2026-08-28)**:不存在默认视图,admin 的星云与其他用户星云在数据语义上完全一致;登录用户首页即自己的星云(`/api/me/*`),游客默认空图 + 登录提示,可通过星际跃迁浏览其他用户的公开星云(`/api/space/*`);若配置 `LANDING_SPACE`(用户名),游客打开首页自动进入该展示星云。**备份以整库快照为准**(`backups/` 下 `sqlite3 .backup` 产物 + 管理端快照恢复,见 `ops-manual.md`);曾作为备份/传输通道的 `data/export/*.csv` 自动导出层已于 2026-08-27 移除(多设备/调试导致漂移)。曾作为查询层的 Neo4j 与 JSON 兜底种子已退役。
 - **后端**：FastAPI,接口见下方;路径查询为内存 BFS(有向,ECHO),扩散为无向 BFS,单核 VPS 上毫秒级。
 - **AI 数据管线与审核**：书籍解析(`app/ai_assistant/tools/extract_source_book.py`,
   书内书名提及**仅取正文**,涟漪出处标注为 前言/正文/尾记/其它 四类;提示词统一
@@ -132,7 +132,9 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 - 会话安全:token 只放在 httpOnly + SameSite=Lax Cookie 中,数据库仅存其 SHA-256 哈希,泄露 DB 也无法伪造会话;注册/登录与关注写接口按 IP 滑动窗口限流(共用 `app/ratelimit.py`);全局中间件(`app/main.py` 的 `csrf_same_origin_guard`,同源判定函数在 `app/security.py`)对所有状态变更请求(含 `/api/me`、`/api/admin`)做同源校验——带 Origin 头的跨站请求一律 403
 - 用户空间:每个账号有独立的私有星云(`/api/me/*`,仅本人可见);登录后首页即
   「我的星云」。公共星云/官方图谱概念已移除(2026-08-28):不存在默认视图,
-  未登录游客看到空图与登录提示,可通过星际跃迁浏览公开星云。
+  未登录游客默认看到空图与登录提示,可通过星际跃迁浏览公开星云;若配置
+  `LANDING_SPACE`(用户名,见 `.env.example`),游客打开首页自动进入该展示星云
+  (用户名仅服务端配置,不出现在 URL/界面)。
 - 左侧功能栏采用 **Tab 列**(类 VS Code 侧边栏):展开后左侧窄条为「星云 / 我的 / 消息 /
   设置」四个 Tab:
   - **星云**:图谱操作(搜索/路径/扩散/过滤/点亮星空/星云工坊/用户管理/运维管理;

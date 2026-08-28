@@ -14,6 +14,7 @@ export interface AuthUser {
 
 export interface AuthConfig {
   turnstileSiteKey: string;
+  landingSpace?: string | null; // 游客落地星云用户名(.env LANDING_SPACE,可空)
 }
 
 export interface AuthResult {
@@ -42,11 +43,14 @@ async function parseAuthResponse(r: Response): Promise<AuthResult> {
 export async function fetchAuthConfig(): Promise<AuthConfig> {
   try {
     const r = await fetch("/api/auth/config");
-    if (!r.ok) return { turnstileSiteKey: "" };
+    if (!r.ok) return { turnstileSiteKey: "", landingSpace: null };
     const d = await r.json();
-    return { turnstileSiteKey: d.turnstileSiteKey || "" };
+    return {
+      turnstileSiteKey: d.turnstileSiteKey || "",
+      landingSpace: d.landingSpace || null,
+    };
   } catch {
-    return { turnstileSiteKey: "" };
+    return { turnstileSiteKey: "", landingSpace: null };
   }
 }
 

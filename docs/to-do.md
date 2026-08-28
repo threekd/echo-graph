@@ -364,3 +364,25 @@
     `#v=reset:TOKEN` 进入应用,验证/重置后立即清除 URL 中的一次性令牌;
   - 配置:`.env.example` / `deploy/DEPLOY.md`(0.5 节 DirectMail 配置步骤)/
     `docs/ops-manual.md`(8 节配置表)同步更新。
+- [x] **DirectMail 实测排错与改进(2026-08-28)**:生产实测「重置邮件发送失败」,
+  排错结论沉淀到 `deploy/DEPLOY.md` 0.5.1 与 `docs/ops-manual.md` 7 节——
+  - `app/mailer.py` 不再吞掉 HTTP 4xx/5xx 响应体:DirectMail 的 `Code/Message/
+    RequestId` 直接透传到日志(此前只报「HTTP 400」无法定位),补单测
+    (`tests/test_mailer.py` HTTPError 用例);
+  - 排错结论:`Forbidden` = RAM 未授权 `AliyunDirectMailFullAccess` 或
+    AccessKey 不属于开通邮件推送的账号;`InvalidMailAddress.NotFound` =
+    发信地址按区域隔离,`ALIYUN_DM_REGION` 必须与创建地址的控制台区域一致
+    (实测:地址建在 cn-hangzhou,配 ap-southeast-1 即报该错);
+  - 送达率:Gmail 实测 SPF/DKIM/DMARC 全 pass 仍进垃圾箱 = 新域名/共享 IP
+    信誉冷启动 + 链接跟踪改写;处理:收件人标「不是垃圾邮件」+ 加联系人、
+    关闭跟踪或配自定义跟踪域名、保持少量真实事务邮件养 1~4 周、高要求可迁
+    新加坡区域或购买独立 IP。
+- [x] **游客落地星云(方案 B,2026-08-28)**:`.env` 配置 `LANDING_SPACE=<用户名>`
+  (可空),游客打开首页自动进入该公开星云——
+  - 后端:`GET /api/space/by-username/{username}/graph`(用户名大小写不敏感,
+    未公开/已禁用/不存在一律 404,与按 id 访问同口径;注册在 {user_id} 路由之前);
+    `GET /api/auth/config` 返回 `landingSpace`(用户名仅服务端配置,不出现在
+    URL/界面,避免暴露可用作登录的账号标识);
+  - 前端:首载时未登录且 URL 无显式 `space` 参数才应用落地星云(显式深链优先),
+    目标不可用时回退空图 + 登录提示;登录用户仍进自己的星云,不受影响;
+  - 文档:`docs/introduction.md` / `ui.md` / `ops-manual.md` / `.env.example` 同步。

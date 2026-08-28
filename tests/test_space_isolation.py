@@ -250,6 +250,33 @@ class SpaceIsolationTest(unittest.TestCase):
             space.random_space_graph(_FakeReq())
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_space_graph_by_username(self) -> None:
+        """游客落地星云:按用户名(大小写不敏感)取公开星云;未公开/不存在 404。"""
+        g = space.space_graph_by_username("ALICE", _FakeReq())
+        self.assertEqual(g["spaceId"], self.alice["id"])
+        self.assertEqual(g["displayName"], "alice")
+        self.assertIn("nodes", g)
+        self.assertIn("edges", g)
+        # 未公开 -> 游客 404(不暴露存在性)
+        with db_sqlite._db() as conn:
+            conn.execute(
+                "UPDATE users SET space_visibility = 'private' WHERE id = ?",
+                (self.alice["id"],),
+            )
+        with self.assertRaises(HTTPException) as ctx:
+            space.space_graph_by_username("alice", _FakeReq())
+        self.assertEqual(ctx.exception.status_code, 404)
+        # 本人(owner)可经 by-username 访问自己的 private 星云
+        alice_token = auth.create_session(self.alice["id"])
+        g2 = space.space_graph_by_username(
+            "alice", _FakeReq({auth.SESSION_COOKIE: alice_token})
+        )
+        self.assertEqual(g2["spaceId"], self.alice["id"])
+        # 不存在的用户名 -> 404
+        with self.assertRaises(HTTPException) as ctx:
+            space.space_graph_by_username("nobody", _FakeReq())
+        self.assertEqual(ctx.exception.status_code, 404)
+
     def test_random_jump_excludes_own_space(self) -> None:
         """随机跃迁不会落到浏览者自己的星云(自己无法关注自己,卡片角标为「我」)。"""
         with db_sqlite._db() as conn:

@@ -207,3 +207,11 @@ export async function unfollowUser(userId: string): Promise<void> {
 export function loadSpaceGraph(userId: string): Promise<SpaceJumpResult> {
   return getJson<SpaceJumpResult>("/api/space/" + encodeURIComponent(userId) + "/graph");
 }
+
+// 游客落地星云:按用户名取公开星云图谱(用户名仅服务端 .env LANDING_SPACE 配置,
+// 不出现在 URL / 界面;加载成功后按返回的 spaceId 进入该空间)
+export function loadSpaceGraphByUsername(username: string): Promise<SpaceJumpResult> {
+  return getJson<SpaceJumpResult>(
+    "/api/space/by-username/" + encodeURIComponent(username) + "/graph"
+  );
+}

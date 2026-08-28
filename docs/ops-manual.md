@@ -275,7 +275,8 @@ ls -lt backups | head -20
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
 | 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 的行数 |
 | 想导出单个用户数据 | 见 4.4(仅查看)或 4.3(完整迁移) |
-| 忘记密码/验证邮件发不出(「重置邮件发送失败」) | 看后端日志中 DirectMail 的 `Code/Message`(邮件器已透传):`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidAccountName` 等 = 发信地址不在当前配置的区域;先按 0.5/8 节核对 AccessKey 归属与 `ALIYUN_DM_ACCOUNT_NAME` |
+| 忘记密码/验证邮件发不出(「重置邮件发送失败」) | 看后端日志中 DirectMail 的 `Code/Message`(邮件器已透传):`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidMailAddress.NotFound` = 发信地址不在当前配置的区域(发信地址按区域隔离,`ALIYUN_DM_REGION` 必须与控制台创建地址的区域一致);核对 AccessKey 归属与 `ALIYUN_DM_ACCOUNT_NAME` |
+| 邮件进了 Gmail/QQ 垃圾箱 | 先看邮件头 `Authentication-Results` 是否 `spf=pass` / `dkim=pass` / `dmarc=pass`:不全则补 DNS 记录并确认控制台发信域名验证状态;全 pass 则是新域名/共享 IP 信誉冷启动——收件人标记「不是垃圾邮件」+ 加入联系人,检查链接是否被阿里云跟踪域名改写(可关跟踪或配自定义跟踪域名),保持少量真实事务邮件养 1~4 周 |
 
 ## 8. 关键配置(.env)
 
@@ -286,10 +287,11 @@ ls -lt backups | head -20
 | `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |
 | `MAILER` | 邮件发送器(api = DirectMail / smtp) | 邮箱验证与忘记密码依赖;未配置时仅本地日志,相关接口 fail-closed(503) |
-| `ALIYUN_DM_*` | DirectMail AccessKey / 发信地址 / 区域 | `MAILER=api` 必填;大陆区域发信域名需 ICP 备案,海外 VPS 用 `ap-southeast-1` |
+| `ALIYUN_DM_*` | DirectMail AccessKey / 发信地址 / 区域 | `MAILER=api` 必填;`ALIYUN_DM_ACCOUNT_NAME` 填控制台创建的发信地址(不是随机账号),`ALIYUN_DM_REGION` 必须与发信地址所在区域一致;大陆区域发信域名需 ICP 备案,海外 VPS 用 `ap-southeast-1` |
 | `SMTP_*` | SMTP 备用通道 | `MAILER=smtp` 必填;465 SSL 或 587 STARTTLS |
 | `SITE_BASE_URL` | 邮件深链的外部站点地址 | 生产必须配置(如 `https://litnebula.com`) |
 | `EMAIL_VERIFY_REQUIRED` | 注册邮箱验证开关 | 生产建议 1;开启后新注册必须先验证邮箱,引导管理员验证后才提权 |
+| `LANDING_SPACE` | 游客落地星云(用户名,可选) | 游客打开首页自动进入该公开星云;用户名仅服务端配置,不出现在 URL/界面;目标星云未公开/已禁用时游客回退空图 |
 
 ## 9. 快速命令参考
 

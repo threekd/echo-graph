@@ -535,8 +535,15 @@ def _clear_session_cookie(response: Response) -> None:
 
 @router.get("/config")
 def auth_config() -> dict:
-    """前端注册页所需配置(站点密钥;未配置时前端不渲染 Turnstile)。"""
-    return {"turnstileSiteKey": os.getenv("TURNSTILE_SITE_KEY", "").strip()}
+    """前端登录/注册所需配置(站点密钥;未配置时前端不渲染 Turnstile)。
+
+    landingSpace:游客落地星云用户名(.env LANDING_SPACE,可空)——用户名只作为
+    服务端配置,不出现在 URL / 界面,避免暴露可用作登录的账号标识。
+    """
+    return {
+        "turnstileSiteKey": os.getenv("TURNSTILE_SITE_KEY", "").strip(),
+        "landingSpace": os.getenv("LANDING_SPACE", "").strip() or None,
+    }
 
 
 @router.post("/register")

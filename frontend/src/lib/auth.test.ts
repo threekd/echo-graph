@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  fetchMe, forgotPassword, login, register, resetPassword, resendVerification, verifyEmail,
+  fetchAuthConfig, fetchMe, forgotPassword, login, register, resetPassword,
+  resendVerification, verifyEmail,
 } from "./auth";
 
 function fakeResponse(status: number, body: unknown) {
@@ -117,5 +118,29 @@ describe("auth API", () => {
         body: JSON.stringify({ email: "a@b.com" }),
       })
     );
+  });
+
+  it("fetchAuthConfig 透出游客落地星云配置", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        fakeResponse(200, { turnstileSiteKey: "site-key", landingSpace: "admin" })
+      )
+    );
+    await expect(fetchAuthConfig()).resolves.toEqual({
+      turnstileSiteKey: "site-key",
+      landingSpace: "admin",
+    });
+  });
+
+  it("fetchAuthConfig 未配置时 landingSpace 为 null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(fakeResponse(200, { turnstileSiteKey: "" }))
+    );
+    await expect(fetchAuthConfig()).resolves.toEqual({
+      turnstileSiteKey: "",
+      landingSpace: null,
+    });
   });
 });

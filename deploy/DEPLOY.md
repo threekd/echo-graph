@@ -45,7 +45,8 @@ ECS 默认封禁 25 端口出站,不影响本方案的 API(HTTPS 443)与 SMTP 46
 配置步骤:
 
 1. 阿里云控制台开通「邮件推送」,添加**发信域名**并完成 DNS 验证
-   (SPF/DKIM 记录),再创建**发信地址**(如 `noreply@你的域名`)。
+   (控制台「配置信息」里的 MX / SPF / DKIM / DMARC / CNAME 跟踪等记录全部
+   加上并等验证状态为「已验证」),再创建**发信地址**(如 `noreply@你的域名`)。
 2. 创建 RAM 用户并授予 `AliyunDirectMailFullAccess`,生成 AccessKey。
 3. `.env` 填写(区域按 VPS 所在地选择):
 
@@ -68,6 +69,30 @@ ECS 默认封禁 25 端口出站,不影响本方案的 API(HTTPS 443)与 SMTP 46
 
 备用 SMTP 通道:`MAILER=smtp` + `SMTP_HOST/PORT/USER/PASS/FROM/TLS`(465 SSL
 或 587 STARTTLS),适合已有邮件服务商的场景。
+
+### 0.5.1 排错与送达率(2026-08-28 实测经验)
+
+后端日志(或 `MailSendError` 消息)会直接透传阿里云返回的 `Code/Message`,
+常见错误:
+
+| 错误码 | 含义 | 处理 |
+|---|---|---|
+| `Forbidden` | AccessKey 无邮件推送权限,或不属于开通邮件推送的账号 | RAM 用户附加 `AliyunDirectMailFullAccess`(或 `SendOnly`);核对 AccessKey 归属账号 |
+| `InvalidMailAddress.NotFound` | 发信地址不在当前配置的区域 | **发信域名/发信地址按区域隔离**:`ALIYUN_DM_REGION` 必须与创建发信地址的控制台区域一致(地址建在大陆区就配 `cn-hangzhou`,建在新加坡区才配 `ap-southeast-1`) |
+| 邮件进垃圾箱 | DNS 认证记录不全,或新域名/共享 IP 信誉冷启动 | 见下 |
+
+送达率要点(Gmail 实测:SPF/DKIM/DMARC 全 pass 仍可能进垃圾箱):
+
+- **认证记录**:发信域名需配齐 MX / SPF / DKIM / DMARC(及可选的 CNAME 跟踪);
+  收件方(Gmail 等)在 2024-02 起对 SPF/DKIM/DMARC 三件套有硬性要求。
+- **链接跟踪改写**:邮件里的链接可能被 DirectMail 点击跟踪改写为阿里云跳转域名,
+  影响收件方判定——可关闭跟踪或配置自定义跟踪域名,让链接显示为自己的域名。
+- **新域名/共享 IP 信誉**:新发信域名 + 共享 IP 池冷启动,收件人把邮件移回收件箱并
+  标记「不是垃圾邮件」、加入联系人可立即改善;保持少量真实事务邮件(注册/重置,
+  勿群发)一般 1~4 周信誉恢复。
+- **区域选择**:大陆 `cn-hangzhou` 集群发海外(Gmail 等)信誉通常不如新加坡
+  `ap-southeast-1` 集群;对送达率要求高可把发信域名/地址迁到新加坡区对比。
+- 更高要求可咨询阿里云「独立 IP / 高信誉发信」(付费)。
 
 ## 1. 准备仓库
 

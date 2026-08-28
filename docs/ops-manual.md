@@ -274,6 +274,7 @@ ls -lt backups | head -20
 | git pull 报本地修改冲突 | 本地有未推送提交或未提交改动,先提交推送再部署 |
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
 | 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 的行数 |
+| AI 导入提交 500,日志报「创建上传目录失败:Permission denied」 | 服务账号对 git 检出目录不可写(常见于克隆/更新以 root 执行)。一次性修复:`sudo chown -R echograph:echograph /opt/echo-graph`;新版上传目录默认在 `data/imports`(服务账号可写),也可用 `IMPORT_DIR` 指向专用可写盘 |
 | 想导出单个用户数据 | 见 4.4(仅查看)或 4.3(完整迁移) |
 | 忘记密码/验证邮件发不出(「重置邮件发送失败」) | 看后端日志中 DirectMail 的 `Code/Message`(邮件器已透传):`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidMailAddress.NotFound` = 发信地址不在当前配置的区域(发信地址按区域隔离,`ALIYUN_DM_REGION` 必须与控制台创建地址的区域一致);核对 AccessKey 归属与 `ALIYUN_DM_ACCOUNT_NAME` |
 | 邮件进了 Gmail/QQ 垃圾箱 | 先看邮件头 `Authentication-Results` 是否 `spf=pass` / `dkim=pass` / `dmarc=pass`:不全则补 DNS 记录并确认控制台发信域名验证状态;全 pass 则是新域名/共享 IP 信誉冷启动——收件人标记「不是垃圾邮件」+ 加入联系人,检查链接是否被阿里云跟踪域名改写(可关跟踪或配自定义跟踪域名),保持少量真实事务邮件养 1~4 周 |
@@ -292,6 +293,7 @@ ls -lt backups | head -20
 | `SITE_BASE_URL` | 邮件深链的外部站点地址 | 生产必须配置(如 `https://litnebula.com`) |
 | `EMAIL_VERIFY_REQUIRED` | 注册邮箱验证开关 | 生产建议 1;开启后新注册必须先验证邮箱,引导管理员验证后才提权 |
 | `LANDING_SPACE` | 游客落地星云(用户名,可选) | 游客打开首页自动进入该公开星云;用户名仅服务端配置,不出现在 URL/界面;目标星云未公开/已禁用时游客回退空图 |
+| `IMPORT_DIR` | AI 书籍导入上传临时目录(可选) | 缺省 `<项目>/data/imports`(服务账号可写);若数据盘挂在别处可指定,目录须服务账号可写 |
 
 ## 9. 快速命令参考
 

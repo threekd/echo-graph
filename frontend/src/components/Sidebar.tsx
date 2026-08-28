@@ -529,7 +529,7 @@ export default function Sidebar() {
             <div className="settings-pane">
               <div className="settings-section">
                 <h3>消息</h3>
-                <p className="settings-hint">消息通知功能规划中(第二阶段),敬请期待。</p>
+                <p className="settings-hint">暂无通知</p>
               </div>
             </div>
           ) : (

@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import threading
 import time
@@ -59,7 +60,11 @@ router = APIRouter(
 logger = logging.getLogger("echo_graph")
 
 ROOT = Path(__file__).resolve().parent.parent
-IMPORT_DIR = ROOT / "app" / "ai_assistant" / "output" / "imports"
+# 上传临时目录:优先环境变量 IMPORT_DIR(VPS 可挂到专用可写盘);缺省放在
+# data/imports(与权威库同目录,服务账号必然可写)——不再依赖 git 检出目录权限
+# (服务器上 app/ 目录常为 root 所有,导致 mkdir Permission denied)。
+# 任务结束即删除上传文件,孤儿目录由下次提交时清理。
+IMPORT_DIR = Path(os.getenv("IMPORT_DIR", str(ROOT / "data" / "imports")))
 MAX_BOOK_BYTES = 20 * 1024 * 1024  # 20MB 防滥用上限
 MAX_CONCURRENT_IMPORTS = 2  # 全局同时执行的导入任务上限(单 worker 资源约束)
 IMPORT_LIMIT_PER_USER = 10  # 每用户每小时导入次数上限

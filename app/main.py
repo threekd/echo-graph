@@ -15,6 +15,7 @@ from app import mailer
 from app.admin import router as admin_router
 from app.auth import bootstrap_admin
 from app.auth import router as auth_router
+from app.book_import import IMPORT_DIR
 from app.book_import import router as book_import_router
 from app.follows import router as follows_router
 from app.llm_account import migrate_legacy_llm_drafts
@@ -49,6 +50,14 @@ async def lifespan(_: FastAPI):
     bootstrap_admin()
     # 旧 system_llm 共享草稿一次性改挂到引导管理员(GET 端点保持只读,迁移只在启动执行)
     migrate_legacy_llm_drafts()
+    try:
+        IMPORT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.error(
+            "书籍导入上传目录不可写(IMPORT_DIR=%s):%s,AI 书籍导入将失败",
+            IMPORT_DIR,
+            exc,
+        )
     if os.getenv("COOKIE_SECURE", "").strip().lower() not in ("1", "true", "yes", "on"):
         logger.warning(
             "COOKIE_SECURE 未开启:会话 Cookie 允许经非 HTTPS 连接传输,"

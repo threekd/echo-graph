@@ -91,6 +91,13 @@ class BookImportTest(unittest.TestCase):
         self.patch_batch_dir.start()
         self.addCleanup(self.patch_batch_dir.stop)
 
+        # 上传临时目录同样隔离到临时目录,不写仓库 data/imports
+        self.patch_import_dir = patch.object(
+            book_import, "IMPORT_DIR", Path(self.tmp.name) / "imports"
+        )
+        self.patch_import_dir.start()
+        self.addCleanup(self.patch_import_dir.stop)
+
         self.admin = auth.register(_ADMIN_EMAIL, "password123", username="admin01")
         self.assertEqual(self.admin["role"], "admin")
 

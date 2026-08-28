@@ -47,7 +47,7 @@ export default function SettingsTab(props: SettingsTabProps) {
       ) : (
         <div className="settings-section">
           <h3>设置</h3>
-          <p className="settings-hint">请先登录,即可管理账号与星云可见性。</p>
+          <p className="settings-hint">请先登录,即可管理账号</p>
           <button
             id="btn-settings-login"
             className="side-btn"

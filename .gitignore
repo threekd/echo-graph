@@ -12,6 +12,7 @@ frontend/*.local
 data/versions/
 data/snapshots/
 data/echo-graph.db*
+data/imports/
 
 # 部署/工具产物
 backups/

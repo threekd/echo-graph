@@ -221,6 +221,11 @@ export default function Panel() {
   const panel = state.panel;
   // 跃迁后常驻的悬浮书友卡片(当前星云所有者资料 + 关注按钮)
   const spaceOwnerId = spaceUserId(state.space);
+  // 资料卡片收起状态:展开后 10 秒无鼠标停留自动向上收起;折叠后右上角出现
+  // 小房子图标,点击图标重新展开。
+  const [profileCollapsed, setProfileCollapsed] = useState(false);
+  const profileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const PROFILE_AUTO_COLLAPSE_MS = 10_000;
   // 右侧详情栏功能 Tab:ripple = 当前视图内容;bookmarks = 书签(评分/评价);
   // 星云所有者资料已移出 Tab,改为跃迁后右上角常驻悬浮卡片
   const [tab, setTab] = useState<"ripple" | "bookmarks">("ripple");
@@ -305,6 +310,46 @@ export default function Panel() {
       }
     }
   }, [panel, scheduleHide, state.pinRight]);
+
+  const cancelProfileTimer = useCallback(() => {
+    if (profileTimer.current) {
+      clearTimeout(profileTimer.current);
+      profileTimer.current = null;
+    }
+  }, []);
+
+  const restartProfileTimer = useCallback(() => {
+    cancelProfileTimer();
+    profileTimer.current = setTimeout(
+      () => setProfileCollapsed(true),
+      PROFILE_AUTO_COLLAPSE_MS,
+    );
+  }, [cancelProfileTimer]);
+
+  const expandProfile = useCallback((e?: { clientX: number; clientY: number }) => {
+    setProfileCollapsed(false);
+    restartProfileTimer();
+    if (e) {
+      // 折叠小条与展开后的卡片同位置:若指针停留在卡片区域内,保持展开
+      // (等不到真实 mouseenter 的场景,如从折叠小条滑入后指针静止)
+      const { clientX, clientY } = e;
+      window.setTimeout(() => {
+        const el = document.getElementById("space-profile-card");
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+          cancelProfileTimer();
+        }
+      }, 80);
+    }
+  }, [restartProfileTimer, cancelProfileTimer]);
+
+  // 每次星际跃迁(space 变化)重置资料卡片为展开状态,并开始 10 秒倒计时
+  useEffect(() => {
+    setProfileCollapsed(false);
+    restartProfileTimer();
+    return () => cancelProfileTimer();
+  }, [spaceOwnerId, restartProfileTimer, cancelProfileTimer]);
 
   // 钉住右侧详情栏:钉住后不再随移出/计时自动隐藏
   const togglePinRight = () => {
@@ -395,13 +440,51 @@ export default function Panel() {
         </div>
       </aside>
       {spaceOwnerId && (
-        <div className="space-profile-card" key={spaceOwnerId}>
-          <OwnerProfilePanel
-            profile={state.spaceProfile}
-            ownerId={spaceOwnerId}
-            isSelf={!!state.user && spaceOwnerId === state.user.id}
-          />
-        </div>
+        <>
+          {/* 折叠后右上角贴边的小房子图标:独立 fixed 定位,不依赖卡片布局 */}
+          {profileCollapsed && (
+            <button
+              type="button"
+              id="space-profile-trigger"
+              className="space-profile-trigger"
+              title="展开书友资料卡片"
+              aria-label="展开书友资料卡片"
+              onClick={expandProfile}
+            >
+              <svg
+                className="space-profile-trigger-icon"
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                {/* 小房子:屋顶 + 墙体 + 门 */}
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <path d="M9 22v-10h6v10" />
+              </svg>
+            </button>
+          )}
+          <div
+            id="space-profile-card"
+            className={"space-profile-card" + (profileCollapsed ? " collapsed" : "")}
+            key={spaceOwnerId}
+            onMouseEnter={cancelProfileTimer}
+            onMouseLeave={restartProfileTimer}
+          >
+            <div className="space-profile-body">
+              <OwnerProfilePanel
+                profile={state.spaceProfile}
+                ownerId={spaceOwnerId}
+                isSelf={!!state.user && spaceOwnerId === state.user.id}
+              />
+            </div>
+          </div>
+        </>
       )}
     </>
   );

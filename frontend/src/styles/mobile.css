@@ -74,6 +74,10 @@
     width: auto;
     max-height: 42vh;
   }
+  /* 移动端折叠贴边图标与卡片顶部对齐 */
+  .space-profile-trigger {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+  }
   .sidebar-content {
     padding: 14px 16px;
     padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));

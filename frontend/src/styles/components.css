@@ -105,7 +105,8 @@
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
   padding: 14px 16px;
   animation: space-card-in 0.4s ease-out;
-  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease,
+    right 0.28s ease;
 }
 /* 卡片从上方向下滑入出现(每次跃迁换 space 时通过 key 重新播放) */
 @keyframes space-card-in {
@@ -178,11 +179,68 @@
 .space-profile-card .panel-content-inner {
   padding: 0; /* 卡片自带内边距,去掉面板内容区默认内边距 */
 }
+/* 折叠后右上角贴边的小房子图标(圆形外框,独立 fixed 定位):点击展开资料卡片 */
+.space-profile-trigger {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 42px; /* 位于右侧边缘感应条(30px + 提示竖线)左侧,留出间隙;
+                  与展开卡片右缘对齐,展开/收起不横向跳动 */
+  z-index: 41;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 255, 0.32);
+  background: rgba(18, 26, 60, 0.6);
+  color: #a9c8ff;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  animation: space-card-in 0.25s ease-out;
+  transition: background 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease, transform 0.15s ease;
+}
+.space-profile-trigger:hover {
+  background: rgba(138, 184, 255, 0.22);
+  color: #fff;
+  border-color: rgba(148, 163, 255, 0.55);
+  transform: translateY(-1px);
+}
+/* 折叠时内容区向上收起(max-height 收缩 + 上移淡出) */
+.space-profile-card .space-profile-body {
+  overflow: hidden;
+  max-height: 360px;
+  opacity: 1;
+  transform: translateY(0);
+  transition: max-height 0.28s ease, opacity 0.22s ease, transform 0.28s ease;
+}
+.space-profile-card.collapsed {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none; /* 折叠态卡片不可交互,展开由独立贴边图标负责 */
+}
+.space-profile-card.collapsed .space-profile-body {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
 /* 右侧详情栏出现时收起个人资料卡片(淡出上移),面板收起后恢复 */
 #panel.show ~ .space-profile-card {
   opacity: 0;
   visibility: hidden;
   transform: translateY(-12px);
+  pointer-events: none;
+}
+/* 右侧详情栏打开时,折叠贴边图标同样淡出隐藏 */
+#panel.show ~ .space-profile-trigger {
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 #panel.show {

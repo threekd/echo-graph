@@ -275,6 +275,7 @@ ls -lt backups | head -20
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
 | 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 的行数 |
 | 想导出单个用户数据 | 见 4.4(仅查看)或 4.3(完整迁移) |
+| 忘记密码/验证邮件发不出(「重置邮件发送失败」) | 看后端日志中 DirectMail 的 `Code/Message`(邮件器已透传):`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidAccountName` 等 = 发信地址不在当前配置的区域;先按 0.5/8 节核对 AccessKey 归属与 `ALIYUN_DM_ACCOUNT_NAME` |
 
 ## 8. 关键配置(.env)
 

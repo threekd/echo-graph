@@ -30,6 +30,7 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from urllib.error import HTTPError
 
 logger = logging.getLogger("echo_graph")
 
@@ -172,6 +173,19 @@ def _send_directmail(to: str, subject: str, text: str, html: str | None) -> None
     try:
         with urllib.request.urlopen(req, timeout=DM_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except HTTPError as exc:
+        # DirectMail 4xx/5xx 的错误码在响应体里(Code/Message),必须透传出来,
+        # 否则只报 "HTTP 400" 无法定位原因
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            err = json.loads(raw)
+            detail = (
+                f"Code={err.get('Code')} Message={err.get('Message')}"
+                f" RequestId={err.get('RequestId')}"
+            )
+        except Exception:  # noqa: BLE001 - 非 JSON 错误体原样截断展示
+            detail = raw[:300]
+        raise MailSendError(f"DirectMail 请求失败(HTTP {exc.code}):{detail}") from exc
     except Exception as exc:  # noqa: BLE001 - 网络/解析失败统一转为 MailSendError
         raise MailSendError(f"DirectMail 请求失败:{exc}") from exc
     if isinstance(payload, dict) and payload.get("Code") not in (None, "", "OK", "Success"):

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import os
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qsl
+from urllib.error import HTTPError
 
 from app import mailer
 
@@ -99,6 +101,28 @@ class DirectMailTest(unittest.TestCase):
         ):
             with self.assertRaises(mailer.MailSendError):
                 mailer.send_mail("user@example.com", "主题", "正文")
+
+    def test_directmail_http_error_exposes_code(self) -> None:
+        """4xx/5xx 响应体里的 Code/Message 必须透传,不能只报 HTTP 400。"""
+
+        def fake_urlopen(req, timeout=None):
+            raise HTTPError(
+                req.full_url,
+                400,
+                "Bad Request",
+                {},
+                io.BytesIO(
+                    b'{"Code":"Forbidden","Message":"not authorized","RequestId":"r-1"}'
+                ),
+            )
+
+        with patch.dict(os.environ, self.DM_ENV), patch.object(
+            mailer.urllib.request, "urlopen", fake_urlopen
+        ):
+            with self.assertRaises(mailer.MailSendError) as ctx:
+                mailer.send_mail("user@example.com", "主题", "正文")
+        self.assertIn("Forbidden", str(ctx.exception))
+        self.assertIn("not authorized", str(ctx.exception))
 
     def test_send_mail_log_mode(self) -> None:
         """未配置 MAILER:日志模式不抛异常(本地开发)。"""

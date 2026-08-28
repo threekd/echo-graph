@@ -15,12 +15,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
 from openai import OpenAI
 
-from app.ai_assistant.tools.common import load_dotenv_once, utf8_stdout
+from app.ai_assistant.tools.common import load_dotenv_once, log, utf8_stdout
 
 # 导入即加载 .env,保证下面的 MODEL / THINKING 能读到项目配置覆盖
 load_dotenv_once()
@@ -40,6 +41,8 @@ THINKING = os.getenv("DEEPSEEK_THINKING", "").strip().lower() in {
 REQUEST_TIMEOUT_SECONDS = 120.0  # API 请求超时,避免网络/服务器无响应时无限挂起
 MAX_RETRIES = 2  # API 请求失败时的重试次数
 REASONING_PROGRESS_INTERVAL = 1000  # 思考阶段每隔多少字符汇报一次进度
+LLM_CALL_MAX_RETRIES = 2  # 空正文/解析失败/网络异常时的额外重试次数
+LLM_RETRY_BACKOFF_SECONDS = 2.0
 
 
 def load_environment() -> tuple[str, str]:
@@ -143,3 +146,51 @@ def parse_json(content: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError(f"JSON 顶层应为对象,实际为 {type(parsed).__name__}")
     return parsed
+
+
+def call_json_completion(
+    client: OpenAI,
+    messages: list[dict[str, str]],
+    *,
+    model: str = MODEL,
+    thinking: bool = THINKING,
+    on_log: Callable[[str], None] | None = None,
+    stage_label: str | None = None,
+    max_retries: int = LLM_CALL_MAX_RETRIES,
+    backoff_seconds: float = LLM_RETRY_BACKOFF_SECONDS,
+) -> dict[str, Any]:
+    """调用一次流式 JSON 补全并解析;空正文/解析失败/网络异常做有界重试。
+
+    DeepSeek 深度思考模式偶发「只返回 reasoning、正文为空」的响应
+    (finish_reason=stop 但 content 为空),直接解析会得到误导性的
+    「JSON 解析失败:Expecting value」;重试通常即恢复。
+    重试耗尽后抛出最后一次异常(stage_label 用于进度日志前缀)。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1 + max_retries):
+        try:
+            content, reasoning_content = stream_completion(
+                client, messages, model=model, thinking=thinking, on_log=on_log
+            )
+            if not content.strip():
+                raise ValueError(
+                    "模型未返回正文内容(仅思考 "
+                    f"{len(reasoning_content)} 字符,疑似响应被截断或瞬时空响应)"
+                )
+            if stage_label:
+                log(
+                    f"{stage_label} 响应接收完成(content {len(content)} 字符,"
+                    f"reasoning {len(reasoning_content)} 字符)"
+                )
+            return parse_json(content)
+        except Exception as exc:  # noqa: BLE001 - 统一按可重试处理
+            last_exc = exc
+            if attempt < max_retries:
+                wait = backoff_seconds * (attempt + 1)
+                log(
+                    f"LLM 调用失败(第 {attempt + 1}/{max_retries + 1} 次):"
+                    f"{type(exc).__name__}: {exc};{wait:g}s 后重试"
+                )
+                time.sleep(wait)
+    assert last_exc is not None
+    raise last_exc

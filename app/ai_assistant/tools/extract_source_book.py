@@ -39,14 +39,13 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from app.ai_assistant import prompts  # noqa: E402
+from app.ai_assistant.tools import llm_client  # noqa: E402
 from app.ai_assistant.tools.common import DEFAULT_BOOK, log, utf8_stdout, write_json  # noqa: E402
 from app.ai_assistant.tools.llm_client import (  # noqa: E402
     MODEL,
     THINKING,
     create_client,
     load_environment,
-    parse_json,
-    stream_completion,
 )
 from app.ai_assistant.tools.read_book import ReadBook  # noqa: E402
 
@@ -252,25 +251,24 @@ def call_llm(
     stage: str,
     on_log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """调用一次 LLM 并解析 JSON 结果。"""
+    """调用一次 LLM 并解析 JSON 结果(空正文/解析失败自动有界重试)。"""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
     log(f"阶段 {stage}:调用 DeepSeek(模型 {model},深度思考 {'开' if THINKING else '关'})...")
     try:
-        content, reasoning_content = stream_completion(
-            client, messages, model=model, thinking=THINKING, on_log=on_log
+        return llm_client.call_json_completion(
+            client,
+            messages,
+            model=model,
+            thinking=THINKING,
+            on_log=on_log,
+            stage_label=f"阶段 {stage}",
         )
     except Exception as exc:
         log(f"阶段 {stage} API 调用失败:{type(exc).__name__}: {exc}")
         raise
-
-    log(
-        f"阶段 {stage} 响应接收完成(content {len(content)} 字符,"
-        f"reasoning {len(reasoning_content)} 字符)"
-    )
-    return parse_json(content)
 
 
 def run_extract(

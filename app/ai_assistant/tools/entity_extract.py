@@ -114,7 +114,7 @@ def _call_llm(
     stage: str,
     on_log: Callable[[str], None] | None,
 ) -> dict[str, Any]:
-    """调用一次 DeepSeek 并解析 JSON(与 extract_source_book 同一套客户端)。"""
+    """调用一次 DeepSeek 并解析 JSON(空正文/解析失败自动有界重试)。"""
     api_key, base_url = llm_client.load_environment()
     client = llm_client.create_client(api_key, base_url)
     messages = [
@@ -126,14 +126,14 @@ def _call_llm(
         f"阶段 {stage}:调用 DeepSeek(模型 {model_name},"
         f"深度思考 {'开' if llm_client.THINKING else '关'})..."
     )
-    content, reasoning_content = llm_client.stream_completion(
-        client, messages, model=model_name, thinking=llm_client.THINKING, on_log=on_log
+    return llm_client.call_json_completion(
+        client,
+        messages,
+        model=model_name,
+        thinking=llm_client.THINKING,
+        on_log=on_log,
+        stage_label=f"阶段 {stage}",
     )
-    log(
-        f"阶段 {stage} 响应接收完成(content {len(content)} 字符,"
-        f"reasoning {len(reasoning_content)} 字符)"
-    )
-    return llm_client.parse_json(content)
 
 
 def extract_author(

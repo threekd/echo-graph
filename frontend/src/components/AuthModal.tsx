@@ -1,22 +1,31 @@
-/* 登录/注册弹窗:邮箱+密码;注册页含 Cloudflare Turnstile 人机验证。 */
+/* 登录/注册弹窗:邮箱+密码;注册页含 Cloudflare Turnstile 人机验证。
+ * 同时承载「忘记密码」与邮件深链进入的「重置密码」流程(#v=reset:TOKEN)。
+ * 注册开启邮箱验证时(requiresVerification),注册成功后不自动登录,
+ * 提示查收验证邮件,登录入口提供重发验证邮件。 */
 
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
-import { fetchAuthConfig, login, register, type AuthUser } from "../lib/auth";
+import {
+  fetchAuthConfig, forgotPassword, login, register, resendVerification,
+  resetPassword, type AuthUser,
+} from "../lib/auth";
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot" | "reset";
 
 const TURNSTILE_SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
 export default function AuthModal() {
   const { state, dispatch } = useApp();
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>(state.authMode);
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [resetToken, setResetToken] = useState(state.authToken || "");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [unverified, setUnverified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [siteKey, setSiteKey] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
@@ -25,14 +34,19 @@ export default function AuthModal() {
   const widgetRef = useRef<string | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  // 打开弹窗时拉取 Turnstile 站点密钥(后端未配置则注册时跳过人机验证)
+  // 打开弹窗时同步视图模式(邮件深链 #v=reset:TOKEN 由 App 写入 store),
+  // 并拉取 Turnstile 站点密钥(后端未配置则注册时跳过人机验证)
   useEffect(() => {
     if (!state.authOpen) return;
+    setMode(state.authMode);
+    setResetToken(state.authToken || "");
     setError("");
+    setNotice("");
+    setUnverified(false);
     setCaptchaToken("");
     setCaptchaState("idle");
     fetchAuthConfig().then((cfg) => setSiteKey(cfg.turnstileSiteKey));
-  }, [state.authOpen]);
+  }, [state.authOpen, state.authMode, state.authToken]);
 
   // 注册页按需加载 Turnstile 脚本并渲染组件;加载失败/超时给出明确提示
   useEffect(() => {
@@ -111,6 +125,8 @@ export default function AuthModal() {
   const switchMode = (m: Mode) => {
     setMode(m);
     setError("");
+    setNotice("");
+    setUnverified(false);
     setCaptchaToken("");
   };
 
@@ -120,12 +136,35 @@ export default function AuthModal() {
     dispatch({ type: "SET_TOAST", msg, kind: "success" });
   };
 
+  const doResend = () => {
+    const em = email.trim();
+    if (!em) {
+      setError("请输入注册邮箱");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    resendVerification(em)
+      .then((r) => {
+        if (r.error) {
+          setError(r.error);
+          return;
+        }
+        setNotice("验证邮件已重新发送,请查收");
+      })
+      .catch((e) => setError("请求失败: " + e.message))
+      .finally(() => setBusy(false));
+  };
+
   const doSubmit = () => {
     setError("");
+    setNotice("");
     const em = email.trim();
-    if (!em || !password) {
-      setError("请输入邮箱/用户名和密码");
-      return;
+    if (mode === "login") {
+      if (!em || !password) {
+        setError("请输入邮箱/用户名和密码");
+        return;
+      }
     }
     if (mode === "register") {
       if (siteKey && !captchaToken) {
@@ -155,15 +194,59 @@ export default function AuthModal() {
         return;
       }
     }
+    if (mode === "forgot") {
+      if (!em) {
+        setError("请输入注册邮箱");
+        return;
+      }
+    }
+    if (mode === "reset") {
+      if (password.length < 8) {
+        setError("密码至少 8 位");
+        return;
+      }
+      if (password !== confirm) {
+        setError("两次输入的密码不一致");
+        return;
+      }
+      if (!resetToken) {
+        setError("重置链接无效,请重新申请");
+        return;
+      }
+    }
     setBusy(true);
-    const req =
-      mode === "register"
-        ? register(em, password, captchaToken, username.trim(), nickname.trim() || null)
-        : login(em, password);
+    let req: Promise<{ user: AuthUser | null; error: string; requiresVerification?: boolean }>;
+    if (mode === "register") {
+      req = register(em, password, captchaToken, username.trim(), nickname.trim() || null);
+    } else if (mode === "forgot") {
+      req = forgotPassword(em);
+    } else if (mode === "reset") {
+      req = resetPassword(resetToken, password);
+    } else {
+      req = login(em, password);
+    }
     req
       .then((r) => {
         if (r.error) {
+          if (mode === "login" && r.error.indexOf("尚未验证") !== -1) {
+            setUnverified(true);
+          }
           setError(r.error);
+          return;
+        }
+        if (mode === "register" && r.requiresVerification) {
+          setNotice("注册成功!验证邮件已发送至 " + em + ",请查收后登录");
+          switchMode("login");
+          return;
+        }
+        if (mode === "forgot") {
+          setNotice("如果该邮箱已注册,我们已发送密码重置邮件,请查收");
+          switchMode("login");
+          return;
+        }
+        if (mode === "reset") {
+          setNotice("密码已重置,请用新密码登录");
+          switchMode("login");
           return;
         }
         finish(r.user, mode === "register" ? "注册成功,欢迎加入" : "登录成功");
@@ -176,37 +259,58 @@ export default function AuthModal() {
     if (e.key === "Enter") doSubmit();
   };
 
+  const title =
+    mode === "login" ? "登录" :
+    mode === "register" ? "注册账号" :
+    mode === "forgot" ? "找回密码" : "重置密码";
+
   return (
     <div id="auth-modal">
       <div className="auth-modal-card">
-        <h3>{mode === "login" ? "登录" : "注册账号"}</h3>
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={"auth-tab" + (mode === "login" ? " active" : "")}
-            onClick={() => switchMode("login")}
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            className={"auth-tab" + (mode === "register" ? " active" : "")}
-            onClick={() => switchMode("register")}
-          >
-            注册
-          </button>
-        </div>
-        <label>
-          <span>{mode === "login" ? "邮箱 / 用户名" : "邮箱"}</span>
-          <input
-            type={mode === "login" ? "text" : "email"}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={submitOnEnter}
-            placeholder={mode === "login" ? "you@example.com 或用户名" : "you@example.com"}
-            autoComplete={mode === "login" ? "username" : "email"}
-          />
-        </label>
+        <h3>{title}</h3>
+        {(mode === "login" || mode === "register") && (
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={"auth-tab" + (mode === "login" ? " active" : "")}
+              onClick={() => switchMode("login")}
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              className={"auth-tab" + (mode === "register" ? " active" : "")}
+              onClick={() => switchMode("register")}
+            >
+              注册
+            </button>
+          </div>
+        )}
+        {mode === "forgot" && (
+          <label>
+            <span>注册邮箱</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </label>
+        )}
+        {mode !== "forgot" && mode !== "reset" && (
+          <label>
+            <span>{mode === "login" ? "邮箱 / 用户名" : "邮箱"}</span>
+            <input
+              type={mode === "login" ? "text" : "email"}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={submitOnEnter}
+              placeholder={mode === "login" ? "you@example.com 或用户名" : "you@example.com"}
+              autoComplete={mode === "login" ? "username" : "email"}
+            />
+          </label>
+        )}
         {mode === "register" && (
           <label>
             <span>用户名 <span className="req">*</span></span>
@@ -231,64 +335,96 @@ export default function AuthModal() {
             />
           </label>
         )}
-        <label>
-          <span>密码</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={submitOnEnter}
-            placeholder={mode === "register" ? "至少 8 位" : ""}
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
-          />
-        </label>
-        {mode === "register" && (
-          <>
-            <label>
-              <span>确认密码</span>
-              <input
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                onKeyDown={submitOnEnter}
-                placeholder="再次输入密码"
-                autoComplete="new-password"
-              />
-            </label>
-            <div className="captcha-box">
-              {siteKey ? (
-                <>
-                  <div ref={boxRef} />
-                  {captchaState === "loading" && (
-                    <p className="auth-hint">人机验证加载中…</p>
-                  )}
-                  {captchaState === "failed" && (
-                    <div>
-                      <p className="auth-hint">
-                        人机验证组件加载失败,请检查网络后重试。
-                      </p>
-                      <button type="button" onClick={retryCaptcha}>
-                        重新加载验证
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="auth-hint">
-                  人机验证未配置,注册可能被拒绝(需后端配置密钥;仅本地开发可临时放行)
-                </p>
-              )}
-            </div>
-          </>
+        {mode !== "forgot" && (
+          <label>
+            <span>{mode === "reset" ? "新密码" : "密码"}</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={submitOnEnter}
+              placeholder={mode === "register" ? "至少 8 位" : ""}
+              autoComplete={
+                mode === "register" || mode === "reset" ? "new-password" : "current-password"
+              }
+            />
+          </label>
         )}
+        {(mode === "register" || mode === "reset") && (
+          <label>
+            <span>确认密码</span>
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              onKeyDown={submitOnEnter}
+              placeholder="再次输入密码"
+              autoComplete="new-password"
+            />
+          </label>
+        )}
+        {mode === "register" && (
+          <div className="captcha-box">
+            {siteKey ? (
+              <>
+                <div ref={boxRef} />
+                {captchaState === "loading" && (
+                  <p className="auth-hint">人机验证加载中…</p>
+                )}
+                {captchaState === "failed" && (
+                  <div>
+                    <p className="auth-hint">
+                      人机验证组件加载失败,请检查网络后重试。
+                    </p>
+                    <button type="button" onClick={retryCaptcha}>
+                      重新加载验证
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="auth-hint">
+                人机验证未配置,注册可能被拒绝(需后端配置密钥;仅本地开发可临时放行)
+              </p>
+            )}
+          </div>
+        )}
+        {mode === "login" && (
+          <div className="auth-links">
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => switchMode("forgot")}
+            >
+              忘记密码?
+            </button>
+            {unverified && (
+              <button type="button" className="auth-link" onClick={doResend} disabled={busy}>
+                重新发送验证邮件
+              </button>
+            )}
+          </div>
+        )}
+        {notice && <div className="auth-notice">{notice}</div>}
         {error && <div className="auth-error">{error}</div>}
         <div className="admin-modal-actions">
           <button type="button" onClick={doSubmit} disabled={busy}>
-            {busy ? "请稍候…" : mode === "login" ? "登录" : "注册"}
+            {busy
+              ? "请稍候…"
+              : mode === "login" ? "登录"
+              : mode === "register" ? "注册"
+              : mode === "forgot" ? "发送重置邮件" : "重置密码"}
           </button>
-          <button type="button" onClick={() => dispatch({ type: "SET_AUTH", open: false })}>
-            取消
-          </button>
+          {(mode === "forgot" || mode === "reset") && (
+            <button type="button" onClick={() => switchMode("login")}>
+              返回登录
+            </button>
+          )}
+          {mode !== "forgot" && mode !== "reset" && (
+            <button type="button" onClick={() => dispatch({ type: "SET_AUTH", open: false })}>
+              取消
+            </button>
+          )}
         </div>
       </div>
     </div>

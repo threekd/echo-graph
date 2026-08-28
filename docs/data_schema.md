@@ -1,7 +1,7 @@
 # Echo Graph 数据结构规范
 
-- `schemaVersion`(本文档版本):`1.7`(2026-08-25 按实际数据库结构修订)
-- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 26`(schema 迁移定义见
+- `schemaVersion`(本文档版本):`1.8`(2026-08-28 按实际数据库结构修订)
+- 对应数据库:`data/echo-graph.db`,`meta.schema_version = 27`(schema 迁移定义见
   `app/db_sqlite.py` 的 `MIGRATIONS`;本文档版本与数据库迁移版本相互独立)
 - 存储与读取:策展数据与公开读取均以 SQLite(`data/echo-graph.db`)为准;
   备份为**整库快照**(`backups/` 下 `.db` + 管理端「快照」恢复);`data/export/*.csv`
@@ -12,12 +12,13 @@
 
 ## 表总览
 
-当前库共 10 张业务表:
+当前库共 11 张业务表:
 
 | 表 | 用途 | 归属 / 隔离 |
 |---|---|---|
 | `users` | 账号(邮箱 + 密码哈希 + 角色/状态/星云可见性/资料) | — |
 | `sessions` | 登录会话(只存 token 的 SHA-256 哈希) | 按 `user_id` 关联 |
+| `email_tokens` | 邮箱验证 / 密码重置的一次性令牌(只存 SHA-256 哈希) | 按 `user_id` 关联 |
 | `authors` | 作者节点(所有用户星云,含 admin 星云) | `owner_id` |
 | `works` | 作品节点(所有用户星云,含 admin 星云) | `owner_id` |
 | `work_authors` | 作品-作者关联(合著 N:N) | 经 `works.owner_id` 派生 |
@@ -58,7 +59,8 @@
 | `id` | TEXT(UUID) | 是(PK) | 唯一标识,主键 |
 | `email` | TEXT | 是(UNIQUE) | 登录邮箱,统一小写 |
 | `password_hash` | TEXT | 是 | Argon2 密码哈希,不存明文 |
-| `role` | TEXT | 是 | `user` / `admin`,默认 `user`(引导管理员邮箱注册自动为 admin) |
+| `role` | TEXT | 是 | `user` / `admin`,默认 `user`(引导管理员邮箱注册自动为 admin;开启邮箱验证时改为验证通过后提权) |
+| `email_verified_at` | TEXT | 否 | 邮箱验证时间(UTC);`EMAIL_VERIFY_REQUIRED=1` 时新注册用户未验证不可登录,存量用户迁移时回填 createdAt 视为已信任 |
 | `status` | TEXT | 是 | `active` / `disabled`,默认 `active`;禁用用户不可登录,其星云不可访问(2026-08-24 起空间访问统一按 active 判定) |
 | `createdAt` / `updatedAt` | TEXT | 否 | 时间戳(UTC ISO-8601) |
 | `space_visibility` | TEXT | 是 | `public`(默认,星际跃迁可访问)/ `private`(仅本人与 admin) |
@@ -86,6 +88,20 @@
 | `expires_at` | TEXT | 是 | 过期时间(默认 30 天);过期/登出即失效 |
 
 索引:`idx_sessions_user(user_id)`、`idx_sessions_expires(expires_at)`。
+
+### email_tokens 邮箱令牌
+
+| 列 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | TEXT(UUID) | 是(PK) | 主键 |
+| `token_hash` | TEXT | 是(UNIQUE) | 令牌的 SHA-256 哈希;原始令牌只出现在邮件深链中,泄露 DB 无法伪造 |
+| `user_id` | TEXT | 是 | 引用 `users.id` |
+| `purpose` | TEXT | 是 | `verify`(注册邮箱验证)/ `reset`(密码重置) |
+| `expires_at` | TEXT | 是 | 过期时间(默认 24 小时) |
+| `used_at` | TEXT | 否 | 消费时间;已用 / 过期即失效,重发时同用户同用途旧未用令牌作废 |
+| `created_at` | TEXT | 是 | 创建时间(UTC) |
+
+索引:`idx_email_tokens_user(user_id)`、`idx_email_tokens_user_purpose(user_id, purpose)`。
 
 ### authors 作者节点
 
@@ -231,14 +247,14 @@
 | 列 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `key` | TEXT | 是(PK) | 键,如 `schema_version` |
-| `value` | TEXT | 否 | 值,当前 `schema_version = 26` |
+| `value` | TEXT | 否 | 值,当前 `schema_version = 27` |
 
 ## 约束与索引汇总
 
 唯一约束 / 主键:
 
 - `users.id`、`users.email`、`users.username`(`COLLATE NOCASE` 唯一索引)
-- `sessions.id`、`sessions.token_hash`
+- `sessions.id`、`sessions.token_hash`、`email_tokens.id`、`email_tokens.token_hash`
 - `authors.id`、`works.id`、`edges.id`、`friendships.id`
 - `edges(source_work_id, target_work_id)`、`friendships(user_id, friend_id)`、
   `work_authors(work_id, author_id)`、`meta.key`、`embeddings(entity_type, entity_id, model, version)`
@@ -249,6 +265,7 @@
 - `idx_edges_source`、`idx_edges_target`(路径/扩散)
 - `idx_work_authors_author`(作者反查作品)
 - `idx_sessions_user`、`idx_sessions_expires`
+- `idx_email_tokens_user`、`idx_email_tokens_user_purpose`
 - `idx_friendships_user`、`idx_friendships_friend`
 - `idx_users_space_visibility`(随机跃迁)
 - `idx_audit_ts`(审计裁剪)
@@ -282,8 +299,18 @@
 
 ## 版本说明
 
-本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 26);
+本文档版本独立于数据库迁移版本(`meta.schema_version`,当前 27);
 数据结构演进时递增本文档 `schemaVersion` 并保持向后兼容。
+
+`1.7 → 1.8` 变更(2026-08-28):
+
+- 新增 `email_tokens` 邮箱令牌表(schema v27 迁移):邮箱验证(verify)与密码重置
+  (reset)共用,只存 SHA-256 哈希,24 小时有效,一次性消费;同用户同用途重发
+  自动作废旧令牌;
+- `users` 新增 `email_verified_at`(schema v27 迁移):`EMAIL_VERIFY_REQUIRED=1`
+  时新注册用户需验证邮箱后才能登录;存量用户迁移回填 `createdAt`(历史注册
+  无需验证,视为已信任);引导管理员在验证通过后才提权 admin
+  (`app/auth.py` `verify_email` / `bootstrap_admin`)。
 
 `1.6 → 1.7` 变更(2026-08-25):
 

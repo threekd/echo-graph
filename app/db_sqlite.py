@@ -645,6 +645,42 @@ def _migration_v26(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migration_v27(conn: sqlite3.Connection) -> None:
+    """邮箱验证与密码重置:email_tokens 一次性令牌表 + users.email_verified_at。
+
+    - email_tokens 只存令牌的 SHA-256 哈希(与会话 token 同策略),泄露 DB 无法
+      伪造验证/重置链接;purpose 区分 verify(注册邮箱验证)与 reset(密码重置);
+      每用户每用途仅保留一枚未使用令牌(重发即作废旧令牌)。
+    - 存量用户回填 email_verified_at = createdAt:历史上注册无需验证,视为已信任,
+      避免 EMAIL_VERIFY_REQUIRED=1 上线后存量账号被锁;该约束只作用于新注册用户。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset')),
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_email_tokens_user_purpose"
+        " ON email_tokens(user_id, purpose)"
+    )
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "email_verified_at" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified_at TEXT")
+    conn.execute(
+        "UPDATE users SET email_verified_at = createdAt"
+        " WHERE email_verified_at IS NULL AND createdAt IS NOT NULL"
+    )
+
+
 MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] = [
     (1, MIGRATION_V1),
     (2, _migration_v2),
@@ -672,6 +708,7 @@ MIGRATIONS: list[tuple[int, list[str] | Callable[[sqlite3.Connection], None]]] =
     (24, _migration_v24),
     (25, _migration_v25),
     (26, _migration_v26),
+    (27, _migration_v27),
 ]
 
 

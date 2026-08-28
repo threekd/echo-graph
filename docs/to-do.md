@@ -41,9 +41,13 @@
        (限流抽为 app/ratelimit.py,与关注等写接口共用);带 Origin 头的跨站状态请求拒绝
 - [x] 账号体系后续:admin 用户管理(用户列表 / 禁用 `users.status` / 角色调整 /
       星云可见性管理 / VIP 标记)——见「最近变更(2026-08-25)」
-- ⬜ 账号体系后续:邮箱验证(计划中,将**同时解决**「引导管理员邮箱可被抢先注册提权」与
-      「无密码修改/重置、账号无法找回」两个问题:邮箱验证可确保引导管理员邮箱归属,
-      并作为密码重置的找回通道)、OIDC 社交登录
+- [x] 账号体系后续:邮箱验证 + 密码找回(2026-08-28 落地):「引导管理员邮箱可被抢先
+      注册提权」与「无密码修改/重置、账号无法找回」两个问题已解决——注册邮箱验证
+      确保引导管理员邮箱归属(验证通过后才提权 admin),并作为密码重置的找回通道;
+      实现见 app/mailer.py(阿里云邮件推送 DirectMail / SMTP 可插拔发送器)+
+      email_tokens 一次性令牌(schema v27)+ `/api/auth/verify-email|resend-verification|
+      forgot-password|reset-password`
+- ⬜ 账号体系后续:OIDC 社交登录
 - [x] 用户空间数据隔离(阶段 2):业务表 `owner_id` + 贡献 `user_id`;`/api/me/*`
       私有空间(图/搜索/详情/扩散/路径 + 行级 CRUD);默认视图 = admin 星云(官方图谱)
       (`ADMIN_BOOTSTRAP_EMAIL` 注册自动提权 + 旧库遗留数据一次性兼容认领);隔离测试
@@ -342,3 +346,21 @@
     公共星云/官方图谱/默认视图描述。
 - [x] 侧边栏「数据管理」更名为「星云工坊」:按钮、管理窗口标题与文档中的
       用户可见叫法统一(代码注释与历史 changelog 保留原称谓)。
+- [x] **邮箱验证 + 密码找回(账号体系后续,用户指定阿里云邮件推送 DirectMail)**:
+  - 可插拔发送器 `app/mailer.py`:`MAILER=api` 走 DirectMail SingleSendMail
+    (HMAC-SHA1 签名,纯标准库,支持 cn-hangzhou / ap-southeast-1 区域)、
+    `MAILER=smtp` 走 465 SSL / 587 STARTTLS、未配置仅本地日志;
+  - schema v27:`email_tokens` 表(只存 SHA-256 哈希,verify/reset 两类用途,
+    24 小时有效,重发作废旧令牌)+ `users.email_verified_at`(存量用户回填
+    createdAt,视为已信任,不锁旧账号);
+  - 新接口:`POST /api/auth/verify-email`(验证通过即登录)、
+    `POST /api/auth/resend-verification`、`POST /api/auth/forgot-password`(不泄露
+    账号是否存在)、`POST /api/auth/reset-password`(重置后吊销全部会话);
+    `EMAIL_VERIFY_REQUIRED=1` 时注册后需验证才能登录,登录接口对未验证账号 403;
+  - 安全收口:引导管理员在**验证通过后**才提权 admin(`bootstrap_admin` 启动补角色
+    也只认已验证用户),「抢先注册引导管理员邮箱提权」问题闭环;
+    `EMAIL_VERIFY_REQUIRED=1` 但邮件服务未配置时注册 fail-closed(503)并回滚用户;
+  - 前端:登录弹窗新增「忘记密码?」/重置密码流程,邮件深链 `#v=verify:TOKEN` /
+    `#v=reset:TOKEN` 进入应用,验证/重置后立即清除 URL 中的一次性令牌;
+  - 配置:`.env.example` / `deploy/DEPLOY.md`(0.5 节 DirectMail 配置步骤)/
+    `docs/ops-manual.md`(8 节配置表)同步更新。

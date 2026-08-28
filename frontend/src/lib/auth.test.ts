@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchMe, login, register } from "./auth";
+import {
+  fetchMe, forgotPassword, login, register, resetPassword, resendVerification, verifyEmail,
+} from "./auth";
 
 function fakeResponse(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -49,5 +51,71 @@ describe("auth API", () => {
     const r = await register("a@b.com", "password123", "turnstile-token");
     expect(r.user).toBeNull();
     expect(r.error).toBe("该邮箱已注册,请直接登录");
+  });
+
+  it("register 返回 requiresVerification(邮箱验证开启时)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        fakeResponse(200, { user: null, requiresVerification: true })
+      )
+    );
+    const r = await register("a@b.com", "password123", "turnstile-token", "starlit");
+    expect(r.requiresVerification).toBe(true);
+  });
+
+  it("verifyEmail 携带令牌并透出成功用户", async () => {
+    const fn = vi.fn().mockResolvedValue(
+      fakeResponse(200, { user: { id: "u1", email: "a@b.com", role: "user" } })
+    );
+    vi.stubGlobal("fetch", fn);
+    const r = await verifyEmail("tok-123");
+    expect(r.user?.id).toBe("u1");
+    expect(fn).toHaveBeenCalledWith(
+      "/api/auth/verify-email",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ token: "tok-123" }),
+      })
+    );
+  });
+
+  it("forgotPassword 提交邮箱", async () => {
+    const fn = vi.fn().mockResolvedValue(fakeResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fn);
+    await forgotPassword("a@b.com");
+    expect(fn).toHaveBeenCalledWith(
+      "/api/auth/forgot-password",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "a@b.com" }),
+      })
+    );
+  });
+
+  it("resetPassword 提交令牌与新密码", async () => {
+    const fn = vi.fn().mockResolvedValue(fakeResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fn);
+    await resetPassword("tok-456", "new-pass-123");
+    expect(fn).toHaveBeenCalledWith(
+      "/api/auth/reset-password",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ token: "tok-456", password: "new-pass-123" }),
+      })
+    );
+  });
+
+  it("resendVerification 提交邮箱", async () => {
+    const fn = vi.fn().mockResolvedValue(fakeResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fn);
+    await resendVerification("a@b.com");
+    expect(fn).toHaveBeenCalledWith(
+      "/api/auth/resend-verification",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "a@b.com" }),
+      })
+    );
   });
 });

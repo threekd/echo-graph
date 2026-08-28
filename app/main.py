@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from app import mailer
 from app.admin import router as admin_router
 from app.auth import bootstrap_admin
 from app.auth import router as auth_router
@@ -52,6 +53,21 @@ async def lifespan(_: FastAPI):
         logger.warning(
             "COOKIE_SECURE 未开启:会话 Cookie 允许经非 HTTPS 连接传输,"
             "生产环境必须设 COOKIE_SECURE=1"
+        )
+    if mailer.mailer_configured():
+        logger.info("邮件服务已配置:MAILER=%s", mailer.mailer_mode())
+    else:
+        logger.warning(
+            "邮件服务未配置(MAILER=log 仅本地开发):邮箱验证/密码重置功能"
+            "在生产环境将无法送达;开启 EMAIL_VERIFY_REQUIRED=1 时新注册会被拒绝"
+        )
+    if (
+        os.getenv("EMAIL_VERIFY_REQUIRED", "").strip().lower() in ("1", "true", "yes", "on")
+        and not mailer.mailer_configured()
+    ):
+        logger.error(
+            "EMAIL_VERIFY_REQUIRED=1 但邮件服务未配置:新用户注册将全部失败(fail-closed),"
+            "请先完成 DirectMail/SMTP 配置"
         )
     yield
     close = getattr(store, "close", None)

@@ -17,7 +17,7 @@ import ChunkBoundary from "./components/ChunkBoundary";
 import {
   loadGraphData, loadSpaceGraph, spaceFromParam, spaceUserId, workDetail, type Space,
 } from "./lib/api";
-import { fetchMe } from "./lib/auth";
+import { fetchMe, verifyEmail } from "./lib/auth";
 import { isMobileLayout, useMobileGestures } from "./lib/mobileGestures";
 import { parseCam, parseHashParams } from "./lib/hash";
 import {
@@ -98,6 +98,41 @@ function AppContent() {
     lastAppliedHash.current = current;
     lastAppliedAt.current = Date.now();
     if (isSelfWrittenHash()) return; // 自身写入的 hash,避免重复渲染
+    const parts = parseHashParams(location.hash);
+    const v = parts.v || "";
+    // 邮箱验证 / 密码重置深链:与图谱视图无关,优先处理;用完后立即清除
+    // URL 中的一次性令牌,避免刷新重复提交或令牌残留在地址栏
+    if (v.indexOf("verify:") === 0) {
+      const token = v.slice("verify:".length);
+      if (token) {
+        verifyEmail(token)
+          .then((r) => {
+            if (r.error) {
+              dispatch({ type: "SET_TOAST", msg: r.error, kind: "error" });
+              dispatch({ type: "SET_AUTH", open: true });
+            } else {
+              dispatch({ type: "SET_USER", user: r.user });
+              dispatch({ type: "SET_AUTH", open: false });
+              dispatch({ type: "SET_TOAST", msg: "邮箱验证成功", kind: "success" });
+            }
+          })
+          .catch((e) => {
+            dispatch({ type: "SET_TOAST", msg: "验证失败: " + e.message, kind: "error" });
+            dispatch({ type: "SET_AUTH", open: true });
+          });
+      }
+      history.replaceState(null, "", location.pathname + location.search);
+      return;
+    }
+    if (v.indexOf("reset:") === 0) {
+      const token = v.slice("reset:".length);
+      if (token) {
+        dispatch({ type: "SET_AUTH", open: true, mode: "reset", token });
+        dispatch({ type: "SET_TOAST", msg: "请设置新密码", kind: "info" });
+      }
+      history.replaceState(null, "", location.pathname + location.search);
+      return;
+    }
     // #v=admin 或 hash 中含 admin(如用户把 ?admin 误加到 # 之后形成 "#v=main?admin")都视为管理入口;
     // "admin" 不可能出现在 UUID/视图参数中,判定安全
     if (location.hash.indexOf("admin") !== -1) {
@@ -110,8 +145,6 @@ function AppContent() {
       }
       return;
     }
-    const parts = parseHashParams(location.hash);
-    const v = parts.v || "";
     const st = stateRef.current!.state;
     // hash 的 space 参数与当前星云不一致时,先切换星云再应用视图
     const targetSpace = spaceFromParam(parts.space);

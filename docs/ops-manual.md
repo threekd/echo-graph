@@ -284,6 +284,11 @@ ls -lt backups | head -20
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
 | `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |
+| `MAILER` | 邮件发送器(api = DirectMail / smtp) | 邮箱验证与忘记密码依赖;未配置时仅本地日志,相关接口 fail-closed(503) |
+| `ALIYUN_DM_*` | DirectMail AccessKey / 发信地址 / 区域 | `MAILER=api` 必填;大陆区域发信域名需 ICP 备案,海外 VPS 用 `ap-southeast-1` |
+| `SMTP_*` | SMTP 备用通道 | `MAILER=smtp` 必填;465 SSL 或 587 STARTTLS |
+| `SITE_BASE_URL` | 邮件深链的外部站点地址 | 生产必须配置(如 `https://litnebula.com`) |
+| `EMAIL_VERIFY_REQUIRED` | 注册邮箱验证开关 | 生产建议 1;开启后新注册必须先验证邮箱,引导管理员验证后才提权 |
 
 ## 9. 快速命令参考
 

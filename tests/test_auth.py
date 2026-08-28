@@ -94,12 +94,16 @@ class AuthStoreTest(unittest.TestCase):
         token = auth.create_session(user["id"])
         with db_sqlite._db() as conn:
             row = conn.execute("SELECT * FROM sessions").fetchone()
+            created = conn.execute(
+                "SELECT createdAt FROM users WHERE id = ?", (user["id"],)
+            ).fetchone()["createdAt"]
         self.assertEqual(row["token_hash"], hashlib.sha256(token.encode()).hexdigest())
         self.assertNotEqual(row["token_hash"], token)
         self.assertEqual(auth.current_user(token), {
             "id": user["id"], "email": "session@example.com",
             "username": "session", "nickname": None, "bio": None,
             "role": "user", "space_visibility": "public", "vip": False,
+            "email_verified_at": created,
         })
         auth.delete_session(token)
         self.assertIsNone(auth.current_user(token))
@@ -341,6 +345,183 @@ class AuthStoreTest(unittest.TestCase):
             _FakeRequest(headers={}, cookies={auth.SESSION_COOKIE: boss_token})
         )
         self.assertEqual(result["role"], "admin")
+
+    # ---- 邮箱验证与密码重置(2026-08-28,DirectMail/SMTP 邮件) ----
+
+    MAIL_ENV = {
+        "EMAIL_VERIFY_REQUIRED": "1",
+        "MAILER": "api",
+        "ALIYUN_DM_ACCESS_KEY_ID": "ak-id",
+        "ALIYUN_DM_ACCESS_KEY_SECRET": "ak-secret",
+        "ALIYUN_DM_ACCOUNT_NAME": "no-reply@example.com",
+        "SITE_BASE_URL": "https://litnebula.test",
+    }
+
+    def _capture_mail(self, sent: dict):
+        def fake_send(to, subject, text, html):
+            sent["to"] = to
+            sent["subject"] = subject
+            sent["text"] = text
+            sent["html"] = html or ""
+        return fake_send
+
+    def test_register_requires_verification_email_and_verify_flow(self) -> None:
+        """开启邮箱验证:注册不自动登录、发送验证邮件,验证后登录放行。"""
+        sent: dict = {}
+        with patch.dict(os.environ, self.MAIL_ENV), patch.object(
+            auth.mailer, "send_mail", side_effect=self._capture_mail(sent)
+        ), patch.object(auth, "verify_turnstile", return_value=True):
+            resp = Response()
+            result = auth.register_endpoint(
+                {"email": "verify@example.com", "password": "password123", "username": "verifier"},
+                _FakeRequest(host="127.0.0.1"),
+                resp,
+            )
+        self.assertTrue(result["requiresVerification"])
+        self.assertNotIn("echo_graph_session=", resp.headers.get("set-cookie", ""))
+        self.assertEqual(sent["to"], "verify@example.com")
+        m = re.search(r"#v=verify:([A-Za-z0-9_-]+)", sent["html"])
+        self.assertIsNotNone(m)
+
+        # 未验证登录被拒(403)
+        with self.assertRaises(HTTPException) as ctx:
+            auth.login_endpoint(
+                {"email": "verify@example.com", "password": "password123"},
+                _FakeRequest(host="127.0.0.1"),
+                Response(),
+            )
+        self.assertEqual(ctx.exception.status_code, 403)
+
+        # 验证通过:写 email_verified_at,接口登录放行
+        user = auth.verify_email(m.group(1))
+        self.assertIsNotNone(user)
+        self.assertEqual(user["role"], "user")
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT email_verified_at FROM users WHERE id = ?", (user["id"],)
+            ).fetchone()
+        self.assertIsNotNone(row["email_verified_at"])
+        resp2 = Response()
+        result2 = auth.login_endpoint(
+            {"email": "verify@example.com", "password": "password123"},
+            _FakeRequest(host="127.0.0.1"),
+            resp2,
+        )
+        self.assertTrue(result2["ok"])
+        self.assertIn("echo_graph_session=", resp2.headers["set-cookie"])
+
+    def test_register_fails_closed_when_mailer_unconfigured(self) -> None:
+        """EMAIL_VERIFY_REQUIRED=1 但邮件服务未配置:注册 503 且回滚用户。"""
+        with patch.dict(
+            os.environ,
+            {"EMAIL_VERIFY_REQUIRED": "1", "MAILER": "log",
+             "ALIYUN_DM_ACCESS_KEY_ID": "", "ALIYUN_DM_ACCESS_KEY_SECRET": "",
+             "ALIYUN_DM_ACCOUNT_NAME": "", "SMTP_HOST": ""},
+        ), patch.object(auth, "verify_turnstile", return_value=True):
+            with self.assertRaises(HTTPException) as ctx:
+                auth.register_endpoint(
+                    {"email": "orphan@example.com", "password": "password123", "username": "orphan1"},
+                    _FakeRequest(host="127.0.0.1"),
+                    Response(),
+                )
+        self.assertEqual(ctx.exception.status_code, 503)
+        with db_sqlite._db() as conn:
+            count = conn.execute(
+                "SELECT count(*) c FROM users WHERE email = 'orphan@example.com'"
+            ).fetchone()["c"]
+        self.assertEqual(count, 0)
+
+    def test_resend_verification_invalidates_old_token(self) -> None:
+        sent: dict = {}
+        with patch.dict(os.environ, self.MAIL_ENV), patch.object(
+            auth.mailer, "send_mail", side_effect=self._capture_mail(sent)
+        ), patch.object(auth, "verify_turnstile", return_value=True):
+            auth.register_endpoint(
+                {"email": "resend@example.com", "password": "password123", "username": "resender"},
+                _FakeRequest(host="127.0.0.1"),
+                Response(),
+            )
+            first_token = re.search(r"#v=verify:([A-Za-z0-9_-]+)", sent["html"]).group(1)
+            result = auth.resend_verification_endpoint(
+                {"email": "resend@example.com"}, _FakeRequest(host="127.0.0.1")
+            )
+        self.assertTrue(result["ok"])
+        second_token = re.search(r"#v=verify:([A-Za-z0-9_-]+)", sent["html"]).group(1)
+        self.assertNotEqual(first_token, second_token)
+        # 旧令牌已作废,新令牌可用
+        self.assertIsNone(auth.verify_email(first_token))
+        self.assertIsNotNone(auth.verify_email(second_token))
+
+    def test_email_token_one_time_and_expiry(self) -> None:
+        user = auth.register("token@example.com", "password123", username="tokener")
+        token = auth.create_email_token(user["id"], "verify")
+        self.assertEqual(auth.consume_email_token(token, "verify"), user["id"])
+        self.assertIsNone(auth.consume_email_token(token, "verify"))  # 一次性
+        token2 = auth.create_email_token(user["id"], "reset")
+        past = (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(timespec="seconds")
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE email_tokens SET expires_at = ? WHERE token_hash = ?",
+                         (past, hashlib.sha256(token2.encode()).hexdigest()))
+        self.assertIsNone(auth.consume_email_token(token2, "reset"))  # 过期
+
+    def test_forgot_and_reset_password_flow(self) -> None:
+        user = auth.register("lost@example.com", "old-password-1", username="lostone")
+        old_token = auth.create_session(user["id"])  # 重置后应被吊销
+        sent: dict = {}
+        with patch.dict(os.environ, self.MAIL_ENV), patch.object(
+            auth.mailer, "send_mail", side_effect=self._capture_mail(sent)
+        ):
+            # 未知邮箱同样返回 ok,不泄露账号是否存在
+            ok = auth.forgot_password_endpoint(
+                {"email": "nobody@example.com"}, _FakeRequest(host="127.0.0.1")
+            )
+            self.assertTrue(ok["ok"])
+            self.assertEqual(sent, {})  # 未发信
+            ok = auth.forgot_password_endpoint(
+                {"email": "lost@example.com"}, _FakeRequest(host="127.0.0.1")
+            )
+        self.assertTrue(ok["ok"])
+        m = re.search(r"#v=reset:([A-Za-z0-9_-]+)", sent["html"])
+        self.assertIsNotNone(m)
+        # 密码过短 400
+        with self.assertRaises(HTTPException) as ctx:
+            auth.reset_password_endpoint(
+                {"token": m.group(1), "password": "short"},
+                _FakeRequest(host="127.0.0.1"),
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        result = auth.reset_password_endpoint(
+            {"token": m.group(1), "password": "new-password-2"},
+            _FakeRequest(host="127.0.0.1"),
+        )
+        self.assertTrue(result["ok"])
+        # 旧会话全部吊销
+        self.assertIsNone(auth.current_user(old_token))
+        # 新密码可登录,旧密码失效
+        self.assertIsNotNone(auth.login("lost@example.com", "new-password-2"))
+        self.assertIsNone(auth.login("lost@example.com", "old-password-1"))
+        # 令牌一次性
+        with self.assertRaises(HTTPException) as ctx:
+            auth.reset_password_endpoint(
+                {"token": m.group(1), "password": "another-pass-3"},
+                _FakeRequest(host="127.0.0.1"),
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_bootstrap_admin_promoted_only_after_verification(self) -> None:
+        """引导管理员:开启邮箱验证后,注册阶段不提权,验证通过才提权。"""
+        with patch.dict(os.environ, self.MAIL_ENV), patch.object(
+            auth, "BOOTSTRAP_EMAIL", "boss@test.local"
+        ):
+            user = auth.register("boss@test.local", "password123", username="bigboss")
+            self.assertEqual(user["role"], "user")
+            # 启动补角色也只认已验证用户
+            self.assertIsNone(auth.bootstrap_admin())
+            token = auth.create_email_token(user["id"], "verify")
+            verified = auth.verify_email(token)
+        self.assertEqual(verified["role"], "admin")
+        with patch.object(auth, "BOOTSTRAP_EMAIL", "boss@test.local"):
+            self.assertEqual(auth.bootstrap_admin()["role"], "admin")
 
 
 class RateLimitTest(unittest.TestCase):

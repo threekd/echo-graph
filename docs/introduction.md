@@ -101,8 +101,8 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
 或 deploy.sh 自动备份,异地备份方案见 `to-do.md` 待办)。
 
 > 星云工坊对**所有登录用户**开放:作者/作品/涟漪三个 Tab 管理**自己的星云**
-> (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册即自动获得
-> admin 角色,其「自己的星云」即其个人星云,并可额外使用「日志 / 快照 / 用户」
+> (`/api/me/*`,仅本人可见);`ADMIN_BOOTSTRAP_EMAIL`(在 `.env` 配置)注册(开启邮箱
+> 验证时须验证通过)即自动获得 admin 角色,其「自己的星云」即其个人星云,并可额外使用「日志 / 快照 / 用户」
 > 平台级 Tab(`/api/admin/*`)。`?admin` / `#v=admin` 深链需先登录。
 > 所有登录用户可在星云工坊页导出自己星云的三张表为 CSV zip(「导出 CSV」按钮)。
 
@@ -113,8 +113,16 @@ cd frontend && pnpm test                          # 前端单元测试(Vitest)
   **昵称**(可选,展示用);公开展示名优先昵称、其次用户名,不再暴露邮箱。
   用户名是系统标识,**不在个人资料中展示、用户不可自行修改**。
 
-- 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me` / `GET /api/auth/config`
+- 接口:`POST /api/auth/register` / `POST /api/auth/login` / `POST /api/auth/logout` /
+  `GET /api/auth/me` / `GET /api/auth/config` / `POST /api/auth/verify-email` /
+  `POST /api/auth/resend-verification` / `POST /api/auth/forgot-password` /
+  `POST /api/auth/reset-password`
 - 资料接口:`PATCH /api/auth/me`(支持 `nickname` / `bio` / `space_visibility` 修改;用户名不可修改)
+- 邮箱验证与密码找回:`.env` 配置 `MAILER=api`(阿里云邮件推送 DirectMail,见
+  `deploy/DEPLOY.md` 0.5 节)或 `MAILER=smtp` 后,`EMAIL_VERIFY_REQUIRED=1` 时新注册
+  用户需点击邮件验证链接才能登录(登录弹窗可重发);登录页「忘记密码?」通过邮件
+  深链 `#v=reset:TOKEN` 重置密码,重置后自动吊销该用户全部会话。引导管理员在邮箱
+  验证通过后才获得 admin 角色(未开启验证时保持注册即提权)。
 - 环境变量:`.env` 配置 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`
   (未配置密钥时注册默认失败 fail-closed,仅本地开发可设
   `TURNSTILE_ALLOW_SKIP=1` 临时跳过);HTTPS 部署时设置 `COOKIE_SECURE=1`

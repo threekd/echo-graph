@@ -14,8 +14,9 @@
 - **VIP**:`users.vip` 是布尔标记(0/1,schema v26,`app/db_sqlite.py:635-643`),不是独立角色;
   仅由 admin 通过用户管理接口维护(`app/admin.py:119-127`)。
 - **引导管理员**:`.env` 配置 `ADMIN_BOOTSTRAP_EMAIL` 的邮箱注册时自动获得 `admin` 角色
-  (首个管理员引导机制,`app/auth.py` `bootstrap_admin`);官方图谱/默认视图概念
-  已移除,其星云与其他用户星云语义一致。
+  (首个管理员引导机制,`app/auth.py` `bootstrap_admin`);开启邮箱验证
+  (`EMAIL_VERIFY_REQUIRED=1`)时改为**验证通过后提权**,防止抢先注册提权;
+  官方图谱/默认视图概念已移除,其星云与其他用户星云语义一致。
 - **游客**:未登录(无会话 Cookie)。
 
 ## 2. 能力 × 角色总表

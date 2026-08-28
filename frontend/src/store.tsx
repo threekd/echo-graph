@@ -41,6 +41,9 @@ export interface PanelState {
 
 export type ToastKind = "success" | "info" | "error";
 
+// 登录弹窗的视图模式:登录 / 注册 / 忘记密码 / 重置密码(重置由邮件深链带入 token)
+export type AuthMode = "login" | "register" | "forgot" | "reset";
+
 export interface ToastPayload {
   msg: string;
   kind: ToastKind;
@@ -72,6 +75,8 @@ export interface AppState {
   opsOpen: boolean; // 独立运维管理窗口(日志/快照,仅 admin)
   contributeOpen: boolean; // "点亮星空(添加到我的星云)"弹窗
   authOpen: boolean; // 登录/注册弹窗
+  authMode: AuthMode; // 登录弹窗当前视图(忘记密码/重置密码也复用此弹窗)
+  authToken: string | null; // 密码重置深链携带的一次性令牌(#v=reset:TOKEN)
   user: AuthUser | null; // 当前登录用户(未登录为 null)
   space: Space; // 当前浏览空间:mine(我的星云) | "space:<userId>"(星际跃迁)
   spaceOwner: string; // 数据源显示:我的星云/跃迁星云为账号
@@ -102,7 +107,7 @@ export type AppAction =
   | { type: "SET_USER_ADMIN"; open: boolean }
   | { type: "SET_OPS"; open: boolean }
   | { type: "SET_CONTRIBUTE"; open: boolean }
-  | { type: "SET_AUTH"; open: boolean }
+  | { type: "SET_AUTH"; open: boolean; mode?: AuthMode; token?: string | null }
   | { type: "SET_USER"; user: AuthUser | null }
   | { type: "SET_SPACE"; space: Space }
   | { type: "SET_SPACE_OWNER"; owner: string }
@@ -135,6 +140,8 @@ export const initialState: AppState = {
   opsOpen: false,
   contributeOpen: false,
   authOpen: false,
+  authMode: "login",
+  authToken: null,
   user: null,
   space: "mine",
   spaceOwner: "我的星云",
@@ -191,7 +198,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_CONTRIBUTE":
       return { ...state, contributeOpen: action.open };
     case "SET_AUTH":
-      return { ...state, authOpen: action.open };
+      return {
+        ...state,
+        authOpen: action.open,
+        authMode: action.mode || "login",
+        authToken: action.token || null,
+      };
     case "SET_USER":
       return { ...state, user: action.user || null };
     case "SET_SPACE":

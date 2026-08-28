@@ -340,6 +340,30 @@ th.sortable.active .sort-icon {
   font-size: 12px;
   color: var(--muted);
 }
+.auth-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.auth-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8fb6ff;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.auth-link:hover {
+  color: #c4d9ff;
+}
+.auth-notice {
+  color: #9ee6a8;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .auth-error {
   color: #ffb0b0;
   font-size: 12px;

@@ -31,6 +31,43 @@
 5. **书籍导入上传大小**:nginx 模板已内置 `client_max_body_size 20m`(与后端
    `MAX_BOOK_BYTES` 一致);若手动配置 nginx,需同步添加该指令,否则 >1MB 的
    电子书会被 nginx 以 413 拒绝。
+6. **邮件服务(可选但建议)**:注册邮箱验证与「忘记密码」依赖邮件送达。推荐
+   阿里云邮件推送 DirectMail(见「0.5 邮件服务配置」),生产设置
+   `EMAIL_VERIFY_REQUIRED=1` 后,新注册用户必须先验证邮箱才能登录,引导管理员
+   也会在验证通过后才获得 admin 角色(杜绝抢先注册提权)。
+
+## 0.5 邮件服务配置(阿里云邮件推送 DirectMail)
+
+新加坡 VPS 可直接使用阿里云邮件推送:API 与 SMTP 均支持国际站区域
+(`ap-southeast-1`,无需国内 ICP 备案;大陆区域 `cn-hangzhou` 的发信域名需备案)。
+ECS 默认封禁 25 端口出站,不影响本方案的 API(HTTPS 443)与 SMTP 465/587。
+
+配置步骤:
+
+1. 阿里云控制台开通「邮件推送」,添加**发信域名**并完成 DNS 验证
+   (SPF/DKIM 记录),再创建**发信地址**(如 `noreply@你的域名`)。
+2. 创建 RAM 用户并授予 `AliyunDirectMailFullAccess`,生成 AccessKey。
+3. `.env` 填写(区域按 VPS 所在地选择):
+
+   ```bash
+   MAILER=api
+   SITE_BASE_URL=https://你的域名
+   EMAIL_VERIFY_REQUIRED=1
+   ALIYUN_DM_ACCESS_KEY_ID=...
+   ALIYUN_DM_ACCESS_KEY_SECRET=...
+   ALIYUN_DM_ACCOUNT_NAME=noreply@你的域名
+   ALIYUN_DM_REGION=ap-southeast-1   # 新加坡;大陆用 cn-hangzhou
+   ```
+
+4. 重启服务后查看日志确认「邮件服务已配置:MAILER=api」;用注册/找回密码实测
+   一封邮件。测试期可先 `EMAIL_VERIFY_REQUIRED=0` 避免误锁,确认送达后再开启。
+
+> `EMAIL_VERIFY_REQUIRED=1` 但未配置发送器时,注册接口 fail-closed 全部失败
+> (503),服务启动也会输出告警日志——这是有意的安全行为,防止产生永远收不到
+> 验证邮件、无法登录的孤儿账号。
+
+备用 SMTP 通道:`MAILER=smtp` + `SMTP_HOST/PORT/USER/PASS/FROM/TLS`(465 SSL
+或 587 STARTTLS),适合已有邮件服务商的场景。
 
 ## 1. 准备仓库
 
@@ -54,7 +91,7 @@ sudo bash deploy/setup-vps.sh litnebula.com <certbot邮箱>
 之后:
 
 ```bash
-sudo nano /opt/echo-graph/.env          # 填入 ADMIN_BOOTSTRAP_EMAIL(及可选的 TURNSTILE_* / COOKIE_SECURE)
+sudo nano /opt/echo-graph/.env          # 填入 ADMIN_BOOTSTRAP_EMAIL、TURNSTILE_* / COOKIE_SECURE,以及 0.5 节的邮件配置
 sudo systemctl start echo-graph
 curl https://litnebula.com/api/health    # 期望 {"status":"ok","store":"sqlite"}
 ```

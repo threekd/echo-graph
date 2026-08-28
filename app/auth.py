@@ -8,6 +8,9 @@
   按失败处理(fail-closed),避免生产漏配导致机器人可随意注册;仅本地开发
   用 TURNSTILE_ALLOW_SKIP=1 临时放行。
 - 限流:注册/登录按 IP 滑动窗口,复用 app.ratelimit(单 worker 精确)。
+- 邮箱验证与密码找回:可插拔邮件发送器(app/mailer.py,阿里云 DirectMail /
+  SMTP);EMAIL_VERIFY_REQUIRED=1 时新注册需点击邮件验证链接才能登录,
+  引导管理员在验证通过后才提权;忘记密码走一次性 reset 令牌,重置后吊销全部会话。
 - CSRF:SameSite=Lax 之外的补充防线由全局中间件(app/security.py)统一执行——
   所有状态变更请求(含本模块的 register/login/logout/PATCH /me)带 Origin 头时
   必须同源,否则 403;此处不再逐端点重复校验。
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import html
 import ipaddress
 import json
 import logging
@@ -30,7 +34,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app import db_sqlite
+from app import db_sqlite, mailer
 from app.ratelimit import client_ip, sliding_limited
 
 logger = logging.getLogger("echo_graph")
@@ -44,7 +48,13 @@ BOOTSTRAP_EMAIL = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
 # 每 IP 每小时注册 / 登录尝试上限(与贡献限流同一套进程内滑动窗口)
 REGISTER_LIMIT = 10
 LOGIN_LIMIT = 30
+VERIFY_LIMIT = 10
+RESEND_LIMIT = 5
+FORGOT_LIMIT = 5
+RESET_LIMIT = 10
 RATE_WINDOW_SECONDS = 3600.0
+# 邮箱验证/密码重置一次性令牌有效期(小时)
+TOKEN_TTL_HOURS = 24
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # 用户名:仅 ASCII 英文字母/数字/下划线,5-32 位;唯一性对 ASCII 大小写不敏感(DB 索引 COLLATE NOCASE)
@@ -83,12 +93,17 @@ def admin_user_id() -> str | None:
 
 
 def bootstrap_admin() -> dict | None:
-    """启动时执行引导:为 ADMIN_BOOTSTRAP_EMAIL 补 admin 角色(首个管理员引导)。"""
+    """启动时执行引导:为 ADMIN_BOOTSTRAP_EMAIL 补 admin 角色(首个管理员引导)。
+
+    开启邮箱验证(EMAIL_VERIFY_REQUIRED=1)时,只提权已通过邮箱验证的用户,
+    防止引导管理员邮箱被抢先注册后不经验证直接获得 admin 权限。
+    """
     if not BOOTSTRAP_EMAIL:
         return None
     with db_sqlite._write_lock, db_sqlite._db() as conn:
         row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (BOOTSTRAP_EMAIL,)
+            "SELECT * FROM users WHERE email = ? AND email_verified_at IS NOT NULL",
+            (BOOTSTRAP_EMAIL,),
         ).fetchone()
         if row is None:
             return None
@@ -120,6 +135,18 @@ def normalize_email(value: str) -> str:
 
 def validate_email(value: str) -> bool:
     return bool(EMAIL_RE.match(value)) and len(value) <= 254
+
+
+def email_verify_flag() -> bool:
+    """EMAIL_VERIFY_REQUIRED 开关原值(即使邮件服务未配置也返回 True)。"""
+    return os.getenv("EMAIL_VERIFY_REQUIRED", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def email_verify_required() -> bool:
+    """邮箱验证是否实际生效:开关打开且邮件发送器已配置。"""
+    return email_verify_flag() and mailer.mailer_configured()
 
 
 def validate_password(value: str) -> str | None:
@@ -229,6 +256,100 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _email_token_expires_at() -> str:
+    return (
+        dt.datetime.now(dt.UTC) + dt.timedelta(hours=TOKEN_TTL_HOURS)
+    ).isoformat(timespec="seconds")
+
+
+def create_email_token(user_id: str, purpose: str) -> str:
+    """为指定用户创建一次性邮件令牌(verify/reset),返回原始令牌。
+
+    库里只存 SHA-256 哈希;同一用户同用途的旧未用令牌作废(重发即失效)。
+    """
+    token = secrets.token_urlsafe(32)
+    now = _now()
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        # 顺手清理过期令牌,防止表无限增长
+        conn.execute("DELETE FROM email_tokens WHERE expires_at < ?", (now,))
+        conn.execute(
+            "DELETE FROM email_tokens WHERE user_id = ? AND purpose = ? AND used_at IS NULL",
+            (user_id, purpose),
+        )
+        conn.execute(
+            "INSERT INTO email_tokens (id, token_hash, user_id, purpose, expires_at, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (_new_id(), _token_hash(token), user_id, purpose, _email_token_expires_at(), now),
+        )
+    return token
+
+
+def consume_email_token(token: str, purpose: str) -> str | None:
+    """校验并消费一次性邮件令牌;成功返回 user_id,失败/过期/已用返回 None。"""
+    if not token:
+        return None
+    now = _now()
+    token_hash = _token_hash(token)
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM email_tokens"
+            " WHERE token_hash = ? AND purpose = ? AND used_at IS NULL AND expires_at >= ?",
+            (token_hash, purpose, now),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE email_tokens SET used_at = ? WHERE token_hash = ?", (now, token_hash)
+        )
+    return row["user_id"]
+
+
+def _verification_link(token: str) -> str:
+    return f"{mailer.site_base_url().rstrip('/')}/#v=verify:{token}"
+
+
+def _reset_link(token: str) -> str:
+    return f"{mailer.site_base_url().rstrip('/')}/#v=reset:{token}"
+
+
+def send_verification_email(user: dict) -> None:
+    """发送注册邮箱验证邮件(创建并写入一次性 verify 令牌)。"""
+    token = create_email_token(user["id"], "verify")
+    url = _verification_link(token)
+    subject = "验证你的邮箱 · Litnebula 回声图谱"
+    text = (
+        "欢迎加入 Litnebula 回声图谱!\n\n"
+        f"请点击以下链接完成邮箱验证({TOKEN_TTL_HOURS} 小时内有效):\n{url}\n\n"
+        "如非本人操作,请忽略本邮件。"
+    )
+    html_body = (
+        "<p>欢迎加入 Litnebula 回声图谱!</p>"
+        f'<p>请点击 <a href="{html.escape(url)}">此链接</a> 完成邮箱验证'
+        f"({TOKEN_TTL_HOURS} 小时内有效)。</p>"
+        "<p>如非本人操作,请忽略本邮件。</p>"
+    )
+    mailer.send_mail(user["email"], subject, text, html_body)
+
+
+def send_reset_email(user: dict) -> None:
+    """发送密码重置邮件(创建并写入一次性 reset 令牌)。"""
+    token = create_email_token(user["id"], "reset")
+    url = _reset_link(token)
+    subject = "重置密码 · Litnebula 回声图谱"
+    text = (
+        "我们收到了你的密码重置请求。\n\n"
+        f"请点击以下链接设置新密码({TOKEN_TTL_HOURS} 小时内有效):\n{url}\n\n"
+        "如非本人操作,请忽略本邮件,你的密码不会被修改。"
+    )
+    html_body = (
+        "<p>我们收到了你的密码重置请求。</p>"
+        f'<p>请点击 <a href="{html.escape(url)}">此链接</a> 设置新密码'
+        f"({TOKEN_TTL_HOURS} 小时内有效)。</p>"
+        "<p>如非本人操作,请忽略本邮件,你的密码不会被修改。</p>"
+    )
+    mailer.send_mail(user["email"], subject, text, html_body)
+
+
 def create_session(user_id: str) -> str:
     """创建会话并返回原始 token(仅此返回值可设置 Cookie)。"""
     token = secrets.token_urlsafe(32)
@@ -251,12 +372,27 @@ def delete_session(token: str | None) -> None:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
 
 
+def _user_payload(row) -> dict:
+    """用户行 → 接口返回的用户对象(me / login / 会话共用,字段口径一致)。"""
+    return {
+        "id": row["id"],
+        "email": row["email"],
+        "username": row["username"],
+        "nickname": row["nickname"],
+        "bio": row["bio"],
+        "role": row["role"],
+        "space_visibility": row["space_visibility"],
+        "vip": bool(row["vip"]),
+        "email_verified_at": row["email_verified_at"],
+    }
+
+
 def _user_from_session(conn, token: str | None) -> dict | None:
     if not token:
         return None
     row = conn.execute(
         "SELECT u.id, u.email, u.username, u.nickname, u.role, u.space_visibility,"
-        " u.bio, u.status, u.vip, s.expires_at"
+        " u.bio, u.status, u.vip, u.email_verified_at, s.expires_at"
         " FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ?",
         (_token_hash(token),),
@@ -268,16 +404,7 @@ def _user_from_session(conn, token: str | None) -> dict | None:
         return None
     if row["status"] != "active":
         return None
-    return {
-        "id": row["id"],
-        "email": row["email"],
-        "username": row["username"],
-        "nickname": row["nickname"],
-        "bio": row["bio"],
-        "role": row["role"],
-        "space_visibility": row["space_visibility"],
-        "vip": bool(row["vip"]),
-    }
+    return _user_payload(row)
 
 
 def current_user(token: str | None) -> dict | None:
@@ -341,7 +468,13 @@ def register(
         if taken:
             raise ValueError("用户名已被使用,请换一个")
         user_id = _new_id()
-        role = "admin" if is_bootstrap_email(email) else "user"
+        # 开启邮箱验证时,引导管理员在验证通过后提权(verify_email 内处理);
+        # 未开启时保持「注册即 admin」的旧引导语义。
+        role = (
+            "admin"
+            if is_bootstrap_email(email) and not email_verify_flag()
+            else "user"
+        )
         conn.execute(
             "INSERT INTO users (id, email, password_hash, username, nickname, bio, role,"
             " status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
@@ -356,6 +489,7 @@ def register(
         "role": role,
         "space_visibility": "public",
         "vip": False,
+        "email_verified_at": None,
     }
 
 
@@ -373,16 +507,7 @@ def login(identifier: str, password: str) -> dict | None:
         return None
     if not verify_password(password, row["password_hash"]):
         return None
-    return {
-        "id": row["id"],
-        "email": row["email"],
-        "username": row["username"],
-        "nickname": row["nickname"],
-        "bio": row["bio"],
-        "role": row["role"],
-        "space_visibility": row["space_visibility"],
-        "vip": bool(row["vip"]),
-    }
+    return _user_payload(row)
 
 
 # ---- HTTP 路由 ----
@@ -432,8 +557,36 @@ def register_endpoint(body: dict, request: Request, response: Response) -> dict:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _set_session_cookie(response, create_session(user["id"]))
-    return {"ok": True, "user": user}
+    requires_verification = False
+    if email_verify_flag():
+        if not mailer.mailer_configured():
+            # fail-closed:开关已打开但邮件服务未配置,回滚刚创建的用户并明确报错,
+            # 避免留下无法收到验证邮件、永远登录不了的孤儿账号。
+            _delete_user(user["id"])
+            raise HTTPException(
+                status_code=503,
+                detail="邮件服务未配置,暂时无法注册新账号,请联系管理员",
+            )
+        try:
+            send_verification_email(user)
+        except Exception as exc:  # noqa: BLE001 - 发送失败回滚并提示重试
+            logger.error("注册验证邮件发送失败:%s", exc)
+            _delete_user(user["id"])
+            raise HTTPException(
+                status_code=502, detail="验证邮件发送失败,请稍后再试"
+            ) from exc
+        requires_verification = True
+    if not requires_verification:
+        _set_session_cookie(response, create_session(user["id"]))
+    return {"ok": True, "user": user, "requiresVerification": requires_verification}
+
+
+def _delete_user(user_id: str) -> None:
+    """回滚注册失败时刚创建的用户(邮箱验证未开启时不会走到这里)。"""
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        conn.execute("DELETE FROM email_tokens WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
 @router.post("/login")
@@ -448,8 +601,134 @@ def login_endpoint(body: dict, request: Request, response: Response) -> dict:
     user = login(identifier, password)
     if user is None:
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
+    if email_verify_required() and not user.get("email_verified_at"):
+        raise HTTPException(status_code=403, detail="邮箱尚未验证,请先查收验证邮件")
     _set_session_cookie(response, create_session(user["id"]))
     return {"ok": True, "user": user}
+
+
+@router.post("/verify-email")
+def verify_email_endpoint(body: dict, request: Request, response: Response) -> dict:
+    """邮箱验证深链:消费一次性 verify 令牌,验证通过即登录。"""
+    ip = client_ip(request)
+    if sliding_limited(f"verify:{ip}", VERIFY_LIMIT, RATE_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="验证请求过于频繁,请稍后再试")
+    token = str((body or {}).get("token") or "")
+    user = verify_email(token)
+    if user is None:
+        raise HTTPException(status_code=400, detail="验证链接无效或已过期,请重新发送")
+    _set_session_cookie(response, create_session(user["id"]))
+    return {"ok": True, "user": user}
+
+
+def verify_email(token: str) -> dict | None:
+    """核心:消费 verify 令牌,置 email_verified_at;引导管理员同步提权。"""
+    user_id = consume_email_token(token, "verify")
+    if user_id is None:
+        return None
+    now = _now()
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ? AND status = 'active'", (user_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        if not row["email_verified_at"]:
+            conn.execute(
+                "UPDATE users SET email_verified_at = ?, updatedAt = ? WHERE id = ?",
+                (now, now, user_id),
+            )
+        # 引导管理员在邮箱验证通过后提权(未开启验证时注册阶段已提权,
+        # 这里保持幂等兜底)。
+        if is_bootstrap_email(row["email"]) and row["role"] != "admin":
+            conn.execute(
+                "UPDATE users SET role = 'admin', updatedAt = ? WHERE id = ?",
+                (now, user_id),
+            )
+    with db_sqlite._db() as conn:
+        fresh = conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    return _user_payload(fresh) if fresh else None
+
+
+@router.post("/resend-verification")
+def resend_verification_endpoint(body: dict, request: Request) -> dict:
+    """重发验证邮件(仅 EMAIL_VERIFY_REQUIRED 开启时有效;返回不区分账号是否存在)。"""
+    ip = client_ip(request)
+    if sliding_limited(f"resend:{ip}", RESEND_LIMIT, RATE_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="发送过于频繁,请稍后再试")
+    if not email_verify_flag():
+        return {"ok": True}
+    if not mailer.mailer_configured():
+        raise HTTPException(status_code=503, detail="邮件服务未配置,请联系管理员")
+    email = normalize_email((body or {}).get("email"))
+    if email:
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ? AND status = 'active'",
+                (email,),
+            ).fetchone()
+        if row and not row["email_verified_at"]:
+            try:
+                send_verification_email(dict(row))
+            except Exception as exc:  # noqa: BLE001 - 发送失败给出明确错误
+                logger.error("重发验证邮件失败:%s", exc)
+                raise HTTPException(
+                    status_code=502, detail="验证邮件发送失败,请稍后再试"
+                ) from exc
+    return {"ok": True}
+
+
+@router.post("/forgot-password")
+def forgot_password_endpoint(body: dict, request: Request) -> dict:
+    """忘记密码:向已注册邮箱发送重置链接;返回不区分账号是否存在。"""
+    ip = client_ip(request)
+    if sliding_limited(f"forgot:{ip}", FORGOT_LIMIT, RATE_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="发送过于频繁,请稍后再试")
+    if not mailer.mailer_configured():
+        raise HTTPException(status_code=503, detail="邮件服务未配置,请联系管理员")
+    email = normalize_email((body or {}).get("email"))
+    if email:
+        with db_sqlite._db() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ? AND status = 'active'",
+                (email,),
+            ).fetchone()
+        if row:
+            try:
+                send_reset_email(dict(row))
+            except Exception as exc:  # noqa: BLE001 - 发送失败给出明确错误
+                logger.error("密码重置邮件发送失败:%s", exc)
+                raise HTTPException(
+                    status_code=502, detail="重置邮件发送失败,请稍后再试"
+                ) from exc
+    return {"ok": True}
+
+
+@router.post("/reset-password")
+def reset_password_endpoint(body: dict, request: Request) -> dict:
+    """密码重置:消费一次性 reset 令牌,更新密码并吊销该用户全部会话。"""
+    ip = client_ip(request)
+    if sliding_limited(f"reset:{ip}", RESET_LIMIT, RATE_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="重置请求过于频繁,请稍后再试")
+    token = str((body or {}).get("token") or "")
+    password = str((body or {}).get("password") or "")
+    password_error = validate_password(password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+    user_id = consume_email_token(token, "reset")
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="重置链接无效或已过期,请重新申请")
+    password_hash = hash_password(password)
+    with db_sqlite._write_lock, db_sqlite._db() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, updatedAt = ? WHERE id = ?",
+            (password_hash, _now(), user_id),
+        )
+        # 重置密码后吊销全部会话(含可能已泄露的旧会话)
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    return {"ok": True}
 
 
 @router.post("/logout")

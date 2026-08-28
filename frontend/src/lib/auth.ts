@@ -9,6 +9,7 @@ export interface AuthUser {
   role: string;
   vip?: boolean; // VIP 标记(拥有 AI 书籍导入与本人 AI 草稿审核权限)
   space_visibility?: "public" | "private"; // 星云可见性(星际跃迁是否可访问)
+  email_verified_at?: string | null; // 邮箱验证时间(未验证为 null;未开启验证为注册时间)
 }
 
 export interface AuthConfig {
@@ -18,6 +19,7 @@ export interface AuthConfig {
 export interface AuthResult {
   user: AuthUser | null;
   error: string;
+  requiresVerification?: boolean; // 注册后需要先邮箱验证(未自动登录)
 }
 
 async function parseAuthResponse(r: Response): Promise<AuthResult> {
@@ -28,7 +30,11 @@ async function parseAuthResponse(r: Response): Promise<AuthResult> {
     /* 非 JSON 响应,保留 status 文案 */
   }
   if (r.ok) {
-    return { user: (data && data.user) || null, error: "" };
+    return {
+      user: (data && data.user) || null,
+      error: "",
+      requiresVerification: !!(data && data.requiresVerification),
+    };
   }
   return { user: null, error: (data && data.detail) || "请求失败(" + r.status + ")" };
 }
@@ -81,6 +87,42 @@ export async function login(email: string, password: string): Promise<AuthResult
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function verifyEmail(token: string): Promise<AuthResult> {
+  const r = await fetch("/api/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function resendVerification(email: string): Promise<AuthResult> {
+  const r = await fetch("/api/auth/resend-verification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function forgotPassword(email: string): Promise<AuthResult> {
+  const r = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseAuthResponse(r);
+}
+
+export async function resetPassword(token: string, password: string): Promise<AuthResult> {
+  const r = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
   });
   return parseAuthResponse(r);
 }

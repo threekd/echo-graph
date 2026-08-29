@@ -14,7 +14,7 @@ echo "==> 备份本地数据(历史目录、SQLite 权威库)"
 mkdir -p backups
 BK_FILE="backups/data-$(date +%Y%m%d-%H%M%S).tgz"
 BACKUP_DIRS=()
-for d in data/versions data/snapshots; do
+for d in data/versions; do
   if [[ -d "$d" ]]; then BACKUP_DIRS+=("$d"); fi
 done
 if [[ ${#BACKUP_DIRS[@]} -gt 0 ]]; then

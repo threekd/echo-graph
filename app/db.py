@@ -1,6 +1,6 @@
 """公开读取数据层:SQLite 为唯一权威,全部查询直接读 SQLite。
 
-Neo4j 查询层与 JSON 兜底(seed.json)已退役(见 docs/sqlite-migration.md);
+Neo4j 查询层与 JSON 兜底(seed.json)已退役(见 docs/migration/);
 软删除(deletedAt 非空)的行不进入任何读取结果。输出形状与旧 JsonStore 保持一致,
 前端无需感知存储层变化。
 """
@@ -15,6 +15,9 @@ from app import db_sqlite
 # 进程内读缓存:同一 DB 路径缓存活跃行(默认 3 秒,兜底外部进程写入);
 # admin 写入 / 整库重建 / 快照恢复会显式调用 invalidate_cache() 立即失效。
 _CACHE_TTL_SECONDS = 3.0
+# 缓存键数上限:超过后整体清空(防用户数增长时内存无限增长,与 ratelimit 同策略;
+# 清空只是短暂失去缓存,下次读取重建,不影响正确性)
+_MAX_CACHE_KEYS = 10_000
 _read_cache: dict[tuple[str, ...], tuple[float, tuple]] = {}
 
 
@@ -161,6 +164,8 @@ class SqliteStore:
         hit = _read_cache.get(key)
         if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
             return hit[1]
+        if len(_read_cache) > _MAX_CACHE_KEYS:
+            _read_cache.clear()
         owner_sql, owner_params = self._owner_clause()
         wa_sql, wa_params = self._owner_clause("w.")
         not_ai_draft = db_sqlite.ai_draft_clause(negate=True)

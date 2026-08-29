@@ -10,9 +10,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-import app.admin as admin
 import app.space as space
-from app import auth, db_sqlite
+from app import auth, db_sqlite, space_crud
 from app.db import SqliteStore
 from app.me import (
     my_create,
@@ -87,7 +86,7 @@ class SpaceIsolationTest(unittest.TestCase):
         # admin 空间与第三方空间均不可见(alice 的数据只属于 alice)
         self.assertEqual(SqliteStore(owner_id=self.admin["id"]).graph()["nodes"], [])
         self.assertEqual(SqliteStore(owner_id=self.bob["id"]).graph()["nodes"], [])
-        self.assertEqual(admin.get_data()["authors"], [])
+        self.assertEqual(space_crud.space_data(self.admin["id"])["authors"], [])
         # 第三方不可改(视为不存在,404)
         with self.assertRaises(HTTPException) as ctx:
             my_update("authors", aid, {"originalName": "B", "Name_CN": "篡改"}, user=self.bob)
@@ -121,8 +120,9 @@ class SpaceIsolationTest(unittest.TestCase):
         self.assertIn("未在作者表中找到", ctx.exception.detail)
 
     def test_admin_public_data_visible_but_not_in_user_spaces(self) -> None:
-        res = admin.create(
-            "authors", {"originalName": "策展人", "Name_CN": "公共作者"}
+        res = space_crud.create_row(
+            "authors", {"originalName": "策展人", "Name_CN": "公共作者"},
+            self.admin["id"], self.admin["email"],
         )
         aid = res["row"]["id"]
         self.assertEqual(res["row"]["reviewStatus"], "reviewed")  # admin 手动新增默认已审核(输入即确认)
@@ -232,7 +232,7 @@ class SpaceIsolationTest(unittest.TestCase):
         self.assertEqual(len(d["authors"]), 1)
         self.assertIn("warnings", d)
         self.assertIn("counts", d)
-        self.assertEqual(admin.get_data()["authors"], [])
+        self.assertEqual(space_crud.space_data(self.admin["id"])["authors"], [])
 
     def test_space_visibility_default_public_and_jump(self) -> None:
         self.assertEqual(self.alice["space_visibility"], "public")

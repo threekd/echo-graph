@@ -1,4 +1,4 @@
-/* 星云工坊页的类型定义(与后端 /api/admin/* 响应对齐)。 */
+/* 星云工坊页的类型定义(与后端 /api/me/* 响应对齐)。 */
 
 export type ReviewStatus = "draft" | "reviewed" | "rejected";
 export type Recommendation = "recommend" | "not_recommend";

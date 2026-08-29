@@ -32,6 +32,7 @@ from app.ai_assistant.tools import dedupe_check
 from app.auth import require_admin_or_vip
 from app.data_store import clean_row
 from app.dedupe_util import load_user_rows
+from app.entity_util import author_id_list, entity_label
 from app.space_crud import Kind, after_write, validate_row
 
 router = APIRouter(
@@ -47,18 +48,6 @@ def _own_space_scope(owner_id: str, prefix: str = "") -> tuple[str, tuple]:
     """上传者自己星云的 owner 过滤 SQL(所有用户一致,admin 无特殊口径)。"""
     col = f"{prefix}owner_id"
     return f"{col} = ?", (owner_id,)
-
-
-def _author_id_list(value) -> list[str]:
-    return [x.strip() for x in str(value or "").split(",") if x.strip()]
-
-
-def _label(kind: Kind, row: dict) -> str:
-    if kind == "authors":
-        return str(row.get("Name_CN") or row.get("originalName") or row.get("id") or "")
-    if kind == "works":
-        return str(row.get("Title_CN") or row.get("originalTitle") or row.get("id") or "")
-    return f"{row.get('source_work_id')} → {row.get('target_work_id')}"
 
 
 # ======================================================================
@@ -778,7 +767,7 @@ def _reuse_draft_row(
     )
     db_sqlite.audit(
         conn, "llm_reuse", kind, item_id,
-        f"复用{kind}草稿「{_label(kind, staging)}」→ #{reuse_id}"
+        f"复用{kind}草稿「{entity_label(kind, staging)}」→ #{reuse_id}"
         f"(原目标 {staging.get('published_to_id') or '无'};{detail_hint})",
         before=staging,
         after={**staging, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
@@ -865,7 +854,7 @@ def _publish_draft_entity(
         )
         db_sqlite.audit(
             conn, "llm_reuse", kind, draft["id"],
-            f"复用星云记录发布「{_label(kind, draft)}」→ #{reuse_id}",
+            f"复用星云记录发布「{entity_label(kind, draft)}」→ #{reuse_id}",
             before=draft,
             after={**draft, "published_to_id": reuse_id, "reviewStatus": "reviewed"},
             actor=actor,
@@ -879,11 +868,11 @@ def _publish_draft_entity(
     sqlite_store.insert_row(conn, kind, public_row, owner_id=admin_id, extra={"created_by": "llm"})
     if kind == "works":
         sqlite_store.set_work_authors(
-            conn, public_row["id"], _author_id_list(public_row.get("author_id"))
+            conn, public_row["id"], author_id_list(public_row.get("author_id"))
         )
     db_sqlite.audit(
         conn, "create", kind, public_row["id"],
-        f"AI 草稿发布「{_label(kind, public_row)}」",
+        f"AI 草稿发布「{entity_label(kind, public_row)}」",
         after=public_row,
         actor=actor,
     )
@@ -893,7 +882,7 @@ def _publish_draft_entity(
     )
     db_sqlite.audit(
         conn, "llm_publish", kind, draft["id"],
-        f"草稿「{_label(kind, draft)}」发布到自己的星云 → #{public_row['id']}",
+        f"草稿「{entity_label(kind, draft)}」发布到自己的星云 → #{public_row['id']}",
         before=draft,
         after={**draft, "published_to_id": public_row["id"], "reviewStatus": "reviewed"},
         actor=actor,
@@ -1090,7 +1079,7 @@ def reject_draft(
         )
         db_sqlite.audit(
             conn, "llm_reject", kind, item_id,
-            f"驳回草稿「{_label(kind, staging)}」",
+            f"驳回草稿「{entity_label(kind, staging)}」",
             before=staging,
             after={**staging, "reviewStatus": "rejected"},
             actor=user["email"],
@@ -1117,7 +1106,7 @@ def reopen_draft(
         )
         db_sqlite.audit(
             conn, "llm_reopen", kind, item_id,
-            f"重开草稿「{_label(kind, staging)}」",
+            f"重开草稿「{entity_label(kind, staging)}」",
             before=staging,
             after={**staging, "reviewStatus": "draft"},
             actor=user["email"],
@@ -1159,10 +1148,10 @@ def edit_draft(
         if status == 0:
             raise HTTPException(status_code=404, detail=f"未找到草稿:{item_id}")
         if kind == "works":
-            sqlite_store.set_work_authors(conn, item_id, _author_id_list(merged.get("author_id")))
+            sqlite_store.set_work_authors(conn, item_id, author_id_list(merged.get("author_id")))
         db_sqlite.audit(
             conn, "update", kind, item_id,
-            f"编辑草稿「{_label(kind, merged)}」",
+            f"编辑草稿「{entity_label(kind, merged)}」",
             before=staging,
             after=merged,
             actor=user["email"],

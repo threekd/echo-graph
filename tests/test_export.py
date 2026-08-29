@@ -1,4 +1,4 @@
-"""数据管理页「导出 CSV」端点测试(/api/me/export、/api/admin/export)。"""
+"""星云工坊「导出 CSV」端点测试(/api/me/export,所有登录用户同一实现)。"""
 
 from __future__ import annotations
 
@@ -98,19 +98,17 @@ class ExportTest(unittest.TestCase):
         _, parsed = self._zip_names_and_csv(self.client.get("/api/me/export"))
         self.assertEqual(len(parsed["authors.csv"]), 1)  # 只有自己的作者
 
-    def test_admin_export_forbidden_for_normal_user(self) -> None:
-        self._login("user@test.local", "user-password-123")
-        resp = self.client.get("/api/admin/export")
-        self.assertEqual(resp.status_code, 403)
-
-    def test_admin_export_public_space(self) -> None:
+    def test_admin_export_uses_me_endpoint(self) -> None:
+        """admin 导出走 /api/me/export(与普通用户同一实现);旧 /api/admin/export 已移除。"""
         self._login(self.ADMIN, "admin-password-123")
-        resp = self.client.get("/api/admin/export")
+        resp = self.client.get("/api/me/export")
         names, parsed = self._zip_names_and_csv(resp)
         self.assertEqual(names, ["authors.csv", "edges.csv", "works.csv"])
         # admin 空间无数据(用户行归属 user),导出只有表头
         self.assertEqual(parsed["authors.csv"], [])
         self.assertEqual(parsed["works.csv"], [])
+        self._login("user@test.local", "user-password-123")
+        self.assertEqual(self.client.get("/api/admin/export").status_code, 404)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/*.local
 
-# 数据:保留 data/export/*.csv 导出产物(git 审计/传输);忽略自动生成的快照/版本备份
+# 数据:忽略自动生成的快照/版本备份与导入产物(权威库是 data/echo-graph.db,整库快照在 backups/)
 data/versions/
 data/snapshots/
 data/echo-graph.db*

@@ -1,20 +1,23 @@
-"""数据管理 API(admin 角色):admin 自己星云三张表的增删改查、软删除、审计、快照。
+"""平台级管理 API(admin 角色):用户管理、审计、快照、AI 草稿与书籍导入。
 
 鉴权:admin 角色登录态(httpOnly Cookie),不再使用 ADMIN_TOKEN。
-写路径复用 app/space_crud(owner=当前 admin);公共星云/官方图谱概念已于
-2026-08-28 移除,admin 星云与其他用户星云在数据语义上完全一致。
+星云工坊(作者/作品/涟漪的 CRUD 与 CSV 导出)对**所有登录用户**统一走
+`/api/me/*`(admin 也是普通用户,同一套实现,见 app/me.py 与 app/space_crud.py);
+公共星云/官方图谱概念已于 2026-08-28 移除,admin 星云与其他用户星云在
+数据语义上完全一致。本模块只保留平台级能力:
+- `/api/admin/users` / `/api/admin/audit` / `/api/admin/backups`
+- `/api/admin/llm/*`(AI 草稿审核,见 app/llm_review.py)
+- `/api/admin/import-book`(书籍导入,见 app/book_import.py)
 """
 
 from __future__ import annotations
 
-import datetime as dt
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app import data_store, db_sqlite, sqlite_store
+from app import db_sqlite, sqlite_store
 from app.auth import (
     admin_user_id,
     bootstrap_admin,
@@ -24,15 +27,6 @@ from app.auth import (
 )
 from app.backups import create_snapshot, list_snapshots, restore_snapshot
 from app.db import invalidate_cache
-from app.space_crud import (
-    Kind,
-    create_row,
-    delete_row,
-    permanent_delete_row,
-    restore_row,
-    space_data,
-    update_row,
-)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -49,15 +43,6 @@ def _admin_context(user) -> dict:
     if admin is None:
         raise HTTPException(status_code=401, detail="未登录")
     return {"id": admin, "email": bootstrap_email(), "role": "admin"}
-
-
-@router.get("/data")
-def get_data(
-    include_deleted: bool = Query(True, description="是否包含软删除行(前端按需拉取)"),
-    user: dict | None = Depends(require_admin),  # noqa: B008
-) -> dict:
-    admin = _admin_context(user)
-    return space_data(admin["id"], include_deleted)
 
 
 @router.get("/backups")
@@ -90,52 +75,6 @@ def admin_restore(body: dict) -> dict:
     bootstrap_admin()  # 快照恢复后兜底为引导管理员补 admin 角色
     invalidate_cache()
     return result
-
-
-@router.get("/export")
-def admin_export(user: dict | None = Depends(require_admin)) -> Response:  # noqa: B008
-    """导出 admin 自己星云三张表为 CSV zip(数据管理页「导出 CSV」按钮)。"""
-    admin = _admin_context(user)
-    buf = data_store.space_csv_zip(admin["id"])
-    filename = f"echo-graph-export-{dt.datetime.now(dt.UTC).strftime('%Y%m%d-%H%M%S')}.zip"
-    return Response(
-        buf.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.post("/{kind}")
-def create(kind: Kind, row: dict, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    return create_row(kind, row, admin["id"], admin["email"])
-
-
-@router.put("/{kind}/{item_id}")
-def update(
-    kind: Kind, item_id: str, row: dict, user: dict | None = Depends(require_admin)  # noqa: B008
-) -> dict:
-    admin = _admin_context(user)
-    return update_row(kind, item_id, row, admin["id"], admin["email"])
-
-
-@router.delete("/{kind}/{item_id}")
-def delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    return delete_row(kind, item_id, admin["id"], admin["email"])
-
-
-@router.post("/{kind}/{item_id}/restore")
-def restore(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    admin = _admin_context(user)
-    return restore_row(kind, item_id, admin["id"], admin["email"])
-
-
-@router.delete("/{kind}/{item_id}/permanent")
-def permanent_delete(kind: Kind, item_id: str, user: dict | None = Depends(require_admin)) -> dict:  # noqa: B008
-    """永久删除一条已软删除的行(物理删除,不可恢复),级联清理引用。"""
-    admin = _admin_context(user)
-    return permanent_delete_row(kind, item_id, admin["id"], admin["email"])
 
 
 @router.post("/users/{user_id}/vip")

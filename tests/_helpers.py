@@ -6,9 +6,53 @@ rewrite_all 原位于 app/sqlite_store.py(生产模块),仅被测试调用,
 
 from __future__ import annotations
 
-from app import db_sqlite
+from app import auth, db_sqlite, space_crud
 from app.db import invalidate_cache
 from app.sqlite_store import AUTHOR_COLS, EDGE_COLS, WORK_COLS, _norm_row
+
+
+class AdminCrudProxy:
+    """已移除的 app.admin 星云 CRUD 端点的测试替身。
+
+    旧端点只是把「当前 admin 用户」透传给 space_crud(见 app/me.py 同一套
+    实现);这里每次调用实时解析引导管理员,与旧 `_admin_context` 的回退
+    语义一致(测试 setUp 已注册 ADMIN_BOOTSTRAP_EMAIL)。
+    """
+
+    def _ctx(self) -> tuple[str, str]:
+        admin_id = auth.admin_user_id()
+        if admin_id is None:
+            raise AssertionError("测试需要先注册引导管理员(ADMIN_BOOTSTRAP_EMAIL)")
+        return admin_id, auth.bootstrap_email()
+
+    def create(self, kind: str, row: dict) -> dict:
+        owner, actor = self._ctx()
+        return space_crud.create_row(kind, row, owner, actor)
+
+    def update(self, kind: str, item_id: str, row: dict) -> dict:
+        owner, actor = self._ctx()
+        return space_crud.update_row(kind, item_id, row, owner, actor)
+
+    def delete(self, kind: str, item_id: str) -> dict:
+        owner, actor = self._ctx()
+        return space_crud.delete_row(kind, item_id, owner, actor)
+
+    def restore(self, kind: str, item_id: str) -> dict:
+        owner, actor = self._ctx()
+        return space_crud.restore_row(kind, item_id, owner, actor)
+
+    def permanent_delete(self, kind: str, item_id: str) -> dict:
+        owner, actor = self._ctx()
+        return space_crud.permanent_delete_row(kind, item_id, owner, actor)
+
+    def get_data(self, include_deleted: bool = True) -> dict:
+        owner, _ = self._ctx()
+        return space_crud.space_data(owner, include_deleted)
+
+
+def admin_crud() -> AdminCrudProxy:
+    """返回绑定引导管理员的 space_crud 代理(替代已移除的 app.admin CRUD 端点)。"""
+    return AdminCrudProxy()
 
 
 def rewrite_all(author_rows, work_rows, edge_rows) -> None:

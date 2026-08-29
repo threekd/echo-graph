@@ -34,6 +34,7 @@ from app.ai_assistant.tools import dedupe_check  # noqa: E402
 from app.ai_assistant.tools.common import now_iso  # noqa: E402
 from app.data_store import clean_row  # noqa: E402
 from app.dedupe_util import load_rows  # noqa: E402
+from app.entity_util import author_id_list  # noqa: E402
 from app.space_crud import validate_row  # noqa: E402
 
 SCHEMA_VERSION = 1
@@ -673,10 +674,6 @@ def build_batch(
         "items": items,
     }
 
-def _author_id_list(value) -> list[str]:
-    return [x.strip() for x in str(value or "").split(",") if x.strip()]
-
-
 def _stage_row(conn, kind: str, payload: dict, owner: str) -> str:
     """在指定空间创建一条 AI 草稿行,返回新行 id。
 
@@ -694,7 +691,7 @@ def _stage_row(conn, kind: str, payload: dict, owner: str) -> str:
         raise ValueError("；".join(errors))
     sqlite_store.insert_row(conn, kind, row, owner_id=owner, extra={"created_by": "llm"})
     if kind == "works":
-        sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
+        sqlite_store.set_work_authors(conn, row["id"], author_id_list(row.get("author_id")))
     db_sqlite.audit(
         conn, "llm_ingest", kind, row["id"],
         f"AI 提取草稿入库「{row.get('Name_CN') or row.get('Title_CN') or row['id']}」",

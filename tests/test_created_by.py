@@ -9,8 +9,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-import app.admin as admin
-from app import auth, db_sqlite
+from app import auth, db_sqlite, space_crud
 from app.me import my_create, my_update
 
 
@@ -28,7 +27,10 @@ class CreatedByTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def test_admin_space_defaults_curated(self) -> None:
-        row = admin.create("authors", {"originalName": "A", "Name_CN": "公共作者"})["row"]
+        row = space_crud.create_row(
+            "authors", {"originalName": "A", "Name_CN": "公共作者"},
+            self.admin["id"], self.admin["email"],
+        )["row"]
         self.assertEqual(row["created_by"], "curated")
 
     def test_user_space_defaults_user(self) -> None:
@@ -63,8 +65,9 @@ class CreatedByTest(unittest.TestCase):
 
     def test_admin_explicit_draft_forced_reviewed(self) -> None:
         """手工新增一律 reviewed,admin 不做特殊化:显式传 draft 也被回正。"""
-        row = admin.create(
-            "authors", {"originalName": "E", "Name_CN": "官方草稿", "reviewStatus": "draft"}
+        row = space_crud.create_row(
+            "authors", {"originalName": "E", "Name_CN": "官方草稿", "reviewStatus": "draft"},
+            self.admin["id"], self.admin["email"],
         )["row"]
         self.assertEqual(row["reviewStatus"], "reviewed")
 
@@ -121,14 +124,23 @@ class CreatedByTest(unittest.TestCase):
         self.assertIn("updatedAt", ctx.exception.detail)
 
     def test_edge_created_by_in_both_spaces(self) -> None:
-        w1 = admin.create("works", {"language": "zh", "originalTitle": "甲", "Title_CN": "甲"})["row"]
-        w2 = admin.create("works", {"language": "zh", "originalTitle": "乙", "Title_CN": "乙"})["row"]
-        edge = admin.create("edges", {
-            "source_work_id": w1["id"],
-            "target_work_id": w2["id"],
-            "evidence": "公共提及",
-            "evidenceSource": "第一章",
-        })["row"]
+        w1 = space_crud.create_row(
+            "works", {"language": "zh", "originalTitle": "甲", "Title_CN": "甲"},
+            self.admin["id"], self.admin["email"],
+        )["row"]
+        w2 = space_crud.create_row(
+            "works", {"language": "zh", "originalTitle": "乙", "Title_CN": "乙"},
+            self.admin["id"], self.admin["email"],
+        )["row"]
+        edge = space_crud.create_row(
+            "edges", {
+                "source_work_id": w1["id"],
+                "target_work_id": w2["id"],
+                "evidence": "公共提及",
+                "evidenceSource": "第一章",
+            },
+            self.admin["id"], self.admin["email"],
+        )["row"]
         self.assertEqual(edge["created_by"], "curated")
 
         wa = my_create("works", {"language": "zh", "originalTitle": "丙", "Title_CN": "丙"}, user=self.alice)["row"]

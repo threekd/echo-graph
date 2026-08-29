@@ -1,7 +1,8 @@
 # Litnebula 运维手册
 
-> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与 [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套。
-> 部署上线流程见 DEPLOY.md;本文覆盖日常运维、备份恢复、用户数据迁移与故障排查。
+> 适用范围:单机部署(`nginx → uvicorn(单 worker) → SQLite`),与
+> [`../deploy/DEPLOY.md`](../deploy/DEPLOY.md) 配套;上线流程见 DEPLOY.md,
+> 本文覆盖日常运维、备份恢复、用户数据迁移与故障排查。
 
 ## 1. 架构与数据全景
 
@@ -12,22 +13,20 @@
 备份:整库快照 backups/echo-graph-*.db(sqlite3 .backup)+ 管理端「快照」恢复
 ```
 
-数据存放位置:
-
 | 数据 | 位置 | 是否进 git | 说明 |
 |---|---|---|---|
-| 权威库(全部数据) | `data/echo-graph.db` | 否 | 全部用户星云(含 admin)/ 审计日志 / 用户与会话;schema 迁移启动时自动执行 |
+| 权威库(全部数据) | `data/echo-graph.db` | 否 | 全部用户星云 / 审计 / 用户与会话;schema 迁移启动时自动执行 |
 | 整库快照 | `backups/echo-graph-*.db` | 否 | 管理端快照 + `deploy.sh` 自动备份 |
-| 历史快照 | `data/versions/` | 否 | 只读恢复来源(旧机制遗留,新代码不再写入;**当前环境不存在此目录,仅有旧机器残留时才有内容**) |
+| 历史快照 | `data/versions/` | 否 | 只读恢复来源(旧机制遗留,新代码不再写入;通常不存在) |
 | 部署备份包 | `backups/data-*.tgz` | 否 | `deploy.sh` 对数据目录的打包 |
 
 关键语义:
 
-- **不存在默认视图/官方图谱(2026-08-28 移除)**:功能栏「公共星云」标签、`/api/*`
-  默认视图端点与 `PUBLIC_REVIEWED_ONLY` 均已下线;登录用户首页即自己的星云
-  (`/api/me/*`),游客无默认图谱,可通过星际跃迁浏览公开星云(`/api/space/*`)。
-- **用户星云 = `authors/works/edges` 中 `owner_id=用户id` 的行**,只存在 SQLite 中,不进 git。
-- 单 worker 是设计约束:限流(进程内滑动窗口)与写锁(`_write_lock`)都依赖单进程语义,不要增加 uvicorn worker。
+- **不存在默认视图/官方图谱**(2026-08-28 移除):登录用户首页即自己的星云
+  (`/api/me/*`),游客无默认图谱,经星际跃迁浏览公开星云(`/api/space/*`)。
+- **用户星云** = `authors/works/edges` 中 `owner_id=用户id` 的行,只存于 SQLite。
+- **单 worker 是设计约束**:限流(进程内滑动窗口)、读缓存与写锁(`_write_lock`)
+  都依赖单进程语义,不要增加 uvicorn worker。
 
 ## 2. 备份体系
 
@@ -35,13 +34,13 @@
 
 | 方式 | 覆盖范围 | 触发 | 保留 |
 |---|---|---|---|
-| 管理端快照(UI / API) | 整库(含用户星云) | 手动 | 最近 30 份(`SNAPSHOT_RETENTION`) |
+| 管理端快照(UI / API) | 整库 | 手动 | 最近 30 份(`SNAPSHOT_RETENTION`) |
 | `deploy.sh` | 整库 `.db` + 数据目录 `.tgz` | 每次更新部署 | 各 14 份 |
 | `scripts/prune_audit.py` | `audit_log` | cron(建议每日) | 默认保留 90 天 |
 
-### 2.2 手动备份(推荐 sqlite3 .backup)
+### 2.2 手动备份
 
-`.backup` 是 SQLite 官方一致性备份 API,不依赖 WAL 文件,可以在服务运行中执行:
+`.backup` 是 SQLite 官方一致性备份 API,可在服务运行中执行:
 
 ```bash
 mkdir -p backups
@@ -56,24 +55,15 @@ curl -X POST -b cookies.txt http://127.0.0.1:8000/api/admin/backups/create
 
 ### 2.3 `deploy.sh` 自动备份
 
-每次部署前自动执行:
-
-- `backups/data-<时间戳>.tgz`:打包**实际存在**的 `data/versions`、`data/snapshots`
-  (目录不存在时自动跳过;`data/export` CSV 备份层已于 2026-08-27 移除);
-- `backups/echo-graph-<时间戳>.db`:SQLite `.backup` 一致性快照;
-- 各自只保留最近 14 份,旧文件自动删除。
-
-建议把 `backups/` 定期同步到异地(rsync / rclone / 对象存储),否则单机磁盘故障等于没有备份。
+每次部署前自动执行:`backups/echo-graph-<时间戳>.db`(SQLite `.backup` 一致性快照)
++ `backups/data-<时间戳>.tgz`(打包实际存在的 `data/versions` 等数据目录),
+各自保留最近 14 份。建议把 `backups/` 定期同步到异地(rsync / rclone / 对象存储),
+否则单机磁盘故障等于没有备份。
 
 ### 2.4 备份验证(每月演练)
 
-备份是否可恢复必须定期验证,不能只看文件存在:
-
 ```bash
-# 完整性检查
 sqlite3 backups/echo-graph-<时间戳>.db "PRAGMA integrity_check;"
-
-# 行数核对
 sqlite3 backups/echo-graph-<时间戳>.db "SELECT 'authors', count(*) FROM authors
 UNION ALL SELECT 'works', count(*) FROM works
 UNION ALL SELECT 'edges', count(*) FROM edges
@@ -84,21 +74,16 @@ UNION ALL SELECT 'users', count(*) FROM users;"
 
 ### 3.1 可恢复快照来源
 
-管理端「运维管理 → 快照」Tab(日志/快照自 2026-08-26 起位于运维管理窗口;或
-`GET /api/admin/backups`)会列出两类:
+管理端「运维管理 → 快照」(或 `GET /api/admin/backups`)列出:
 
-- `db`:`backups/echo-graph-*.db`(当前实际来源);
-- `db`:`data/versions/<目录>/echo-graph.db` 历史库快照(旧机制遗留,**仅当该目录存在时**才会出现;
-  当前环境没有 `data/versions`,可恢复来源只有 `backups/` 下的 db 快照)。
+- `backups/echo-graph-*.db`(当前实际来源);
+- `data/versions/<目录>/echo-graph.db` 历史库快照(旧机制遗留,仅当目录存在时出现)。
 
 路径白名单:只允许 `backups/` 与 `data/versions/` 下的快照,防止任意文件覆盖。
-`data/versions/` 缺失时不影响任何功能——`list_snapshots` 对不存在的目录自动跳过。
 
-### 3.2 整库恢复(db 类型)
+### 3.2 整库恢复
 
-UI:运维管理 → 快照 → 选择 db 条目 → 恢复。
-
-API:
+UI:运维管理 → 快照 → 选择 db 条目 → 恢复。API:
 
 ```bash
 curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
@@ -108,66 +93,37 @@ curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
 
 语义与护栏:
 
-- 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 审计 / 会话一并回退);
+- 用 SQLite backup API 把快照内容**覆盖**当前库,回到快照时刻(用户星云 / 审计 /
+  会话一并回退);
 - 恢复前自动生成安全备份 `backups/echo-graph-pre-restore-<时间戳>.db`;
 - 恢复全程与所有写事务互斥,**恢复期间请勿编辑数据**;
-- 成功后自动清空读缓存;引导管理员角色由 `bootstrap_admin()` 在恢复后兜底补齐。
+- 成功后自动清空读缓存;引导管理员角色由 `bootstrap_admin()` 兜底补齐。
 
 ### 3.3 全新环境引导(不是恢复,谨慎!)
 
-服务首次启动会自动创建并迁移 SQLite schema(**空库**)。全新环境的数据需要从
-整库备份恢复:把 `backups/echo-graph-*.db` 放到目标机器后,用管理端「快照」恢复,
-或停服后直接替换 `data/echo-graph.db`(建议先跑 `PRAGMA integrity_check`)。
-跨机器的整库备份/恢复方案见 `to-do.md` 的「整库备份」待办。
+服务首次启动自动创建并迁移 SQLite schema(**空库**)。全新环境的数据需从整库备份
+恢复:把 `backups/echo-graph-*.db` 放到目标机器后,用管理端「快照」恢复,或停服后
+直接替换 `data/echo-graph.db`(建议先跑 `PRAGMA integrity_check`)。
 
-## 4. 用户数据的备份与导入(重点)
+## 4. 用户数据的备份与迁移
 
-用户数据 = 每个账号的个人星云(`authors/works/edges` 中 `owner_id=该用户` 的行)+ 用户表 / 会话。
-它们**只存在于 SQLite,不进 git**——代码仓库无法携带用户数据,备份必须走整库快照。
+用户数据 = 每个账号的个人星云 + 用户表 / 会话,只存在于 SQLite,**不进 git**。
 
-### 4.1 用户数据备份
+### 4.1 备份
 
-唯一可靠方式 = **整库快照**:
+唯一可靠方式 = **整库快照**(见 2.2)。单用户导出:星云工坊页「导出 CSV」按钮
+(`GET /api/me/export`,所有登录用户统一)。
 
-```bash
-# 推荐:SQLite .backup(一致性,可在线执行)
-sqlite3 data/echo-graph.db ".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'"
-```
+### 4.2 迁移场景
 
-或使用管理端快照 / `deploy.sh` 自动备份(见 2.2、2.3)。备份粒度是"全库",包含全部用户;
-单用户导出:登录后星云工坊页「导出 CSV」按钮,可把本人星云三张表打包为 zip
-(`GET /api/me/export`,admin 为 `GET /api/admin/export`)。
-
-### 4.2 用户数据导入
-
-按场景选择:
-
-**a) 整体回滚(最简单,覆盖全库)** —— 用 db 类型快照恢复(见 3.2)。适用于"整体回到某个时间点",
-代价是快照之后的所有变更(含其他用户数据)一并回退。
-
-**b) 单用户空间迁移** —— 把某个用户的数据从备份库复制进当前库(或另一个账号名下)。
-当前无内置接口,用 SQLite `ATTACH` 手动完成,示例见 4.3。
-
-**c) 单用户数据导出(给用户本人 / 审计)** —— 按 `owner_id` 查询即可,示例见 4.4。
+- **整体回滚(最简单)**:db 快照恢复(3.2),代价是快照后的变更一并回退;
+- **单用户空间迁移**:把某用户数据从备份库复制进当前库(或另一个账号名下),
+  无内置接口,用 SQLite `ATTACH` 手动完成,模板见 4.3;
+- **单用户数据导出(查看/审计)**:按 `owner_id` SELECT,见 4.4。
 
 ### 4.3 单用户空间迁移 SQL 模板
 
-操作前提(必须):
-
-1. 先对当前库做一次安全备份(`sqlite3 data/echo-graph.db ".backup ..."`);
-2. 低峰期 / 停服窗口执行,迁移期间建议暂停写操作;
-3. 迁移前后核对行数,迁移后抽查目标用户星云。
-
-先只读核对源备份库中该用户的数据量:
-
-```bash
-sqlite3 backups/echo-graph-<时间戳>.db "
-SELECT 'authors' AS kind, count(*) AS n FROM authors WHERE owner_id='<src_user_id>'
-UNION ALL SELECT 'works', count(*) FROM works WHERE owner_id='<src_user_id>'
-UNION ALL SELECT 'edges', count(*) FROM edges WHERE owner_id='<src_user_id>';"
-```
-
-在目标库执行迁移(把 `<src_user_id>` 的用户数据迁到 `<dst_user_id>` 名下):
+操作前提:先对当前库做安全备份;低峰期执行;迁移前后核对行数。
 
 ```sql
 ATTACH 'backups/echo-graph-<时间戳>.db' AS bak;
@@ -207,48 +163,32 @@ COMMIT;
 DETACH bak;
 ```
 
-迁移要点:
+要点:
 
-- 业务行 id 与用户 id 均为 UUID(v7),跨库冲突概率可忽略;`INSERT OR IGNORE` 兜底跳过已存在行;
-- **作品迁移必须同时迁移 `work_authors`**,否则作品关联作者丢失;
-- 涟漪边两端作品、作品关联作者必须同属目标空间——应用层 `validate_row` 拒绝跨空间引用,
-  手工 SQL 绕过校验时更要保证完整性;
-- 软删除行(`deletedAt` 非空)随行保留,读取层会自动过滤,无需特殊处理;
-- 目标用户不存在时,需先在目标库注册/创建该用户(users 表),否则会产生孤儿 `owner_id`。
-  注意:应用连接层开启了外键约束,但 **sqlite3 CLI 默认不开启外键检查**——手工 SQL 迁移不会
-  自动拦截,务必自行保证 `<dst_user_id>` 已存在。
+- 业务行 id 与用户 id 均为 UUID,跨库冲突概率可忽略;`INSERT OR IGNORE` 兜底;
+- **作品迁移必须同时迁移 `work_authors`**,否则关联作者丢失;
+- 涟漪两端作品、作品关联作者必须同属目标空间(应用层 `validate_row` 拒绝跨空间引用);
+- 软删除行随行保留,读取层自动过滤;
+- 目标用户不存在时需先在目标库创建(users 表),否则产生孤儿 `owner_id`;
+  **注意 sqlite3 CLI 默认不开启外键检查**,务必自行保证 `<dst_user_id>` 已存在。
 
 ### 4.4 单用户数据导出(SELECT 模板)
 
 ```bash
-sqlite3 data/echo-graph.db -header -csv "
-SELECT * FROM authors WHERE owner_id='<user_id>';" > user-authors.csv
-sqlite3 data/echo-graph.db -header -csv "
-SELECT * FROM works WHERE owner_id='<user_id>';" > user-works.csv
-sqlite3 data/echo-graph.db -header -csv "
-SELECT * FROM edges WHERE owner_id='<user_id>';" > user-edges.csv
+sqlite3 data/echo-graph.db -header -csv "SELECT * FROM authors WHERE owner_id='<user_id>';" > user-authors.csv
+sqlite3 data/echo-graph.db -header -csv "SELECT * FROM works WHERE owner_id='<user_id>';" > user-works.csv
+sqlite3 data/echo-graph.db -header -csv "SELECT * FROM edges WHERE owner_id='<user_id>';" > user-edges.csv
 ```
 
-导出仅供查看/审计;要完整迁移(含 `work_authors` 关联与用户账号)仍建议走 4.3 的整空间 SQL 迁移。
+导出仅供查看/审计;完整迁移(含 `work_authors` 与用户账号)走 4.3。
 
 ## 5. 日常运维清单
 
 ```bash
-# 健康检查(期望 {"status":"ok","store":"sqlite"})
-curl -fsS http://127.0.0.1:8000/api/health
-
-# 实时日志
-journalctl -u echo-graph -f
-
-# 最近日志
-journalctl -u echo-graph -e
-
-# 磁盘与备份目录
-du -sh data backups
-ls -lt backups | head -20
+curl -fsS http://127.0.0.1:8000/api/health   # 期望 {"status":"ok","store":"sqlite"}
+journalctl -u echo-graph -f                   # 实时日志
+du -sh data backups                           # 磁盘占用
 ```
-
-建议的例行任务:
 
 | 频率 | 任务 | 命令 |
 |---|---|---|
@@ -260,24 +200,24 @@ ls -lt backups | head -20
 
 ## 6. 更新 / 回滚
 
-- **日常更新**:`sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh`(自动备份 → `git pull --ff-only` → 装依赖 → 构建前端 → 重启 → 健康检查)。
-- **git pull 失败**:多为本地有未推送的提交或未提交改动;先提交推送再部署(`data/export` 已随 CSV 备份层移除,不再因此冲突)。
-- **代码回滚**:`git -C /opt/echo-graph checkout <旧commit> -- .` 后重新执行 `deploy.sh`(数据目录已由 deploy 自动备份)。
+- **日常更新**:`sudo -u echograph bash /opt/echo-graph/deploy/deploy.sh`
+  (自动备份 → `git pull --ff-only` → 装依赖 → 构建前端 → 重启 → 健康检查)。
+- **git pull 失败**:多为本地有未推送提交或未提交改动,先提交推送再部署。
+- **代码回滚**:`git -C /opt/echo-graph checkout <旧commit> -- .` 后重新执行
+  `deploy.sh`(数据目录已由 deploy 自动备份)。
 - **数据回滚**:整库用 db 快照恢复(3.2)。
 
 ## 7. 故障排查速查
 
 | 现象 | 排查思路 |
 |---|---|
-| 页面空图,`/api/health` 正常 | 未登录用户无默认图谱(空图属预期,需登录或星际跃迁);确认 `data/echo-graph.db` 存在且有数据;`journalctl -u echo-graph -e` |
-| 服务起不来 | `.env` 是否配置 `ADMIN_BOOTSTRAP_EMAIL`;uv/pnpm 路径;`uv run --frozen python -c "from app.main import app"` 做导入自检 |
-| git pull 报本地修改冲突 | 本地有未推送提交或未提交改动,先提交推送再部署 |
+| 页面空图,`/api/health` 正常 | 未登录用户无默认图谱(预期);确认 `data/echo-graph.db` 存在且有数据;看 `journalctl -u echo-graph -e` |
+| 服务起不来 | `.env` 是否配置 `ADMIN_BOOTSTRAP_EMAIL`;uv/pnpm 路径;`uv run --frozen python -c "from app.main import app"` 导入自检 |
 | 磁盘满 | WAL(`-wal`/`-shm`)与 `backups/` 是主要增长源;清理旧快照并异地转移 |
-| 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 的行数 |
-| AI 导入提交 500,日志报「创建上传目录失败:Permission denied」 | 服务账号对 git 检出目录不可写(常见于克隆/更新以 root 执行)。一次性修复:`sudo chown -R echograph:echograph /opt/echo-graph`;新版上传目录默认在 `data/imports`(服务账号可写),也可用 `IMPORT_DIR` 指向专用可写盘 |
-| 想导出单个用户数据 | 见 4.4(仅查看)或 4.3(完整迁移) |
-| 忘记密码/验证邮件发不出(「重置邮件发送失败」) | 看后端日志中 DirectMail 的 `Code/Message`(邮件器已透传):`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidMailAddress.NotFound` = 发信地址不在当前配置的区域(发信地址按区域隔离,`ALIYUN_DM_REGION` 必须与控制台创建地址的区域一致);核对 AccessKey 归属与 `ALIYUN_DM_ACCOUNT_NAME` |
-| 邮件进了 Gmail/QQ 垃圾箱 | 先看邮件头 `Authentication-Results` 是否 `spf=pass` / `dkim=pass` / `dmarc=pass`:不全则补 DNS 记录并确认控制台发信域名验证状态;全 pass 则是新域名/共享 IP 信誉冷启动——收件人标记「不是垃圾邮件」+ 加入联系人,检查链接是否被阿里云跟踪域名改写(可关跟踪或配自定义跟踪域名),保持少量真实事务邮件养 1~4 周 |
+| 恢复后数据不对 | 恢复前有 `echo-graph-pre-restore-*.db` 安全备份,可再恢复一次;核对 2.4 行数 |
+| AI 导入 500「创建上传目录失败:Permission denied」 | 服务账号对 git 检出目录不可写。一次性修复:`sudo chown -R echograph:echograph /opt/echo-graph`;新版上传目录默认在 `data/imports`(服务账号可写),也可用 `IMPORT_DIR` 指向专用可写盘 |
+| 忘记密码/验证邮件发不出 | 看后端日志中 DirectMail 的 `Code/Message`:`Forbidden` = AccessKey 无邮件推送权限或不属于开通邮件推送的账号;`InvalidMailAddress.NotFound` = 发信地址不在当前配置的区域(`ALIYUN_DM_REGION` 必须与控制台创建地址的区域一致) |
+| 邮件进 Gmail/QQ 垃圾箱 | 看邮件头 `Authentication-Results` 是否 `spf=pass`/`dkim=pass`/`dmarc=pass`:不全则补 DNS;全 pass 是新域名/共享 IP 信誉冷启动——收件人标记「不是垃圾邮件」+ 加入联系人,检查链接是否被阿里云跟踪域名改写,保持少量真实事务邮件养 1~4 周 |
 
 ## 8. 关键配置(.env)
 
@@ -285,31 +225,12 @@ ls -lt backups | head -20
 |---|---|---|
 | `ADMIN_BOOTSTRAP_EMAIL` | 引导管理员(首个管理员) | 必须配置 |
 | `COOKIE_SECURE` | HTTPS 下置 1 | 与证书配套 |
-| `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册默认失败(fail-closed) |
+| `TURNSTILE_*` | 注册人机验证 | 生产必须配置;未配置且未设 `TURNSTILE_ALLOW_SKIP=1` 时注册 fail-closed |
 | `TRUSTED_PROXIES` | 限流可信代理白名单 | 多级代理时逐级加入 |
-| `MAILER` | 邮件发送器(api = DirectMail / smtp) | 邮箱验证与忘记密码依赖;未配置时仅本地日志,相关接口 fail-closed(503) |
-| `ALIYUN_DM_*` | DirectMail AccessKey / 发信地址 / 区域 | `MAILER=api` 必填;`ALIYUN_DM_ACCOUNT_NAME` 填控制台创建的发信地址(不是随机账号),`ALIYUN_DM_REGION` 必须与发信地址所在区域一致;大陆区域发信域名需 ICP 备案,海外 VPS 用 `ap-southeast-1` |
+| `MAILER` | 邮件发送器(api = DirectMail / smtp) | 邮箱验证与忘记密码依赖;未配置时仅本地日志,相关接口 503 |
+| `ALIYUN_DM_*` | DirectMail AccessKey / 发信地址 / 区域 | `MAILER=api` 必填;`ACCOUNT_NAME` 填控制台创建的发信地址(不是随机账号),`REGION` 必须与发信地址所在区域一致;大陆区域需 ICP 备案,海外 VPS 用 `ap-southeast-1` |
 | `SMTP_*` | SMTP 备用通道 | `MAILER=smtp` 必填;465 SSL 或 587 STARTTLS |
 | `SITE_BASE_URL` | 邮件深链的外部站点地址 | 生产必须配置(如 `https://litnebula.com`) |
-| `EMAIL_VERIFY_REQUIRED` | 注册邮箱验证开关 | 生产建议 1;开启后新注册必须先验证邮箱,引导管理员验证后才提权 |
-| `LANDING_SPACE` | 游客落地星云(用户名,可选) | 游客打开首页自动进入该公开星云;用户名仅服务端配置,不出现在 URL/界面;目标星云未公开/已禁用时游客回退空图 |
-| `IMPORT_DIR` | AI 书籍导入上传临时目录(可选) | 缺省 `<项目>/data/imports`(服务账号可写);若数据盘挂在别处可指定,目录须服务账号可写 |
-
-## 9. 快速命令参考
-
-```bash
-# 备份
-sqlite3 data/echo-graph.db ".backup 'backups/full-$(date +%Y%m%d-%H%M%S).db'"
-
-# 整库恢复(管理端 API)
-curl -X POST -b cookies.txt -H 'Content-Type: application/json' \
-  -d '{"file":"backups/full-<时间戳>.db"}' \
-  http://127.0.0.1:8000/api/admin/backups/restore
-
-# 审计裁剪
-uv run python scripts/prune_audit.py --days 90 --dry-run   # 先统计
-uv run python scripts/prune_audit.py --days 90             # 再执行
-
-# 用户数据导出(星云工坊页「导出 CSV」按钮)
-curl -b cookies.txt http://127.0.0.1:8000/api/me/export -o my-nebula.zip
-```
+| `EMAIL_VERIFY_REQUIRED` | 注册邮箱验证开关 | 生产建议 1;开启后引导管理员验证后才提权 |
+| `LANDING_SPACE` | 游客落地星云(用户名,可选) | 游客打开首页自动进入该公开星云;用户名仅服务端配置,不出现在 URL/界面 |
+| `IMPORT_DIR` | AI 书籍导入上传临时目录(可选) | 缺省 `<项目>/data/imports`(服务账号可写);目录须服务账号可写 |

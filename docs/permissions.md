@@ -1,12 +1,8 @@
 # 权限矩阵梳理（admin / VIP / 普通用户 / 游客）
 
-> 梳理日期:2026-08-26(2026-08-28 更新:公共星云/官方图谱概念移除)
-> 梳理对象:当前代码的实际行为(schema v27)。「AI 草稿」模型已按产品决策定型:
-> **导入者 = 审核者 = 发布到自己星云**;普通用户无 AI 导入;多 admin 各自独立、
-> 互不审核。
-> 公共星云/官方图谱概念已于 2026-08-28 移除:不存在默认视图,功能栏「公共星云」
-> 标签与 `/api/*` 默认视图端点随之删除;登录用户首页即自己的星云。
-> 与 `docs/to-do.md`、`docs/data_schema.md` 配套阅读。
+> 梳理对象:当前代码实际行为(schema v27)。AI 草稿模型:导入者 = 审核者 =
+> 发布到自己星云;多 admin 各自独立、互不审核。公共星云/官方图谱概念已移除
+> (2026-08-28):不存在默认视图,登录用户首页即自己的星云。
 
 ## 1. 角色与身份模型
 
@@ -40,7 +36,7 @@
 | --- | --- | --- |
 | 个人星云只读六件套 | 登录(游客 401) | `app/me.py`(router `dependencies=[Depends(require_user)]`);`app/read_routes.py` |
 | 星际跃迁 | 可见性判定:目标用户 active 且 `space_visibility='public'`,或访问者是本人 / admin | `app/space.py:31-40`(`_require_visible`) |
-| 星云工坊(admin 侧)/ 用户管理 / 运维 | admin 角色 | `app/admin.py:37`(`dependencies=[Depends(require_admin)]`) |
+| 用户管理 / 运维(审计/快照) | admin 角色 | `app/admin.py`(`dependencies=[Depends(require_admin)]`);星云工坊 CRUD/导出对所有登录用户统一走 `/api/me/*`(`app/me.py`) |
 | AI 书籍导入 | admin 或 VIP | `app/book_import.py:53-55`(`require_admin_or_vip`);端点 `:338`、`:390` |
 | AI 草稿审核 | admin 或 VIP;数据范围 = 当前用户自己上传,互不审核 | `app/llm_review.py:42`(`require_admin_or_vip`);`llm_drafts` `:239`(`owner = user["id"]`);审核端点 `:752` 等(`staging_owner = user["id"]`);判重目标 = 自己星云(`_own_space_scope` `:48`) |
 | 关注 | 登录 | `app/follows.py:15`(require_user) |

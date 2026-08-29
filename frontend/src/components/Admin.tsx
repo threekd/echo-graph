@@ -85,11 +85,11 @@ function colsFor(isAdmin: boolean): Record<AdminTab, { key: string; label: strin
 
 export default function Admin() {
   const { state, dispatch } = useApp();
-  // 星云工坊对所有登录用户开放:非 admin 管理自己的空间(/api/me),
-  // admin 管理自己的星云(/api/admin,即其名下星云);日志/快照仅 admin。
+  // 星云工坊对所有登录用户开放,统一走 /api/me(admin 也是普通用户,
+  // 与后端 space_crud 同一套实现);日志/快照等平台级接口仍走 /api/admin。
   const isAdmin = state.user?.role === "admin";
   const isVip = Boolean(state.user?.vip);
-  const apiBase = isAdmin ? "/api/admin" : "/api/me";
+  const apiBase = "/api/me";
   // AI 草稿页签:admin 与 VIP 均可审核自己上传的草稿
   const tabs = isAdmin || isVip ? KINDS : KINDS.filter((k) => k.key !== "llm");
   const [kind, setKind] = useState<AdminTab>("authors");
@@ -123,7 +123,7 @@ export default function Admin() {
 
   const handleAuthError = (r: Response): boolean => {
     if (r.status === 401 || r.status === 403) {
-      setStatus("需要管理员权限(请以管理员账号登录)");
+      setStatus("登录已过期或无权访问,请重新登录后重试");
       return true;
     }
     return false;

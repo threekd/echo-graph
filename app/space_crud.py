@@ -16,6 +16,7 @@ from app.auth import admin_user_id
 from app.data_models import AuthorRow, EchoRow, WorkRow, find_duplicates
 from app.data_store import clean_row
 from app.db import invalidate_cache
+from app.entity_util import author_id_list, entity_label
 
 Kind = Literal["authors", "works", "edges"]
 KIND_TABLE = sqlite_store.KIND_TABLE  # 表名映射单一来源:sqlite_store
@@ -62,11 +63,6 @@ def _created_by_for(row: dict, owner_id: str) -> str:
     return "curated" if owner_id == admin_user_id() else "user"
 
 
-def _author_id_list(value) -> list[str]:
-    """把 works.author_id(逗号分隔,可能带空格)拆成去空后的 id 列表。"""
-    return [x.strip() for x in str(value or "").split(",") if x.strip()]
-
-
 def _work_title(conn, work_id: str | None, owner_id: str) -> str:
     row = conn.execute(
         "SELECT Title_CN FROM works WHERE id = ? AND owner_id = ?",
@@ -77,10 +73,8 @@ def _work_title(conn, work_id: str | None, owner_id: str) -> str:
 
 def _audit_label(conn, kind: Kind, row: dict, owner_id: str) -> str:
     """审计里的对象名称:作者中文名 / 作品中文名 / 涟漪 A → B。"""
-    if kind == "authors":
-        return str(row.get("Name_CN") or row.get("originalName") or row.get("id") or "")
-    if kind == "works":
-        return str(row.get("Title_CN") or row.get("originalTitle") or row.get("id") or "")
+    if kind in ("authors", "works"):
+        return entity_label(kind, row)
     return (
         f"{_work_title(conn, row.get('source_work_id'), owner_id)} → "
         f"{_work_title(conn, row.get('target_work_id'), owner_id)}"
@@ -122,7 +116,7 @@ def validate_row(conn, kind: str, row: dict, exclude_id: str | None = None, owne
             AuthorRow.model_validate(row)
         elif kind == "works":
             WorkRow.model_validate(row)
-            for aid in _author_id_list(row.get("author_id")):
+            for aid in author_id_list(row.get("author_id")):
                 if not sqlite_store.active_row_exists(conn, "authors", aid, owner_id):
                     errors.append(f"作者 id {aid} 未在作者表中找到")
         else:
@@ -253,7 +247,7 @@ def create_row(kind: Kind, row: dict, owner_id: str, actor: str) -> dict:
             conn, kind, row, owner_id=owner_id, extra=extra,
         )
         if kind == "works":
-            sqlite_store.set_work_authors(conn, row["id"], _author_id_list(row.get("author_id")))
+            sqlite_store.set_work_authors(conn, row["id"], author_id_list(row.get("author_id")))
         label = _audit_label(conn, kind, row, owner_id)
         db_sqlite.audit(
             conn, "create", kind, row.get("id"), f"新增「{label}」", after=row, actor=actor,
@@ -323,7 +317,7 @@ def update_row(
         if status == 0:
             raise HTTPException(status_code=404, detail=f"未找到 {item_id}")
         if kind == "works":
-            sqlite_store.set_work_authors(conn, item_id, _author_id_list(merged.get("author_id")))
+            sqlite_store.set_work_authors(conn, item_id, author_id_list(merged.get("author_id")))
         label = _audit_label(conn, kind, merged, owner_id)
         changes = _audit_changes(kind, existing, merged)
         detail = f"修改「{label}」" + (f": {changes}" if changes else "")

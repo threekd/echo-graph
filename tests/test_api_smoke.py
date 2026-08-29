@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app.main as main  # noqa: E402
 from app import auth, db_sqlite, sqlite_store  # noqa: E402
 from app.db import SqliteStore
-from tests._helpers import rewrite_all  # noqa: E402
+from tests._helpers import admin_crud, rewrite_all  # noqa: E402
 
 
 class ApiSmokeTest(unittest.TestCase):
@@ -68,7 +68,10 @@ class ApiSmokeTest(unittest.TestCase):
     def test_admin_and_auth_routes_registered(self) -> None:
         """管理/账号路由挂在 include 的 router 下,用 OpenAPI 路径断言。"""
         paths = main.app.openapi()["paths"]
-        self.assertIn("/api/admin/data", paths)
+        # 星云工坊 CRUD 统一走 /api/me;admin 只保留平台级接口
+        self.assertNotIn("/api/admin/data", paths)
+        self.assertNotIn("/api/admin/{kind}", paths)
+        self.assertIn("/api/admin/users", paths)
         self.assertIn("/api/admin/backups", paths)
         self.assertIn("/api/admin/audit", paths)
         self.assertIn("/api/auth/register", paths)
@@ -151,7 +154,7 @@ class ApiSmokeTest(unittest.TestCase):
                 self.assertIsInstance(resp.json()["hits"], list, q)
 
     def test_admin_create_sets_timestamps_and_reviewed_status(self) -> None:
-        import app.admin as admin
+        admin = admin_crud()
 
         res = admin.create(
             "authors",
@@ -168,7 +171,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_create_work_defaults_reading_status_unread(self) -> None:
         """新增作品默认阅读状态为「未读」。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         author = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
         self.seed([author])
@@ -182,7 +185,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_partial_update_work_reading_status(self) -> None:
         """行内编辑:只传 readingStatus 也能更新,其他字段与作者关联保留。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         a = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
         w = {
@@ -205,7 +208,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(saved["author_id"], a["id"])  # 作者关联保留
 
     def test_admin_update_bumps_updated_at_keeps_created_at(self) -> None:
-        import app.admin as admin
+        admin = admin_crud()
 
         author = {
             "id": "01a013e6-e885-766b-b9db-315d518adeeb",
@@ -236,7 +239,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_update_requires_updated_at(self) -> None:
         """乐观并发守卫:编辑必须携带 updatedAt,缺失 400。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         author = {
             "id": "01a013e6-e885-766b-b9db-315d518adeeb",
@@ -252,7 +255,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_update_optimistic_lock_conflict(self) -> None:
         """更新时 updatedAt 已被他人改动 -> 409 乐观锁冲突。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         author = {
             "id": "01a013e6-e885-766b-b9db-315d518adeeb",
@@ -269,7 +272,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_admin_get_data_includes_warnings(self) -> None:
-        import app.admin as admin
+        admin = admin_crud()
 
         authors = [
             {"id": "01a013e6-e885-766b-b9db-315d518adeeb", "originalName": "X", "Name_CN": "甲"},
@@ -282,7 +285,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_duplicate_edge_error_uses_titles(self) -> None:
         """新增重复涟漪时,400 报错应显示作品标题而不是 UUID。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1 = "01a013e8-907e-77f3-83c6-bce355a36268"
         w2 = "01a013e8-907e-77f3-83c6-bce48f19b60d"
@@ -308,7 +311,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_edge_requires_evidence_source(self) -> None:
         """新增涟漪时出处必填。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2 = (str(uuid.uuid4()) for _ in range(2))
         works = [
@@ -323,7 +326,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_delete_work_cascades_edges(self) -> None:
         """删除作品时,与其相关的涟漪边一并软删除。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2, e1, e2 = (str(uuid.uuid4()) for _ in range(4))
         works = [
@@ -346,7 +349,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_delete_author_cascades_works_and_edges(self) -> None:
         """删除作者时,其名下作品及相关涟漪边一并软删除。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         a1, a2, w1, w2, e1 = (str(uuid.uuid4()) for _ in range(5))
         authors = [
@@ -373,7 +376,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_restore_work_restores_cascade_edges(self) -> None:
         """恢复作品时,同一删除动作(相同 deletedAt)的涟漪边一并恢复,单独删除的不受影响。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2, e1, e2 = (str(uuid.uuid4()) for _ in range(4))
         ts = "2026-08-20T08:00:00+00:00"
@@ -397,7 +400,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_restore_author_restores_works_and_edges(self) -> None:
         """恢复作者时,同批删除的作品与涟漪边一并恢复。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         a1, a2, w1, w2, e1 = (str(uuid.uuid4()) for _ in range(5))
         ts = "2026-08-20T08:00:00+00:00"
@@ -424,7 +427,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_restore_edge_restores_works(self) -> None:
         """恢复涟漪边时,同批删除的源/目标作品一并恢复,避免活跃边引用已删作品。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
         ts = "2026-08-20T08:00:00+00:00"
@@ -445,7 +448,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_permanent_delete_requires_soft_deleted(self) -> None:
         """未软删除的行不允许永久删除(400)。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         author = {"id": str(uuid.uuid4()), "originalName": "A", "Name_CN": "甲"}
         self.seed([author])
@@ -455,7 +458,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_permanent_delete_work_and_edges(self) -> None:
         """软删作品后永久删除:作品与相关涟漪均物理消失,无关作品保留。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
         works = [
@@ -476,7 +479,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_permanent_delete_work_then_edge_idempotent(self) -> None:
         """永久删除作品会连带物理删除其涟漪;随后再永久删除该涟漪应幂等成功而非 404。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         w1, w2, e1 = (str(uuid.uuid4()) for _ in range(3))
         works = [
@@ -496,7 +499,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_permanent_delete_never_existed_idempotent(self) -> None:
         """未在任何空间存在的 id 按幂等 DELETE 语义返回成功(already_deleted)。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         res = admin.permanent_delete("authors", str(uuid.uuid4()))
         self.assertTrue(res["ok"])
@@ -504,7 +507,7 @@ class ApiSmokeTest(unittest.TestCase):
 
     def test_admin_permanent_delete_author_cascades(self) -> None:
         """软删作者后永久删除:作者/名下作品/相关涟漪全部物理消失。"""
-        import app.admin as admin
+        admin = admin_crud()
 
         a1, w1, w2, e1 = (str(uuid.uuid4()) for _ in range(4))
         authors = [{"id": a1, "originalName": "A", "Name_CN": "甲"}]
@@ -527,7 +530,7 @@ class ApiSmokeTest(unittest.TestCase):
         self.assertIn(w2, work_ids)  # 无关作品保留
 
     def test_admin_create_persists_and_audits(self) -> None:
-        import app.admin as admin
+        admin = admin_crud()
 
         res = admin.create("authors", {"originalName": "某", "Name_CN": "某"})
         self.assertTrue(res["ok"])

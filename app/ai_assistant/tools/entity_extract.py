@@ -202,6 +202,46 @@ def extract_work(
     return _clean_fields(raw, WORK_FIELDS)
 
 
+def resolve_work_author(
+    *,
+    work_title: str | None = None,
+    work_original_title: str | None = None,
+    work_language: str | None = None,
+    work_genre: str | None = None,
+    work_note: str | None = None,
+    model: str | None = None,
+    on_log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """作品作者缺失时的兜底:用作品信息让 LLM 解析该书作者。
+
+    涟漪作品 B 阶段输出 author=null 时调用(见 enrich_ripple_authors);
+    输入作品标题/原文名/语言/体裁/备注(至少一个标题),输出 authors 表形状。
+    传记场景明确「传主≠作者」(《时间旅人》→ 麦肯齐夫妇,而非威尔斯);
+    不确定时留空不编造。
+    """
+    payload = {
+        k: str(v).strip()
+        for k, v in {
+            "work_title": work_title,
+            "work_original_title": work_original_title,
+            "work_language": work_language,
+            "work_genre": work_genre,
+            "work_note": work_note,
+        }.items()
+        if v is not None and str(v).strip()
+    }
+    if not (payload.get("work_title") or payload.get("work_original_title")):
+        raise ValueError("至少提供一个作品标题(work_title / work_original_title)")
+    raw = _call_llm(
+        prompts.ENTITY_WORK_AUTHOR_SYSTEM_PROMPT,
+        payload,
+        model=model,
+        stage="作品作者解析",
+        on_log=on_log,
+    )
+    return _clean_fields(raw, AUTHOR_FIELDS)
+
+
 def _name_key(author: dict[str, Any]) -> str:
     """作者去重键:Name_CN 或 originalName 去空白后小写。"""
     return "".join((author.get("Name_CN") or author.get("originalName") or "").split()).lower()
@@ -223,29 +263,43 @@ def enrich_ripple_authors(
        collect_candidates_from_extract 会同时收集两处,入草稿前与上传者星云
        做基础+语义去重。
 
-    返回本次补全的作者数(空名 / 已补全 / 同名已存在跳过)。
+    返回本次补全的作者数(作者名缺失时用作品信息反向解析,见 resolve_work_author;
+    已补全 / 同名已存在跳过)。
     """
     enriched = 0
     for ripple in extract.get("ripples") or []:
         work = ripple.get("work") or {}
         author_name = (work.get("author") or "").strip()
-        if not author_name or work.get("author_info"):
+        if work.get("author_info"):
             continue
         authors = extract.setdefault("ripple_authors", [])
-        name_key = _name_key({"Name_CN": author_name})
-        all_authors = [*authors, *extract.get("authors", [])]
-        if name_key and any(_name_key(a) == name_key for a in all_authors):
-            continue  # 同名作者已在候选(源书作者或另一涟漪已补全),不重复调用
-        # 把涟漪作品信息一并传入:作品标题/语言是作者身份判定的强线索
-        # (同名作者消歧、原著文字与国籍判断),见 ENTITY_AUTHOR_SYSTEM_PROMPT。
-        info = extract_author(
-            name_cn=author_name,
-            work_title=work.get("Title_CN"),
-            work_original_title=work.get("originalTitle"),
-            work_language=work.get("language"),
-            model=model,
-            on_log=on_log,
-        )
+        if author_name:
+            name_key = _name_key({"Name_CN": author_name})
+            all_authors = [*authors, *extract.get("authors", [])]
+            if name_key and any(_name_key(a) == name_key for a in all_authors):
+                continue  # 同名作者已在候选(源书作者或另一涟漪已补全),不重复调用
+            # 把涟漪作品信息一并传入:作品标题/语言是作者身份判定的强线索
+            # (同名作者消歧、原著文字与国籍判断),见 ENTITY_AUTHOR_SYSTEM_PROMPT。
+            info = extract_author(
+                name_cn=author_name,
+                work_title=work.get("Title_CN"),
+                work_original_title=work.get("originalTitle"),
+                work_language=work.get("language"),
+                model=model,
+                on_log=on_log,
+            )
+        else:
+            # 作者名缺失:B 阶段未给出 author → 用作品信息反向解析
+            # (传记等场景明确传主≠作者),见 ENTITY_WORK_AUTHOR_SYSTEM_PROMPT。
+            info = resolve_work_author(
+                work_title=work.get("Title_CN"),
+                work_original_title=work.get("originalTitle"),
+                work_language=work.get("language"),
+                work_genre=work.get("genre"),
+                work_note=work.get("note"),
+                model=model,
+                on_log=on_log,
+            )
         if not info:
             continue
         work["author_info"] = info

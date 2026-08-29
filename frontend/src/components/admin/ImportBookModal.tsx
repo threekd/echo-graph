@@ -22,8 +22,6 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [authors, setAuthors] = useState("");
-  const [noRipples, setNoRipples] = useState(false);
-  const [basicOnly, setBasicOnly] = useState(false);
   const [phase, setPhase] = useState<"form" | "running" | "done" | "error">("form");
   const [task, setTask] = useState<BookImportTask | null>(null);
   const [message, setMessage] = useState("");
@@ -76,8 +74,6 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
     const q = new URLSearchParams();
     if (title.trim()) q.set("title", title.trim());
     if (authors.trim()) q.set("authors", authors.trim());
-    if (noRipples) q.set("no_ripples", "true");
-    if (basicOnly) q.set("basic_only", "true");
     const query = q.toString();
     setPhase("running");
     setMessage("");
@@ -122,7 +118,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
         {phase === "form" && (
           <>
             <label>
-              电子书文件(epub / txt 最佳;mobi 等需服务器 calibre;≤ 20MB)
+              电子书文件(epub最佳; 支持mobi、azw、azw3等格式; ≤ 20MB)
               <input
                 type="file"
                 accept={ACCEPT}
@@ -141,7 +137,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
             {fileError && <p className="import-error">{fileError}</p>}
             {file && <p className="import-file">已选择:{file.name}({fmtSize(file.size)})</p>}
             <label>
-              书名(可选,覆盖元数据)
+              书名(可选)
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -149,37 +145,13 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
               />
             </label>
             <label>
-              作者(可选,多个用逗号分隔)
+              作者(可选)
               <input
                 value={authors}
                 onChange={(e) => setAuthors(e.target.value)}
                 placeholder="留空则读取书籍元数据"
               />
             </label>
-            <label className="import-check">
-              <span>
-                <input
-                  type="checkbox"
-                  checked={noRipples}
-                  onChange={(e) => setNoRipples(e.target.checked)}
-                />
-                只提取作者/作品(跳过涟漪,更快)
-              </span>
-            </label>
-            <label className="import-check">
-              <span>
-                <input
-                  type="checkbox"
-                  checked={basicOnly}
-                  onChange={(e) => setBasicOnly(e.target.checked)}
-                />
-                去重只做基础匹配(不调用语义 embedding,更省时)
-              </span>
-            </label>
-            <p className="import-tip">
-              AI 解析后推送到您的「AI 草稿」(仅上传者可见),由管理员在 AI 草稿页按
-              作者 → 作品 → 涟漪 顺序审核/批准发布。解析可能需要数分钟。
-            </p>
             <div className="admin-modal-actions">
               <button onClick={onClose}>取消</button>
               <button disabled={!file} onClick={submit}>开始导入</button>
@@ -192,7 +164,7 @@ export default function ImportBookModal({ authFetch, onClose, onStatus, onImport
             <p className="import-progress">{task?.stage || "任务排队中…"}</p>
             <pre ref={logRef} className="import-log">{(task?.log || []).join("\n")}</pre>
             <div className="admin-modal-actions">
-              <button onClick={onClose}>后台执行,先关闭窗口</button>
+              <button onClick={onClose}>后台执行</button>
             </div>
           </>
         )}

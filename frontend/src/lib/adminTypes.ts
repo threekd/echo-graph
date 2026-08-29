@@ -124,6 +124,7 @@ export interface BookImportTask {
   task_id: string;
   status: "queued" | "running" | "done" | "error";
   stage: string;
+  filename: string | null;
   log: string[];
   result: {
     batch_id: string;

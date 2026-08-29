@@ -6,10 +6,11 @@
    每个涟漪含 edge / target(作品+作者) 与去重提示(hint / author_hint /
    edge_hint)。*/
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AdminRow,
   AuthorRow,
+  BookImportTask,
   DedupeHint,
   LlmDraftBatch,
   LlmDraftsData,
@@ -45,6 +46,11 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [data, setData] = useState<LlmDraftsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // 后台正在导入的书籍任务(轮询 /api/admin/import-book/tasks)
+  const [importingTasks, setImportingTasks] = useState<BookImportTask[]>([]);
+  const importingRunningRef = useRef<Set<string>>(new Set());
+  // 导入中任务卡片的折叠状态:默认折叠,点击头部展开日志
+  const [collapsedImporting, setCollapsedImporting] = useState<Set<string>>(new Set());
   const [confirmClear, setConfirmClear] = useState<{ workId: string; title: string } | null>(null);
   const [modal, setModal] = useState<EditModal | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -77,7 +83,35 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
 
   useEffect(() => { load(); }, [load, reloadKey]);
 
-  const reload = () => setReloadKey((k) => k + 1);
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // 轮询导入中任务:展示后台正在导入的书籍;任务从 running 消失后刷新草稿列表
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      authFetch("/api/admin/import-book/tasks")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+        .then((d: { items: BookImportTask[] }) => {
+          if (cancelled) return;
+          const running = d.items.filter(
+            (t) => t.status === "queued" || t.status === "running"
+          );
+          setImportingTasks(running);
+          const finished = [...importingRunningRef.current].some(
+            (id) => !running.some((t) => t.task_id === id)
+          );
+          importingRunningRef.current = new Set(running.map((t) => t.task_id));
+          if (finished) reload();
+        })
+        .catch(() => { /* 轮询失败忽略,下轮重试 */ });
+    };
+    tick();
+    const timer = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [authFetch, reload]);
 
   const toggleCollapsed = (workId: string) => {
     setUserToggled((prev) => new Set(prev).add(workId));
@@ -87,6 +121,30 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
       else next.add(workId);
       return next;
     });
+  };
+
+  const toggleImporting = (taskId: string) => {
+    setCollapsedImporting((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const cancelImport = (taskId: string) => {
+    authFetch(
+      "/api/admin/import-book/" + encodeURIComponent(taskId) + "/cancel",
+      { method: "POST" }
+    )
+      .then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || "取消失败(HTTP " + r.status + ")");
+        }
+      })
+      .then(() => onStatus("已提交取消请求,当前阶段完成后停止"))
+      .catch((e: Error) => onStatus("取消导入失败: " + e.message));
   };
 
   const call = (url: string, options?: RequestInit): Promise<any> =>
@@ -714,6 +772,51 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
             ? `；草稿：批次 ${counts.batches} · 涟漪 ${counts.ripples}`
             : ""}
         </p>
+        {importingTasks.length > 0 && (
+          <div className="llm-importing">
+            <div className="llm-toolbar">
+              <span className="llm-toolbar-title">
+                导入中批次({importingTasks.length})
+              </span>
+            </div>
+            {importingTasks.map((t) => {
+              const collapsed = !collapsedImporting.has(t.task_id); // 默认折叠
+              return (
+                <div
+                  className={"llm-importing-task" + (collapsed ? " collapsed" : "")}
+                  key={t.task_id}
+                >
+                  <div
+                    className="llm-importing-head"
+                    onClick={() => toggleImporting(t.task_id)}
+                    title={collapsed ? "展开日志" : "收起日志"}
+                  >
+                    <span
+                      className={"llm-collapse-indicator" + (collapsed ? "" : " open")}
+                      aria-hidden="true"
+                  >
+                    ▸
+                  </span>
+                  <span className="llm-importing-file">{t.filename || t.task_id}</span>
+                  <span className="llm-importing-stage">{t.stage || t.status}</span>
+                  <button
+                    className="llm-importing-cancel"
+                    onClick={(e) => {
+                      e.stopPropagation(); // 不触发整卡折叠
+                      cancelImport(t.task_id);
+                    }}
+                  >
+                    取消导入
+                  </button>
+                </div>
+                  {!collapsed && t.log && t.log.length > 0 && (
+                    <pre className="import-log">{t.log.slice(-4).join("\n")}</pre>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="llm-toolbar">
           <span className="llm-toolbar-title">待审核批次({pendingBatches.length})</span>
         </div>

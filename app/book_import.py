@@ -134,6 +134,13 @@ def _running_import_count() -> int:
         )
 
 
+def _task_cancelled(task_id: str) -> bool:
+    """任务是否收到取消请求(阶段间检查用)。"""
+    with _LOCK:
+        task = _TASKS.get(task_id)
+        return bool(task and task.get("cancelled"))
+
+
 def _cleanup_upload_dir(book_path: Path) -> None:
     """任务结束后删除上传目录(仅限 IMPORT_DIR 下的任务目录,含转换产物)。"""
     try:
@@ -173,6 +180,9 @@ def _run_import(
     """后台线程:完整执行 提取 → 去重 → 批次 → 草稿,逐步更新任务状态。"""
     batch_id = _make_id("book")
     try:
+        if _task_cancelled(task_id):
+            _update_task(task_id, status="cancelled", stage="已取消")
+            return
         # 1) AI 提取
         _update_task(task_id, status="running", stage="1/4 AI 提取书籍信息与内容(DeepSeek)")
         _append_log(task_id, f"开始解析:{book_path.name}")
@@ -197,7 +207,10 @@ def _run_import(
         n_work = 1 if (src.get("Title_CN") or src.get("originalTitle")) else 0
         _append_log(task_id, f"提取结果:作者 {n_auth} · 作品 {n_work} · 涟漪 {n_ripple}")
 
-        # 2) 去重校验
+        # 2) 去重校验(阶段间检查取消:当前阶段完成后停止,上传目录由 finally 清理)
+        if _task_cancelled(task_id):
+            _update_task(task_id, status="cancelled", stage="已取消")
+            return
         _update_task(task_id, stage="2/4 去重校验(基础匹配 + 语义辅助)")
         work_cands, author_cands = dedupe_check.collect_candidates_from_extract(extracted)
         edge_cands = dedupe_check.collect_edge_candidates_from_extract(extracted)
@@ -212,6 +225,9 @@ def _run_import(
         _append_log(task_id, "去重校验完成")
 
         # 3) 批次登记簿
+        if _task_cancelled(task_id):
+            _update_task(task_id, status="cancelled", stage="已取消")
+            return
         _update_task(task_id, stage="3/4 生成批次登记簿")
         # 草稿归属上传者(owner_id=上传者、created_by='llm'),上传者(admin/VIP)
         # 审核自己上传的草稿,批准后发布到自己的星云
@@ -230,6 +246,9 @@ def _run_import(
         )
 
         # 4) 写入 AI 草稿(上传者空间,owner_id=上传者)
+        if _task_cancelled(task_id):
+            _update_task(task_id, status="cancelled", stage="已取消")
+            return
         _update_task(task_id, stage="4/4 写入 AI 草稿(上传者空间)")
         counts = review_publish.stage_batch(batch, owner)
         llm_space.save_batch(batch)
@@ -300,6 +319,8 @@ def submit_import(
             "status": "queued",
             "stage": "排队中",
             "log": [f"任务已创建:{path.name}"],
+            "filename": path.name,
+            "cancelled": False,
             "result": None,
             "error": None,
             "user_id": user_id,
@@ -406,6 +427,48 @@ async def import_book(
         logger.exception("创建导入任务失败")
         shutil.rmtree(target_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"创建导入任务失败:{exc}") from exc
+
+
+@router.get("/import-book/tasks")
+def list_import_tasks(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
+    """列出全部导入任务(按更新时间倒序);VIP 只看自己的,admin 看全部。
+
+    供 AI 草稿页「导入中批次」展示后台正在导入的书籍;须注册在
+    /import-book/{task_id} 之前,避免 tasks 被当作 task_id 匹配。
+    """
+    with _LOCK:
+        tasks = [
+            dict(t)
+            for t in _TASKS.values()
+            if user["role"] == "admin" or t.get("user_id") == user["id"]
+        ]
+    tasks.sort(key=lambda t: t.get("updated_at") or "", reverse=True)
+    return {"items": tasks}
+
+
+@router.post("/import-book/{task_id}/cancel")
+def cancel_import(task_id: str, user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B008
+    """取消导入任务(仅创建者/admin)。
+
+    设置 cancelled 标记,运行中的线程在阶段间检查后退出并标记 cancelled;
+    上传目录(含转换产物)由 _run_import 的 finally 统一清理。当前阶段
+    (如 LLM 提取)无法强行中断,需等其返回后停止。
+    """
+    task = get_import_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="导入任务不存在(服务可能已重启)")
+    if task.get("user_id") and task["user_id"] != user["id"] and user["role"] != "admin":
+        raise HTTPException(status_code=404, detail="导入任务不存在(服务可能已重启)")
+    with _LOCK:
+        current = _TASKS[task_id]
+        if current.get("status") not in ("queued", "running"):
+            raise HTTPException(status_code=409, detail="任务已结束,无法取消")
+        current["cancelled"] = True
+        current["updated_at"] = _now_iso()
+        current["log"] = (current.get("log") or [])[-49:] + [
+            "取消请求已提交,当前阶段完成后停止"
+        ]
+    return {"ok": True, "task_id": task_id}
 
 
 @router.get("/import-book/{task_id}")

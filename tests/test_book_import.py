@@ -270,6 +270,154 @@ class BookImportTest(unittest.TestCase):
         r3 = client.get("/api/admin/import-book/" + task_id)
         self.assertEqual(r3.status_code, 200)
 
+    def test_list_import_tasks_visibility_and_filename(self) -> None:
+        """任务列表端点:返回导入中任务(含文件名);admin 看全部,VIP 只看自己的。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        self.assertIsNotNone(admin_id)
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        other = auth.register("vip2@test.local", "password123", username="viptask")
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (other["id"],))
+        # 手动登记两个任务:admin 的 running + 其他 VIP 的 queued
+        with book_import._LOCK:
+            book_import._TASKS["t-admin-0001"] = {
+                "task_id": "t-admin-0001",
+                "status": "running",
+                "stage": "2/4 去重校验",
+                "log": ["任务已创建:世界尽头与冷酷仙境.epub"],
+                "filename": "世界尽头与冷酷仙境.epub",
+                "result": None,
+                "error": None,
+                "user_id": admin_id,
+                "created_at": book_import._now_iso(),
+                "updated_at": book_import._now_iso(),
+            }
+            book_import._TASKS["t-vip2-0001"] = {
+                "task_id": "t-vip2-0001",
+                "status": "queued",
+                "stage": "排队中",
+                "log": ["任务已创建:三体.epub"],
+                "filename": "三体.epub",
+                "result": None,
+                "error": None,
+                "user_id": other["id"],
+                "created_at": book_import._now_iso(),
+                "updated_at": book_import._now_iso(),
+            }
+        self.addCleanup(book_import._TASKS.clear)
+
+        r = client.get("/api/admin/import-book/tasks")
+        self.assertEqual(r.status_code, 200, r.text)
+        items = r.json()["items"]
+        ids = {t["task_id"] for t in items}
+        self.assertIn("t-admin-0001", ids)
+        self.assertIn("t-vip2-0001", ids)
+        t = next(t for t in items if t["task_id"] == "t-admin-0001")
+        self.assertEqual(t["filename"], "世界尽头与冷酷仙境.epub")
+        self.assertEqual(t["stage"], "2/4 去重校验")
+
+        # 其他 VIP 只看自己的任务
+        client2 = TestClient(main.app, raise_server_exceptions=False)
+        client2.cookies.set(auth.SESSION_COOKIE, auth.create_session(other["id"]))
+        r2 = client2.get("/api/admin/import-book/tasks")
+        self.assertEqual(r2.status_code, 200)
+        items2 = r2.json()["items"]
+        self.assertEqual([t["task_id"] for t in items2], ["t-vip2-0001"])  # 只看自己的
+
+    def test_cancel_import(self) -> None:
+        """取消导入:设置 cancelled 标记;已结束任务 409;他人 404。"""
+        client = TestClient(main.app, raise_server_exceptions=False)
+        admin_id = auth.admin_user_id()
+        self.assertIsNotNone(admin_id)
+        client.cookies.set(auth.SESSION_COOKIE, auth.create_session(admin_id))
+        with book_import._LOCK:
+            book_import._TASKS["t-cancel-001"] = {
+                "task_id": "t-cancel-001",
+                "status": "running",
+                "stage": "1/4 AI 提取",
+                "log": [],
+                "filename": "x.epub",
+                "cancelled": False,
+                "result": None,
+                "error": None,
+                "user_id": admin_id,
+                "created_at": book_import._now_iso(),
+                "updated_at": book_import._now_iso(),
+            }
+        self.addCleanup(lambda: book_import._TASKS.pop("t-cancel-001", None))
+
+        r = client.post("/api/admin/import-book/t-cancel-001/cancel")
+        self.assertEqual(r.status_code, 200, r.text)
+        task = book_import.get_import_task("t-cancel-001")
+        self.assertTrue(task["cancelled"])
+
+        # 已结束任务不可取消
+        with book_import._LOCK:
+            book_import._TASKS["t-cancel-001"]["status"] = "done"
+        r2 = client.post("/api/admin/import-book/t-cancel-001/cancel")
+        self.assertEqual(r2.status_code, 409)
+
+        # 其他用户取消他人任务 → 404(不暴露存在性)
+        other = auth.register("vip3@test.local", "password123", username="vipthree")
+        with db_sqlite._db() as conn:
+            conn.execute("UPDATE users SET vip = 1 WHERE id = ?", (other["id"],))
+        client2 = TestClient(main.app, raise_server_exceptions=False)
+        client2.cookies.set(auth.SESSION_COOKIE, auth.create_session(other["id"]))
+        with book_import._LOCK:
+            book_import._TASKS["t-cancel-002"] = {
+                "task_id": "t-cancel-002",
+                "status": "running",
+                "stage": "1/4",
+                "log": [],
+                "filename": "y.epub",
+                "cancelled": False,
+                "result": None,
+                "error": None,
+                "user_id": admin_id,
+                "created_at": book_import._now_iso(),
+                "updated_at": book_import._now_iso(),
+            }
+        self.addCleanup(lambda: book_import._TASKS.pop("t-cancel-002", None))
+        r3 = client2.post("/api/admin/import-book/t-cancel-002/cancel")
+        self.assertEqual(r3.status_code, 404)
+
+    def test_run_import_skips_when_cancelled(self) -> None:
+        """已取消的任务:run_extract 不被调用,任务标记 cancelled。"""
+        admin_id = auth.admin_user_id()
+        with book_import._LOCK:
+            book_import._TASKS["t-cancel-003"] = {
+                "task_id": "t-cancel-003",
+                "status": "running",
+                "stage": "1/4",
+                "log": [],
+                "filename": "z.epub",
+                "cancelled": True,
+                "result": None,
+                "error": None,
+                "user_id": admin_id,
+                "created_at": book_import._now_iso(),
+                "updated_at": book_import._now_iso(),
+            }
+        self.addCleanup(lambda: book_import._TASKS.pop("t-cancel-003", None))
+        tmp_book = Path(self.tmp.name) / "cancel.epub"
+        tmp_book.write_bytes(b"x")
+        with patch(
+            "app.ai_assistant.tools.extract_source_book.run_extract"
+        ) as m:
+            book_import._run_import(
+                "t-cancel-003",
+                tmp_book,
+                title=None,
+                authors=None,
+                no_ripples=False,
+                basic_only=True,
+                uploader_id=admin_id,
+            )
+        m.assert_not_called()
+        task = book_import.get_import_task("t-cancel-003")
+        self.assertEqual(task["status"], "cancelled")
+
     def test_import_rate_limited_per_user(self) -> None:
         """每用户每小时导入次数限流(第二笔直接 429)。"""
         client = TestClient(main.app, raise_server_exceptions=False)

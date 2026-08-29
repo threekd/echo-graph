@@ -417,6 +417,24 @@ def _add_work_item(
             return it["item_id"]
     item_id = f"w{len([i for i in items if i['kind'] == 'work']) + 1}"
     cand = {k: v for k, v in payload.items() if v is not None}
+    # 附上批内作者条目的 中文/原文/英文 三形式,供 basic_match_work 的
+    # 同名异书消歧(如 伊凡·屠格涅夫 vs 伊万·屠格涅夫 靠原文名兜底)
+    author_items = {it["item_id"]: it for it in items}
+    cn_names, orig_names, en_names = [], [], []
+    for ref in author_refs:
+        p = (author_items.get(ref) or {}).get("payload") or {}
+        if p.get("Name_CN"):
+            cn_names.append(p["Name_CN"])
+        if p.get("originalName"):
+            orig_names.append(p["originalName"])
+        if p.get("Name_EN"):
+            en_names.append(p["Name_EN"])
+    if cn_names:
+        cand["_author_names"] = " ".join(cn_names)
+    if orig_names:
+        cand["_author_names_orig"] = " ".join(orig_names)
+    if en_names:
+        cand["_author_names_en"] = " ".join(en_names)
     report_entry = _match_report_work(report, cand)
     dedupe = build_dedupe_info("work", cand, report_entry, public)
     items.append(
@@ -439,6 +457,9 @@ def _add_edge_item(
     evidence: dict[str, Any],
     public: dict[str, list[dict[str, Any]]],
     report: dict[str, Any] | None = None,
+    *,
+    confidence: float | None = None,
+    confirmed: bool | None = None,
 ) -> str | None:
     """新增涟漪条目（源 → 目标）。端点在批内已确定（可能对应现有记录）。
 
@@ -448,6 +469,13 @@ def _add_edge_item(
     - 两端都复用现有作品 → 检查 admin 空间是否已有同源同目标涟漪；
     - 否则回退到去重报告的涟漪命中作为人工核对提示。
     """
+    meta: dict[str, Any] = {"mention_type": evidence.get("mention_type")}
+    # B 阶段置信度与二次判定标记落盘,供审核/分析回溯漏检与误判
+    if confidence is not None:
+        meta["confidence"] = confidence
+    if confirmed is not None:
+        meta["confirmed"] = confirmed
+
     # 批内去重:与已有涟漪同源同目标 → 合并证据
     for it in items:
         if it["kind"] != "edge":
@@ -487,7 +515,7 @@ def _add_edge_item(
                     "possible", None, None, "create",
                     "涟漪目标与源书为同一作品（自我提及），无法建边",
                 ),
-                meta={"mention_type": evidence.get("mention_type")},
+                meta=meta,
                 status=SKIPPED,
                 review_note="自动跳过:目标作品 == 源书作品",
                 error="涟漪目标与源书为同一作品，DB 约束禁止自环",
@@ -536,7 +564,7 @@ def _add_edge_item(
             source_ref=source_ref,
             target_ref=target_ref,
             dedupe=dedupe,
-            meta={"mention_type": evidence.get("mention_type")},
+            meta=meta,
         )
     )
     return item_id
@@ -652,7 +680,16 @@ def build_batch(
         if not (w.get("Title_CN") or w.get("originalTitle")):
             continue
         target = ripple_work_ids[idx]
-        _add_edge_item(items, source_work_id, target, r.get("evidence") or {}, public, report)
+        _add_edge_item(
+            items,
+            source_work_id,
+            target,
+            r.get("evidence") or {},
+            public,
+            report,
+            confidence=r.get("confidence"),
+            confirmed=r.get("_confirmed"),
+        )
 
     batch_id = f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
     return {
@@ -665,6 +702,9 @@ def build_batch(
             "input_file": None,
             "dedupe_file": None,
             "source_book": extract.get("source_book"),
+            # B 阶段被跳过的提及明细(含每条归类),随批次落盘供人工复核漏检;
+            # 见 extract_source_book.normalize_skipped
+            "skipped": extract.get("ripple_skipped") or {},
             "public_counts": {
                 "authors": len(public["authors"]),
                 "works": len(public["works"]),

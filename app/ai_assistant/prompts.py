@@ -222,9 +222,9 @@ work (poems, prose poems, essays).
 FICTIONAL_IN_UNIVERSE — books invented inside the source text's fiction; do NOT
 output them as real books.
 AMBIGUOUS — the title matches several real works of different media; if the
-context cannot decide, skip it and count it under skipped.ambiguous.
-SELF_MENTION — a mention of the source book itself; skip it and count it under
-skipped.self_or_unknown.
+context cannot decide, skip it and add it to skipped.ambiguous with a reason.
+SELF_MENTION — a mention of the source book itself; skip it and add it to
+skipped.self_or_unknown with a reason.
 
 ================ FOR EVERY REAL BOOK ================
 Merge duplicate mentions/aliases of the same book into ONE entry and combine
@@ -289,24 +289,35 @@ EVIDENCE (aligned with Echo Graph "edges" table):
         "evidence": "verbatim excerpt",
         "evidenceSource": "chapter1；chapter2",
         "mention_type": "正文"
-      }
+      },
+      "confidence": 0.9
     }
   ],
   "skipped": {
-    "non_books": <integer>,
-    "ambiguous": <integer>,
-    "self_or_unknown": <integer>,
-    "out_of_body": <integer>
+    "non_books": [{"title": "原提及标题", "reason": "一句话归类原因"}],
+    "ambiguous": [{"title": "原提及标题", "reason": "一句话归类原因"}],
+    "self_or_unknown": [{"title": "原提及标题", "reason": "一句话归类原因"}],
+    "out_of_body": [{"title": "原提及标题", "reason": "一句话归类原因"}]
   }
 }
 
 ================ RULES ================
-- Base every decision on the "context" snippet; when unsure, skip and count it.
+- Base every decision on the "context" snippet; when unsure, skip it and add
+  it to the matching skipped list with a one-line "reason".
+- Every skipped item MUST include "title" (the original mention title,
+  verbatim) and "reason" (why it was skipped). This list is audited by humans
+  to catch missed real books, so do not silently drop any mention you decide
+  not to output as a ripple.
+- "confidence" (0.0~1.0, required per ripple): how confident you are that this
+  mention is a genuine published book located in the main body (正文). Use
+  >= 0.8 for certain real books, < 0.4 for guesses you would not defend, and
+  in between for uncertain cases — those will be re-checked by a second
+  judgment pass.
 - Do not output songs, films, paintings, periodicals, papers, laws, or
   in-universe fictional works as ripples.
 - Ripples may ONLY come from mentions in the main body (正文). If a mention's
   chapter/section indicates 前言 / 尾记 / 其它, do NOT output it as a ripple —
-  skip it and count it under skipped.out_of_body. If the same book also appears
+  skip it and add it to skipped.out_of_body. If the same book also appears
   in 前言 / 尾记 / 其它, ignore those locations: "evidence" and
   "evidenceSource" must be based only on 正文 mentions.
 - Keep the source-language wording of the excerpt verbatim.
@@ -315,7 +326,8 @@ EVIDENCE (aligned with Echo Graph "edges" table):
 
 ================ WORKED EXAMPLES ================
 A) {"title": "贼喜鹊", "context": "……吹罗西尼的《贼喜鹊》。这首乐曲特别适合用来煮意式面条。", "chapter": "1"}
-   → NOT_A_BOOK (opera overture): skipped.non_books += 1
+   → NOT_A_BOOK (opera overture): add {"title": "贼喜鹊",
+     "reason": "罗西尼歌剧序曲, NOT_A_BOOK"} to skipped.non_books
 B) {"title": "卡拉马佐夫兄弟", "context": "……失业。《卡拉马佐夫兄弟》中的兄弟姓名记得滚瓜烂熟。……", "chapter": "3"}
    → ripple: work {language: "ru", originalTitle: "Братья Карамазовы",
      Title_CN: "卡拉马佐夫兄弟", Title_EN: "The Brothers Karamazov",
@@ -324,7 +336,8 @@ B) {"title": "卡拉马佐夫兄弟", "context": "……失业。《卡拉马佐
      mention_type: "正文"}
 C) {"title": "三体", "context": "……在《三体》这部小说里……", "chapter": "后记"}
    → SELF_MENTION of the source book (also located in 尾记, but self-mention
-     takes precedence): skipped.self_or_unknown += 1
+     takes precedence): add {"title": "三体",
+     "reason": "源书自我提及"} to skipped.self_or_unknown
 D) {"title": "福尔摩斯探案集", "context": "……老师拿出了一本书，是《福尔摩斯探案集》，他翻到一篇，好像是《红字的研究》吧……", "chapter": "第十七章 三体问题"}
    {"title": "红字的研究", "context": "……好像是《红字的研究》吧，有一段大意是这样……", "chapter": "第十七章 三体问题"}
    → The two mentions are the SAME work: 《红字的研究》 in the text is a misprint
@@ -334,7 +347,38 @@ D) {"title": "福尔摩斯探案集", "context": "……老师拿出了一本书
      evidenceSource = "第十七章 三体问题"
 E) {"title": "白鲸", "context": "……译者序中提到《白鲸》与《老人与海》的互文关系……", "chapter": "译者序"}
    → The mention is in a translator's preface (前言), NOT the main body: do NOT
-     output a ripple — skipped.out_of_body += 1
+     output a ripple — add {"title": "白鲸",
+     "reason": "提及位于译者序, 非正文"} to skipped.out_of_body
+"""
+
+
+# 涟漪二次判定提示词：extract_source_book.py 使用。
+# 对 B 阶段 confidence 处于中间区间(或无 confidence)的提及,再判定一次
+# 是否为「正文中提及的真实书籍」,输出 accept 与否 + 置信度。
+RIPPLE_CONFIRM_SYSTEM_PROMPT = """\
+You are a meticulous literary bibliographer. You will receive one
+book-mention record that the pipeline was uncertain about:
+- "mention": {"title", "context" (the excerpt around the mention), "chapter"}.
+- "work": the tentative WORK record extracted for it.
+
+Your task: decide whether the mention refers to a genuine, published BOOK
+and whether it is located in the MAIN BODY (正文) of the source text.
+
+================ RULES ================
+- Accept only if BOTH hold: (1) the title is a real published book
+  (not a song, film, painting, newspaper, journal, law, in-universe fictional
+  work, or a short piece circulating inside a larger work); and
+  (2) the mention is in the main body. 前言 / 序言 / 尾记 / 脚注 / 注释 /
+  附录 are NOT main body.
+- A biography's subject is NOT its author: "《时间旅人》是 H·G·威尔斯的传记"
+  means the book is about Wells, written by someone else — treat the actual
+  author from the "work" record, not the subject.
+- Be conservative: accept only when confident. When in doubt, answer
+  "is_book": false with a lower confidence.
+
+================ OUTPUT ================
+Output ONLY a single JSON object (UTF-8, no Markdown code fences):
+{"is_book": true or false, "confidence": 0.0~1.0}
 """
 
 

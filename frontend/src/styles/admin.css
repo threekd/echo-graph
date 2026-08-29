@@ -892,6 +892,11 @@ th.sortable.active .sort-icon {
   font-size: 11px;
   line-height: 1.5;
 }
+.llm-drafts .llm-source-hint {
+  /* 源书标题/源书作者的重复提示:位于批头下方,独立成行 */
+  margin: 2px 12px 0;
+  color: #ffb0b0;
+}
 .llm-drafts .llm-ripple-actions {
   margin-top: 8px;
   display: flex;

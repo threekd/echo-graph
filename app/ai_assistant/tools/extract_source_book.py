@@ -53,6 +53,13 @@ _AI_ASSISTANT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = _AI_ASSISTANT_DIR / "output" / "source_book_result.json"
 DEFAULT_CONTENT_CHARS = 1500  # 送入模型的正文样本字符数
 DEFAULT_CONTEXT_CHARS = 300  # 书内提及的上下文前后截取字符数
+# B 阶段涟漪的置信度分流阈值(与去重层 LLM 确认口径一致,0.8 为高置信):
+#   confidence >= ACCEPT      直接接受
+#   confidence <  SKIP        直接跳过(计入 skipped.low_confidence)
+#   中间区间 / 缺失            二次判定(RIPPLE_CONFIRM_SYSTEM_PROMPT)
+RIPPLE_ACCEPT_CONFIDENCE = 0.8
+RIPPLE_SKIP_CONFIDENCE = 0.4
+RIPPLE_CONFIRM_ACCEPT = 0.8
 # 非拉丁文字系统检测:用于核对「原文名/原著标题」是否使用了对应国籍/语言的文字。
 # 命中其中一个字符即视为「已使用非拉丁文字」,可覆盖日文假名、CJK、谚文、
 # 西里尔、希腊、希伯来、阿拉伯、天城文、泰文等常见原著语言。
@@ -154,6 +161,119 @@ def check_native_script(result: dict[str, Any]) -> list[str]:
     for warning in warnings:
         log(warning)
     return warnings
+
+
+SKIPPED_KEYS = (
+    "non_books",
+    "ambiguous",
+    "self_or_unknown",
+    "out_of_body",
+    "low_confidence",
+)
+
+
+def normalize_skipped(raw: Any) -> dict[str, list[dict[str, Any]]]:
+    """把 RIPPLE 返回的 skipped 归一化为 {分类: [明细条目]}。
+
+    明细条目形如 {"title", "reason"}(可能带 context/chapter),供随批次 JSON
+    落盘后人工复核漏检;LLM 输出畸形(计数/缺键/非数组)时兜底为空数组,
+    不阻断管线。
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    raw_map = raw if isinstance(raw, dict) else {}
+    for key in SKIPPED_KEYS:
+        items = raw_map.get(key)
+        if isinstance(items, list):
+            out[key] = [
+                dict(it) for it in items if isinstance(it, dict)
+            ]
+        else:
+            out[key] = []
+    return out
+
+
+def classify_ripples(
+    ripple_result: dict[str, Any],
+    confirm: Callable[[dict[str, Any]], bool],
+    *,
+    accept_threshold: float = RIPPLE_ACCEPT_CONFIDENCE,
+    skip_threshold: float = RIPPLE_SKIP_CONFIDENCE,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """按 confidence 分流 B 阶段涟漪输出。
+
+    返回 (accepted, skipped_details):
+    - confidence >= accept_threshold → 保留;
+    - confidence < skip_threshold → 跳过(计入 low_confidence 明细);
+    - 中间区间或无 confidence → 调用 confirm(ripple) 二次判定,
+      True 保留,False 跳过。畸形条目直接跳过。
+    """
+    accepted: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for ripple in ripple_result.get("ripples") or []:
+        if not isinstance(ripple, dict):
+            skipped.append({"title": "?", "reason": "输出畸形,非对象"})
+            continue
+        work = ripple.get("work") or {}
+        title = work.get("Title_CN") or work.get("originalTitle") or "?"
+        try:
+            conf = float(ripple.get("confidence"))
+        except (TypeError, ValueError):
+            conf = None
+        if conf is not None and conf >= accept_threshold:
+            accepted.append(ripple)
+        elif conf is not None and conf < skip_threshold:
+            skipped.append(
+                {
+                    "title": title,
+                    "reason": f"置信度 {conf:.2f},低于跳过阈值 {skip_threshold}",
+                }
+            )
+        elif confirm(ripple):
+            # 标记经二次判定通过(落盘审计用,见 build_batch 的 meta.confirmed)
+            ripple["_confirmed"] = True
+            accepted.append(ripple)
+        else:
+            skipped.append(
+                {
+                    "title": title,
+                    "reason": "二次判定未通过(非真实书籍/非正文/置信度不足)",
+                }
+            )
+    return accepted, skipped
+
+
+def _confirm_ripple(
+    client: Any,
+    model_name: str,
+    ripple: dict[str, Any],
+    on_log: Callable[[str], None] | None,
+) -> bool:
+    """二次判定单条涟漪:是否正文中提及的真实书籍(保守,失败即拒绝)。"""
+    work = ripple.get("work") or {}
+    evidence = ripple.get("evidence") or {}
+    payload = {
+        "mention": {
+            "title": work.get("Title_CN") or work.get("originalTitle") or "?",
+            "context": evidence.get("evidence") or "",
+            "chapter": evidence.get("evidenceSource") or "",
+        },
+        "work": {k: v for k, v in work.items() if v is not None},
+    }
+    try:
+        result = call_llm(
+            client,
+            prompts.RIPPLE_CONFIRM_SYSTEM_PROMPT,
+            payload,
+            model=model_name,
+            stage="B2 二次判定",
+            on_log=on_log,
+        )
+        conf = float(result.get("confidence") or 0)
+        return bool(result.get("is_book")) and conf >= RIPPLE_CONFIRM_ACCEPT
+    except Exception as exc:  # noqa: BLE001 - 二次判定失败按未通过处理
+        log(f"涟漪二次判定调用失败,保守跳过:{type(exc).__name__}: {exc}")
+        return False
+
 
 def _parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
@@ -377,8 +497,14 @@ def run_extract(
             stage="B 涟漪",
             on_log=on_log,
         )
-        result["ripples"] = ripple_result.get("ripples", [])
-        result["ripple_skipped"] = ripple_result.get("skipped", {})
+        result["ripples"], low_conf = classify_ripples(
+            ripple_result,
+            lambda r: _confirm_ripple(client, model_name, r, on_log),
+        )
+        result["ripple_skipped"] = normalize_skipped(ripple_result.get("skipped"))
+        result["ripple_skipped"]["low_confidence"] = low_conf
+        if low_conf:
+            log(f"涟漪低置信度/二次判定未通过:{len(low_conf)} 条,已记入 skipped")
     check_native_script(result)
     return result
 

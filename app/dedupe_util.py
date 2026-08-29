@@ -17,6 +17,36 @@ from app import db_sqlite
 # (处理同人异译,如 蕾切尔·卡逊 vs 蕾切尔·卡森、村上春树 vs 村上春樹),
 # 不触发「同名异书」降级。
 AUTHOR_SIM_SAME = 0.5
+# 较长作者名的编辑距离兜底:差异字符数 / 最大长度 <= 此值时视为同一人。
+# 解决「伊凡·屠格涅夫 vs 伊万·屠格涅夫」这类一字之差:差异在名字中段时
+# 影响两个二元组,bigram Jaccard 被长名字稀释到 0.43 < 0.5 被误判为不同人;
+# 仅对 max_len >= 4 的名字启用,避免「小仲马/大仲马」等短名(编辑距离 1/3)
+# 被误并。
+AUTHOR_EDIT_SIM_MAX = 0.4
+_EDIT_MIN_LEN = 4
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """编辑距离(DP):把一个字符串变为另一个所需的最少增/删/替换次数。"""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(
+                min(
+                    prev[j] + 1,                # 删除
+                    cur[j - 1] + 1,             # 插入
+                    prev[j - 1] + (ca != cb),   # 替换
+                )
+            )
+        prev = cur
+    return prev[-1]
 
 
 def authors_clearly_different(name_a: str | None, name_b: str | None) -> bool:
@@ -33,6 +63,12 @@ def authors_clearly_different(name_a: str | None, name_b: str | None) -> bool:
     if a == b:
         return False
     if len(a) >= 2 and len(b) >= 2 and (a in b or b in a):
+        return False
+    max_len = max(len(a), len(b))
+    if (
+        max_len >= _EDIT_MIN_LEN
+        and _levenshtein(a, b) / max_len <= AUTHOR_EDIT_SIM_MAX
+    ):
         return False
     return jaccard(char_bigrams(a), char_bigrams(b)) < AUTHOR_SIM_SAME
 
@@ -113,7 +149,11 @@ def load_rows(
                 "SELECT w.id, w.language, w.originalTitle, w.Title_CN, w.Title_EN,"
                 " w.Title_Other, w.publicationYear, w.genre, w.note, w.owner_id,"
                 " w.created_by, COALESCE(GROUP_CONCAT(DISTINCT a.Name_CN), '')"
-                "   AS author_names"
+                "   AS author_names,"
+                " COALESCE(GROUP_CONCAT(DISTINCT a.originalName), '')"
+                "   AS author_original_names,"
+                " COALESCE(GROUP_CONCAT(DISTINCT a.Name_EN), '')"
+                "   AS author_en_names"
                 " FROM works w"
                 " LEFT JOIN work_authors wa ON wa.work_id = w.id"
                 " LEFT JOIN authors a ON a.id = wa.author_id"

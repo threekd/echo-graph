@@ -106,6 +106,8 @@ def _summarize_work(row: dict[str, Any]) -> dict[str, Any]:
             "publicationYear",
             "genre",
             "author_names",
+            "author_original_names",
+            "author_en_names",
             "owner_id",
             "created_by",
         ),
@@ -141,12 +143,50 @@ def _title_variants(row: dict[str, Any]) -> list[str]:
     ]
 
 
+def _author_forms(*values: Any) -> list[str]:
+    """把若干作者名来源(逗号分隔多作者)收集为规范化形式列表(去重保序)。"""
+    out: list[str] = []
+    for value in values:
+        for part in str(value or "").split(","):
+            norm = normalize_title(part)
+            if norm and norm not in out:
+                out.append(norm)
+    return out
+
+
+def _authors_conflict(cand: dict[str, Any], row: dict[str, Any]) -> bool:
+    """候选作品与现有作品的作者是否「明显不同」(同名异书降级判定)。
+
+    候选与现有各收集 中文名 / 原文名 / 英文名 三种形式,逐对判断:
+    只要存在一对视为同一人(authors_clearly_different=False),即不判冲突。
+    任一侧无作者信息时不判不同(与旧逻辑一致:无信息宁可按 exact 复用)。
+    """
+    c_forms = _author_forms(
+        cand.get("_author_names"),
+        cand.get("_author_names_cn"),
+        cand.get("_author_names_orig"),
+        cand.get("_author_names_en"),
+        cand.get("author"),
+    )
+    e_forms = _author_forms(
+        row.get("author_names"),
+        row.get("author_original_names"),
+        row.get("author_en_names"),
+    )
+    if not c_forms or not e_forms:
+        return False
+    return all(
+        authors_clearly_different(cf, ef)
+        for cf in c_forms
+        for ef in e_forms
+    )
+
+
 def basic_match_work(
     cand: dict[str, Any], existing: list[dict[str, Any]]
 ) -> dict[str, Any]:
     """作品基础去重,返回 {level, score, existing, matched}。"""
     c_variants = _title_variants(cand)
-    c_author = normalize_title(cand.get("author") or cand.get("_author_names"))
     best: dict[str, Any] = {
         "level": "none",
         "score": 0.0,
@@ -154,7 +194,6 @@ def basic_match_work(
         "matched": [],
     }
     for row in existing:
-        row_author = normalize_title(row.get("author_names"))
         for cv in c_variants:
             if not cv:
                 continue
@@ -165,7 +204,7 @@ def basic_match_work(
                 if level == "none":
                     continue
                 # 标题完全相同但作者明显不同 → 同名异书,降级提示人工确认
-                if level == "exact" and authors_clearly_different(c_author, row_author):
+                if level == "exact" and _authors_conflict(cand, row):
                     level, score = "exact_diff_author", 0.5
                 if score > best["score"]:
                     best = {
@@ -487,7 +526,11 @@ def _work_embed_text(c: dict[str, Any]) -> str:
         c.get("Title_CN"),
         c.get("author"),
         c.get("_author_names"),
+        c.get("_author_names_orig"),
+        c.get("_author_names_en"),
         c.get("author_names"),
+        c.get("author_original_names"),
+        c.get("author_en_names"),
     ]
     return " | ".join(str(p) for p in parts if p)
 
@@ -568,7 +611,15 @@ def _work_compare_text(c: dict[str, Any]) -> str:
         value = c.get(key)
         if value:
             parts.append(f"{label}:{value}")
-    author = c.get("author") or c.get("author_names") or c.get("_author_names")
+    author = (
+        c.get("author")
+        or c.get("author_names")
+        or c.get("_author_names")
+        or c.get("author_original_names")
+        or c.get("_author_names_orig")
+        or c.get("author_en_names")
+        or c.get("_author_names_en")
+    )
     if author:
         parts.append(f"作者:{author}")
     return "；".join(parts)
@@ -736,16 +787,25 @@ def _print_summary(report: dict[str, Any]) -> None:
 # 候选收集
 # ======================================================================
 def _work_candidate_from_result(
-    w: dict[str, Any], author_names: list[str] | None = None
+    w: dict[str, Any],
+    author_names: list[str] | None = None,
+    author_original_names: list[str] | None = None,
+    author_en_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    """从 extract 结果的作品对象构造候选(附作者字符串用于消歧)。"""
+    """从 extract 结果的作品对象构造候选(附作者 中文/原文/英文 三形式用于消歧)。"""
     cand = _pick(
         w,
         ("Title_CN", "Title_EN", "originalTitle", "Title_Other", "language", "publicationYear", "genre", "author"),
     )
-    names = " ".join(n for n in (author_names or []) if n)
-    if names:
-        cand["_author_names"] = names
+
+    def _add(key: str, values: list[str] | None) -> None:
+        joined = " ".join(n for n in (values or []) if n)
+        if joined:
+            cand[key] = joined
+
+    _add("_author_names", author_names)
+    _add("_author_names_orig", author_original_names)
+    _add("_author_names_en", author_en_names)
     return cand
 
 
@@ -786,15 +846,30 @@ def collect_candidates_from_extract(
 
     src_work = data.get("work")
     if src_work:
-        src_author_names = [
-            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName")
-            for a in data.get("authors") or []
-        ]
-        work_cands.append(_work_candidate_from_result(src_work, src_author_names))
+        source_authors = data.get("authors") or []
+        work_cands.append(
+            _work_candidate_from_result(
+                src_work,
+                [a.get("Name_CN") for a in source_authors],
+                [a.get("originalName") for a in source_authors],
+                [a.get("Name_EN") for a in source_authors],
+            )
+        )
     for r in data.get("ripples") or []:
         w = r.get("work") or {}
         if w.get("Title_CN") or w.get("originalTitle"):
-            work_cands.append(_work_candidate_from_result(w, [w.get("author")]))
+            info = w.get("author_info")
+            if isinstance(info, dict):
+                work_cands.append(
+                    _work_candidate_from_result(
+                        w,
+                        [info.get("Name_CN")],
+                        [info.get("originalName")],
+                        [info.get("Name_EN")],
+                    )
+                )
+            else:
+                work_cands.append(_work_candidate_from_result(w, [w.get("author")]))
     return work_cands, author_cands
 
 
@@ -810,10 +885,21 @@ def collect_edge_candidates_from_extract(
         w = r.get("work") or {}
         if not (w.get("Title_CN") or w.get("originalTitle")):
             continue
+        info = w.get("author_info")
+        target = (
+            _work_candidate_from_result(
+                w,
+                [info.get("Name_CN")],
+                [info.get("originalName")],
+                [info.get("Name_EN")],
+            )
+            if isinstance(info, dict)
+            else _work_candidate_from_result(w, [w.get("author")])
+        )
         edge_cands.append(
             {
                 "source": _work_candidate_from_result(src),
-                "target": _work_candidate_from_result(w, [w.get("author")]),
+                "target": target,
             }
         )
     return edge_cands

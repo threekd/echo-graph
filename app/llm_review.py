@@ -72,12 +72,36 @@ def _hint_author(row: dict, user_rows: dict) -> dict[str, Any] | None:
     }
 
 
-def _hint_work(row: dict, user_rows: dict, author_names: list[str]) -> dict[str, Any] | None:
-    """作品基础匹配提示(作者名用于同名异书消歧,与去重管线同一实现)。"""
+def _author_forms(authors: list[dict]) -> dict[str, list[str]]:
+    """作者行列表 → {cn, en, orig} 三种名称形式(作品同名异书消歧用)。
+
+    与 dedupe_check 候选侧的 _author_names / _author_names_orig /
+    _author_names_en 对齐:中文名/英文名/原文名都参与比对,避免
+    「伊凡·屠格涅夫 vs 伊万·屠格涅夫」这类仅中文译名用字差异被误判。
+    """
+    return {
+        "cn": [a.get("Name_CN") or "" for a in authors],
+        "en": [a.get("Name_EN") or "" for a in authors],
+        "orig": [a.get("originalName") or "" for a in authors],
+    }
+
+
+def _hint_work(
+    row: dict, user_rows: dict, author_forms: dict[str, list[str]] | None = None
+) -> dict[str, Any] | None:
+    """作品基础匹配提示(作者 中文/原文/英文 三形式用于同名异书消歧,与去重管线同一实现)。"""
     cand = dict(row)
-    names = " ".join(n for n in author_names if n)
-    if names:
-        cand["author"] = names
+    if author_forms:
+        cn = [n for n in author_forms.get("cn") or [] if n]
+        if cn:
+            cand["author"] = " ".join(cn)
+            cand["_author_names"] = " ".join(cn)
+        orig = [n for n in author_forms.get("orig") or [] if n]
+        if orig:
+            cand["_author_names_orig"] = " ".join(orig)
+        en = [n for n in author_forms.get("en") or [] if n]
+        if en:
+            cand["_author_names_en"] = " ".join(en)
     hit = dedupe_check.basic_match_work(cand, user_rows["works"])
     if hit.get("level") == "none":
         return None
@@ -288,25 +312,17 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
             for a in r["target"]["authors"]:
                 batch_authors[a["id"]] = a
     # 作品作者名按 work_authors 解析(works 表没有 author_id 列),
-    # 供同名异书(exact_diff_author)降级判断使用
-    work_author_names: dict[str, list[str]] = {}
+    # 供同名异书(exact_diff_author)降级判断使用;三形式(中文/原文/英文)都带出
+    work_author_names: dict[str, dict[str, list[str]]] = {}
     for b in batches:
-        src_names = [
-            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
-            for a in b["source"]["authors"]
-        ]
-        work_author_names[b["source"]["work"]["id"]] = src_names
+        work_author_names[b["source"]["work"]["id"]] = _author_forms(b["source"]["authors"])
         for r in b["ripples"]:
             if not r["target"]:
                 continue
-            tgt_names = [
-                a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
-                for a in r["target"]["authors"]
-            ]
-            work_author_names[r["target"]["work"]["id"]] = tgt_names
+            work_author_names[r["target"]["work"]["id"]] = _author_forms(r["target"]["authors"])
     hints_a = {aid: _hint_author(a, user_rows) for aid, a in batch_authors.items()}
     hints_w = {
-        wid: _hint_work(w, user_rows, work_author_names.get(wid) or [])
+        wid: _hint_work(w, user_rows, work_author_names.get(wid))
         for wid, w in batch_works.items()
     }
 
@@ -894,7 +910,7 @@ def _exact_reuse_id(
     kind: Kind,
     draft_row: dict,
     user_rows: dict,
-    author_names: list[str] | None = None,
+    author_forms: dict[str, list[str]] | None = None,
 ) -> str | None:
     """精确命中判重目标库(exact)时返回可复用的行 id,否则 None。
 
@@ -904,7 +920,7 @@ def _exact_reuse_id(
     hint = (
         _hint_author(draft_row, user_rows)
         if kind == "authors"
-        else _hint_work(draft_row, user_rows, author_names or [])
+        else _hint_work(draft_row, user_rows, author_forms)
     )
     if hint and hint.get("level") == "exact":
         return hint["existing_id"]
@@ -956,14 +972,8 @@ def approve_ripple(
         if not src_authors:
             raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
 
-        src_author_names = [
-            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
-            for a in src_authors
-        ]
-        tgt_author_names = [
-            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
-            for a in tgt_authors
-        ]
+        src_author_names = _author_forms(src_authors)
+        tgt_author_names = _author_forms(tgt_authors)
 
         public_ids: dict[str, Any] = {}
         public_ids["source_authors"] = [
@@ -1033,10 +1043,7 @@ def approve_source(
         authors = _draft_work_authors(conn, work["id"], owner)
         if not authors:
             raise HTTPException(status_code=409, detail="源书作品缺少作者草稿,无法发布")
-        author_names = [
-            a.get("Name_CN") or a.get("Name_EN") or a.get("originalName") or ""
-            for a in authors
-        ]
+        author_names = _author_forms(authors)
         author_ids = [
             _publish_draft_entity(
                 conn, "authors", a, owner, admin_id,

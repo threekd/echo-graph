@@ -276,6 +276,45 @@ class LlmPipelineTest(unittest.TestCase):
         self.assertEqual(counts["staged"], 2)
         self.assertEqual(counts["failed"], 3)
 
+    def test_build_batch_persists_skipped_details(self) -> None:
+        """build_batch 把提取结果的 ripple_skipped(含每条归类)写入批次 source。"""
+        extract = _synthetic_extract()
+        extract["ripple_skipped"] = {
+            "non_books": [{"title": "贼喜鹊", "reason": "歌剧序曲"}],
+            "ambiguous": [],
+            "self_or_unknown": [],
+            "out_of_body": [{"title": "白鲸", "reason": "译者序,非正文"}],
+        }
+        batch = review_publish.build_batch(extract, None, owner_id=self.owner)
+        skipped = batch["source"]["skipped"]
+        self.assertEqual(skipped["non_books"][0]["title"], "贼喜鹊")
+        self.assertEqual(len(skipped["out_of_body"]), 1)
+        self.assertEqual(skipped["ambiguous"], [])
+
+    def test_build_batch_skipped_defaults_empty(self) -> None:
+        """无 ripple_skipped 时批次 source.skipped 为空对象(不报错)。"""
+        batch = review_publish.build_batch(_synthetic_extract(), None, owner_id=self.owner)
+        self.assertEqual(batch["source"]["skipped"], {})
+
+    def test_build_batch_persists_ripple_confidence_meta(self) -> None:
+        """涟漪条目的 meta 落盘 B 阶段 confidence 与二次判定标记。"""
+        extract = _synthetic_extract()
+        extract["ripples"][0]["confidence"] = 0.92
+        batch = review_publish.build_batch(extract, None, owner_id=self.owner)
+        edge = next(it for it in batch["items"] if it["kind"] == "edge")
+        self.assertEqual(edge["meta"]["confidence"], 0.92)
+        self.assertNotIn("confirmed", edge["meta"])  # 高置信直通,无二次判定标记
+
+    def test_build_batch_persists_ripple_confirmed_meta(self) -> None:
+        """二次判定通过的涟漪:meta 带 confirmed=true 与置信度。"""
+        extract = _synthetic_extract()
+        extract["ripples"][0]["confidence"] = 0.6
+        extract["ripples"][0]["_confirmed"] = True
+        batch = review_publish.build_batch(extract, None, owner_id=self.owner)
+        edge = next(it for it in batch["items"] if it["kind"] == "edge")
+        self.assertEqual(edge["meta"]["confidence"], 0.6)
+        self.assertTrue(edge["meta"]["confirmed"])
+
     def test_legacy_polluted_authors_not_linked_to_source_work(self) -> None:
         """旧版提取结果(涟漪作者曾混入 extract["authors"])容错:源书作品不挂涟漪作者。"""
         extract = _synthetic_extract()

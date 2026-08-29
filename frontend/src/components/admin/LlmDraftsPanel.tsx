@@ -21,12 +21,13 @@ import NodeFormModal, { type NodeKind } from "./NodeFormModal";
 
 const shortId = (id: string): string => (id.length > 8 ? id.slice(0, 8) : id);
 
-function hintText(hint: DedupeHint | null | undefined): string {
+function hintText(hint: DedupeHint | null | undefined, subject?: string): string {
   if (!hint) return "";
-  if (hint.level === "exact") return "将自动复用现有记录:" + hint.existing_label;
-  if (hint.level === "exact_diff_author") return "同名异书:" + hint.existing_label;
-  if (hint.level === "edge_duplicate") return "将自动复用现有涟漪:" + hint.existing_label;
-  return "可能重复:" + hint.existing_label;
+  const prefix = subject ? subject : "";
+  if (hint.level === "exact") return prefix + "已重定向至" + hint.existing_label;
+  if (hint.level === "exact_diff_author") return prefix + "同名异书:" + hint.existing_label;
+  if (hint.level === "edge_duplicate") return prefix + "已重定向至" + hint.existing_label;
+  return prefix + "可能重复:" + hint.existing_label;
 }
 
 interface EditModal {
@@ -512,6 +513,17 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         {renderEntityActions(b)}
       </div>
 
+      {/*
+        源书作品/作者的重复提示放在批头下方独立显示:
+        避免在 flex 批头里插行把「作品 + 作者」挤到不同行。
+      */}
+      {b.source.hint && (
+        <div className="llm-hint llm-source-hint">{hintText(b.source.hint, "作品")}</div>
+      )}
+      {b.source.author_hint && (
+        <div className="llm-hint llm-source-hint">{hintText(b.source.author_hint, "作者")}</div>
+      )}
+
       {!isCollapsed && (
       <div className="llm-batch-body">
         {(() => {
@@ -564,7 +576,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                           → 已复用《{reuseLabels?.works[r.target.work.published_to_id] ?? "?"}》
                         </span>
                       )}
-                      {r.hint && <span className="llm-hint-inline">{hintText(r.hint)}</span>}
+                      {r.hint && <span className="llm-hint-inline">{hintText(r.hint, "作品")}</span>}
                     </>
                   ) : "?"}
                 </div>
@@ -607,7 +619,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                           ))
                         : "—"}
                       {r.author_hint && (
-                        <span className="llm-hint-inline">{hintText(r.author_hint)}</span>
+                        <span className="llm-hint-inline">{hintText(r.author_hint, "作者")}</span>
                       )}
                     </>
                   ) : "—"}
@@ -627,7 +639,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
                   {note || "—"}
                 </div>
               </div>
-            {r.edge_hint && <p className="llm-hint">{hintText(r.edge_hint)}</p>}
+            {r.edge_hint && <p className="llm-hint">{hintText(r.edge_hint, "涟漪")}</p>}
             <div className="llm-ripple-actions">
               {!published && r.target && (
                 <span className="llm-ripple-actions-left">

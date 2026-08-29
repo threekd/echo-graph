@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import auth, db_sqlite
+from app.ai_assistant.tools.dedupe_check import basic_match_work
 from app.dedupe_util import authors_clearly_different, load_rows
 from tests._helpers import rewrite_all
 
@@ -23,6 +24,16 @@ class AuthorsClearlyDifferentTest(unittest.TestCase):
         self.assertFalse(authors_clearly_different("蕾切尔·卡逊", "蕾切尔·卡森"))
         self.assertFalse(authors_clearly_different("村上春树", "村上春樹"))
         self.assertFalse(authors_clearly_different("阿瑟·克拉克", "亚瑟·克拉克"))
+
+    def test_mid_name_single_char_variant_not_different(self) -> None:
+        """名字中段一字之差的长名字:伊凡/伊万·屠格涅夫是同一人(编辑距离兜底)。"""
+        self.assertFalse(authors_clearly_different("伊凡·屠格涅夫", "伊万·屠格涅夫"))
+        self.assertFalse(authors_clearly_different("约翰·克里斯托夫", "约翰·克里斯多夫"))
+
+    def test_short_name_single_char_diff_still_different(self) -> None:
+        """短名字一字之差仍是不同人(长度低于兜底下限,防止小仲马/大仲马误并)。"""
+        self.assertTrue(authors_clearly_different("小仲马", "大仲马"))
+        self.assertTrue(authors_clearly_different("杜甫", "杜牧"))
 
     def test_containment_not_different(self) -> None:
         self.assertFalse(authors_clearly_different("卡逊", "蕾切尔·卡逊（Rachel Carson）"))
@@ -86,6 +97,87 @@ class LoadRowsOwnerScopeTest(unittest.TestCase):
         )
         data = load_rows()
         self.assertEqual(len(data["authors"]), 2)
+
+    def test_works_carry_author_three_name_forms(self) -> None:
+        """作品行带出作者 中文/原文/英文 三种名称,供同名异书消歧使用。"""
+        author = {
+            "id": "01a00000-0000-7000-8000-0000000000aa",
+            "originalName": "Иван Тургенев",
+            "Name_CN": "伊万·屠格涅夫",
+            "Name_EN": "Ivan Turgenev",
+            "owner_id": self.admin["id"],
+        }
+        work = {
+            "id": "01a00000-0000-7000-8000-0000000000bb",
+            "language": "ru",
+            "originalTitle": "Рудин",
+            "Title_CN": "罗亭",
+            "author_id": author["id"],
+            "owner_id": self.admin["id"],
+        }
+        rewrite_all([author], [work], [])
+        w = load_rows(owner_id=self.admin["id"])["works"][0]
+        self.assertEqual(w["author_names"], "伊万·屠格涅夫")
+        self.assertEqual(w["author_original_names"], "Иван Тургенев")
+        self.assertEqual(w["author_en_names"], "Ivan Turgenev")
+
+
+class WorkAuthorFormsMatchTest(unittest.TestCase):
+    """作品判重:作者 中文/原文/英文 三形式都参与同名异书消歧。"""
+
+    def _existing(self, **overrides) -> dict:
+        row = {
+            "id": "w-1",
+            "Title_CN": "罗亭",
+            "originalTitle": "Рудин",
+            "Title_EN": "Rudin",
+            "author_names": "伊万·屠格涅夫",
+            "author_original_names": "",
+            "author_en_names": "",
+        }
+        row.update(overrides)
+        return row
+
+    def test_original_name_prevents_exact_diff_author(self) -> None:
+        """候选中文名「伊凡·屠格涅夫」与库中「伊万·屠格涅夫」仅译名用字差异,
+        但原文名(西里尔)一致 → 不判同名异书,保持 exact。"""
+        cand = {"Title_CN": "罗亭", "originalTitle": "Рудин", "author": "伊凡·屠格涅夫"}
+        existing = [
+            self._existing(
+                author_names="伊万·屠格涅夫",
+                author_original_names="Иван Сергеевич Тургенев",
+                author_en_names="Ivan Turgenev",
+            )
+        ]
+        hit = basic_match_work(cand, existing)
+        self.assertEqual(hit["level"], "exact")
+        self.assertEqual(hit["score"], 1.0)
+
+    def test_candidate_original_name_matches_existing_chinese(self) -> None:
+        """候选带原文名、库中只有中文名:跨形式兜底,不判不同。"""
+        cand = {
+            "Title_CN": "罗亭",
+            "originalTitle": "Рудин",
+            "author": "伊凡·屠格涅夫",
+            "_author_names_orig": "Иван Тургенев",
+        }
+        existing = [self._existing(author_names="伊万·屠格涅夫")]
+        hit = basic_match_work(cand, existing)
+        self.assertEqual(hit["level"], "exact")
+
+    def test_true_same_title_diff_author_still_downgraded(self) -> None:
+        """真·同名异书:标题相同、作者三形式都不同 → 仍降级 exact_diff_author。"""
+        cand = {"Title_CN": "白鲸", "originalTitle": "Moby Dick", "author": "赫尔曼·梅尔维尔"}
+        existing = [
+            self._existing(
+                Title_CN="白鲸",
+                originalTitle="Moby Dick",
+                author_names="另一位作者",
+                author_original_names="Other Author",
+            )
+        ]
+        hit = basic_match_work(cand, existing)
+        self.assertEqual(hit["level"], "exact_diff_author")
 
 
 if __name__ == "__main__":

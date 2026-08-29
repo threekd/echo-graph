@@ -28,6 +28,8 @@ class EnrichRippleAuthorsTest(unittest.TestCase):
                 {
                     "work": {
                         "Title_CN": "白鲸",
+                        "originalTitle": "Moby-Dick",
+                        "language": "en",
                         "author": "赫尔曼·梅尔维尔",
                     },
                     "evidence": {"evidence": "e1"},
@@ -59,19 +61,45 @@ class EnrichRippleAuthorsTest(unittest.TestCase):
 
     def test_enrich_writes_author_info_and_candidates(self) -> None:
         """补全结果写回涟漪 author_info,并存入 extract["ripple_authors"] 候选(同名去重)。"""
-        with patch.object(
-            entity_extract, "extract_author", return_value=dict(self.enriched)
-        ):
+        captured: dict = {}
+
+        def fake_extract_author(**kwargs):
+            captured.update(kwargs)
+            return dict(self.enriched)
+
+        with patch.object(entity_extract, "extract_author", side_effect=fake_extract_author):
             n = entity_extract.enrich_ripple_authors(self.extract)
 
         self.assertEqual(n, 1)  # 两个同名涟漪作者只补全一次? -> 见断言
         # 第一个涟漪写入 author_info;第二个涟漪因同名作者已补全(跳过重复调用) -> 见下
         w0 = self.extract["ripples"][0]["work"]
         self.assertEqual(w0["author_info"]["nationality"], "US")
+        # 作品信息作为作者身份参考一并传入(消歧线索)
+        self.assertEqual(captured["name_cn"], "赫尔曼·梅尔维尔")
+        self.assertEqual(captured["work_title"], "白鲸")
+        self.assertEqual(captured["work_original_title"], "Moby-Dick")
+        self.assertEqual(captured["work_language"], "en")
         # 涟漪作者单独存放,不再混入源书作者 extract["authors"]
         self.assertEqual([a["Name_CN"] for a in self.extract["authors"]], ["源书作者"])
         names = [a["Name_CN"] for a in self.extract["ripple_authors"]]
         self.assertEqual(names.count("赫尔曼·梅尔维尔"), 1)
+
+    def test_enrich_skips_work_fields_when_absent(self) -> None:
+        """涟漪作品只有作者名、无标题/语言时,补全调用传入空作品字段
+        (build_author_payload 会在载荷层过滤,实际发给 LLM 的 JSON 不含 work_*)。"""
+        captured: dict = {}
+
+        def fake_extract_author(**kwargs):
+            captured.update(kwargs)
+            return dict(self.enriched)
+
+        self.extract["ripples"][0]["work"] = {"author": "赫尔曼·梅尔维尔"}
+        with patch.object(entity_extract, "extract_author", side_effect=fake_extract_author):
+            entity_extract.enrich_ripple_authors(self.extract)
+        self.assertEqual(captured["name_cn"], "赫尔曼·梅尔维尔")
+        self.assertIsNone(captured["work_title"])
+        self.assertIsNone(captured["work_original_title"])
+        self.assertIsNone(captured["work_language"])
 
     def test_skip_when_no_author_or_already_enriched(self) -> None:
         """空作者跳过;已补全(重复运行)不再调用 LLM。"""
@@ -114,6 +142,40 @@ class EntityExtractTest(unittest.TestCase):
         self.assertEqual(captured["payload"], {"name_cn": "村上春树", "name_en": "Haruki Murakami"})
         self.assertEqual(result["Name_CN"], "村上春树")
         self.assertEqual(result["nationality"], "JP")
+
+    def test_extract_author_payload_includes_work_ref(self) -> None:
+        """传入作品参考时,载荷包含 work_* 字段(供模型消歧同名作者)。"""
+        captured: dict = {}
+
+        def fake_stream(client, messages, **kwargs):
+            captured["payload"] = json.loads(messages[1]["content"])
+            return (
+                '{"originalName":"Herman Melville","Name_CN":"赫尔曼·梅尔维尔",'
+                '"Name_EN":"Herman Melville","nationality":"US","birthYear":1819,'
+                '"deathYear":1891,"note":"美国小说家。"}',
+                "",
+            )
+
+        with patch.object(entity_extract.llm_client, "load_environment", return_value=("k", "u")), \
+             patch.object(entity_extract.llm_client, "create_client", return_value=object()), \
+             patch.object(entity_extract.llm_client, "stream_completion", side_effect=fake_stream):
+            result = entity_extract.extract_author(
+                name_cn="赫尔曼·梅尔维尔",
+                work_title="白鲸",
+                work_original_title="Moby-Dick",
+                work_language="en",
+            )
+
+        self.assertEqual(
+            captured["payload"],
+            {
+                "name_cn": "赫尔曼·梅尔维尔",
+                "work_title": "白鲸",
+                "work_original_title": "Moby-Dick",
+                "work_language": "en",
+            },
+        )
+        self.assertEqual(result["nationality"], "US")
 
     def test_extract_work_payload_and_prompt(self) -> None:
         """作品补全:载荷含标题与作者,使用 ENTITY_WORK_SYSTEM_PROMPT。"""
@@ -162,7 +224,9 @@ class EntityExtractTest(unittest.TestCase):
             entity_extract.build_work_payload(author="村上春树")
 
     def test_payload_ignores_blank_inputs(self) -> None:
-        payload = entity_extract.build_author_payload(name_cn="  村上春树  ", name_en="")
+        payload = entity_extract.build_author_payload(
+            name_cn="  村上春树  ", name_en="", work_title="  ", work_language=None
+        )
         self.assertEqual(payload, {"name_cn": "村上春树"})
 
 

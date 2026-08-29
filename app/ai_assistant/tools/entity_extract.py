@@ -67,18 +67,28 @@ def build_author_payload(
     original_name: str | None = None,
     name_cn: str | None = None,
     name_en: str | None = None,
+    work_title: str | None = None,
+    work_original_title: str | None = None,
+    work_language: str | None = None,
 ) -> dict[str, str]:
-    """构造作者补全载荷(只含非空输入);至少一个名称参数,否则抛 ValueError。"""
+    """构造作者补全载荷(只含非空输入);至少一个名称参数,否则抛 ValueError。
+
+    work_* 为可选的「作者所著作品」参考(涟漪作者补全时传入作品标题/语言,
+    帮助模型消歧同名作者、判断原著文字与国籍),不作为必填。
+    """
     payload = {
         k: v.strip()
         for k, v in {
             "original_name": original_name,
             "name_cn": name_cn,
             "name_en": name_en,
+            "work_title": work_title,
+            "work_original_title": work_original_title,
+            "work_language": work_language,
         }.items()
         if v and str(v).strip()
     }
-    if not payload:
+    if not any(k in payload for k in ("original_name", "name_cn", "name_en")):
         raise ValueError("至少提供一个作者名称参数(original_name / name_cn / name_en)")
     return payload
 
@@ -141,14 +151,20 @@ def extract_author(
     original_name: str | None = None,
     name_cn: str | None = None,
     name_en: str | None = None,
+    work_title: str | None = None,
+    work_original_title: str | None = None,
+    work_language: str | None = None,
     model: str | None = None,
     on_log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """给定作者姓名的任一/多个形式,调用 LLM 补全为符合 authors 表结构的记录。"""
+    """给定作者姓名的任一/多个形式(+ 可选所著作品参考),补全为 authors 表记录。"""
     payload = build_author_payload(
         original_name=original_name,
         name_cn=name_cn,
         name_en=name_en,
+        work_title=work_title,
+        work_original_title=work_original_title,
+        work_language=work_language,
     )
     raw = _call_llm(
         prompts.ENTITY_AUTHOR_SYSTEM_PROMPT,
@@ -220,7 +236,16 @@ def enrich_ripple_authors(
         all_authors = [*authors, *extract.get("authors", [])]
         if name_key and any(_name_key(a) == name_key for a in all_authors):
             continue  # 同名作者已在候选(源书作者或另一涟漪已补全),不重复调用
-        info = extract_author(name_cn=author_name, model=model, on_log=on_log)
+        # 把涟漪作品信息一并传入:作品标题/语言是作者身份判定的强线索
+        # (同名作者消歧、原著文字与国籍判断),见 ENTITY_AUTHOR_SYSTEM_PROMPT。
+        info = extract_author(
+            name_cn=author_name,
+            work_title=work.get("Title_CN"),
+            work_original_title=work.get("originalTitle"),
+            work_language=work.get("language"),
+            model=model,
+            on_log=on_log,
+        )
         if not info:
             continue
         work["author_info"] = info

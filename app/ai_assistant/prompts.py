@@ -381,6 +381,10 @@ will receive a JSON object with one or more fields identifying a real author:
   (e.g. 「村上春樹」, 「Лев Толстой」).
 - "name_cn": a Chinese rendering of the name (e.g. 村上春树, 列夫·托尔斯泰).
 - "name_en": a Latin-alphabet rendering (e.g. Haruki Murakami, Leo Tolstoy).
+- "work_title": a title of a work by this author (e.g. 白鲸, 挪威的森林) —
+  a strong disambiguation clue; optional.
+- "work_original_title": the original-language title of that work; optional.
+- "work_language": the language of that work (ISO 639-1); optional.
 
 Your task: identify the author and produce ONE structured record aligned with
 the Echo Graph "authors" table (see docs/data_schema.md).
@@ -389,8 +393,12 @@ the Echo Graph "authors" table (see docs/data_schema.md).
 """ + _AUTHOR_FIELDS + """\
 ================ RULES ================
 - At least one input field is always provided; cross-check it against your
-  knowledge to identify the author. If the input could match several real
-  authors, choose the most famous / most likely one and mention it in "note".
+  knowledge to identify the author. When "work_title" / "work_original_title"
+  is provided, treat it as strong evidence: the author must be the one who
+  wrote that work (use it to disambiguate same-name authors and to judge the
+  author's nationality and the script of "originalName"). If the input could
+  still match several real authors, choose the most famous / most likely one
+  and mention it in "note".
 - Never invent facts or fictional authors: leave unknown fields null.
 - originalName must follow the author's nationality — written in the
   corresponding script (Cyrillic / Japanese / Chinese / Hangul / Greek /

@@ -74,6 +74,21 @@ describe("authorViewData", () => {
     expect(data.nodes.map((n) => n.id).sort()).toEqual(["a1", "w1", "w2", "w3", "w4"]);
   });
 
+  it("扩散到的作品的相关作者也加入视图(含 authored 边)", () => {
+    const withAuthor: any = {
+      nodes: [
+        author,
+        { id: "a2", type: "author", label: "B" },
+        { id: "w1", type: "work", label: "W1", author_id: "a1" },
+        { id: "w3", type: "work", label: "W3", author_id: "a2" },
+      ],
+      edges: [{ source: "w1", target: "w3", type: "echo" }],
+    };
+    const data = authorViewData(author, 2, withAuthor);
+    expect(data.nodes.map((n) => n.id).sort()).toEqual(["a1", "a2", "w1", "w3"]);
+    expect(data.edges).toContainEqual({ source: "w3", target: "a2", type: "authored" });
+  });
+
   it("包含合著作品(author_ids 数组)", () => {
     const coAuthor = { id: "a2", type: "author", label: "B" };
     const full: any = {
@@ -86,8 +101,11 @@ describe("authorViewData", () => {
       edges: [],
     };
     const data = authorViewData(coAuthor, 1, full);
-    expect(data.nodes.map((n) => n.id).sort()).toEqual(["a2", "w2"]);
-    expect(data.edges).toEqual([{ source: "w2", target: "a2", type: "authored" }]);
+    expect(data.nodes.map((n) => n.id).sort()).toEqual(["a1", "a2", "w2"]);
+    expect(data.edges).toEqual([
+      { source: "w2", target: "a1", type: "authored" },
+      { source: "w2", target: "a2", type: "authored" },
+    ]);
   });
 });
 
@@ -106,6 +124,28 @@ describe("首载深链渲染(显式 fullData)", () => {
     renderAuthorView(author, { hops: 1, fullData });
     const data = dispatched.find((a) => a.type === "SET_VIEW_DATA")?.data;
     expect(data.nodes.map((n: any) => n.id).sort()).toEqual(["a1", "w1"]);
+  });
+
+  it("showAuthors=false 时隐藏相关作者但保留中心作者锚点", () => {
+    const author = { id: "a1", type: "author", label: "A" };
+    const fullData: any = {
+      nodes: [
+        author,
+        { id: "a2", type: "author", label: "B" },
+        { id: "w1", type: "work", label: "W1", author_id: "a1" },
+        { id: "w3", type: "work", label: "W3", author_id: "a2" },
+      ],
+      edges: [{ source: "w1", target: "w3", type: "echo" }],
+    };
+    const dispatched = withEmptyState();
+    renderAuthorView(author, { hops: 2, fullData, showAuthors: false });
+    const data = dispatched.find((a) => a.type === "SET_VIEW_DATA")?.data;
+    const ids = (data.nodes as any[]).map((n) => n.id).sort();
+    expect(ids).toEqual(["a1", "w1", "w3"]); // 中心作者保留
+    expect(ids).not.toContain("a2");
+    expect(data.edges).toContainEqual({ source: "w1", target: "a1", type: "authored" });
+    expect(data.edges).toContainEqual({ source: "w1", target: "w3", type: "echo" });
+    expect((data.edges as any[]).some((e) => e.type === "authored" && e.target === "a2")).toBe(false);
   });
 
   it("renderRipple 在 state 未刷新时也能渲染中心与邻居作品", () => {

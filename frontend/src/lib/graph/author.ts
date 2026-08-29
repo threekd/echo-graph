@@ -1,5 +1,10 @@
 // 作者视图:作者名下作品为基底,沿 ECHO(无向)向外扩散
-import { isAnonymousAuthor, filterAuthorIslands, workAuthorIds, maxEchoHops } from "../graphData";
+import {
+  filterAuthorIslands,
+  isAnonymousAuthor,
+  workAuthorIds,
+  maxEchoHops,
+} from "../graphData";
 import type { GraphData, GraphNode } from "../../store";
 import { dispatch, findNode, getState } from "./state";
 import { commitView, syncUrl, type ViewOpts } from "./view";
@@ -26,15 +31,55 @@ export function authorViewData(author: GraphNode, hops: number, fullData: GraphD
   }
   const ids = new Set(dist.keys());
   const nodes: GraphNode[] = [author];
+  const authorById = new Map<string, GraphNode>();
   fullData.nodes.forEach((n) => {
-    if (n.type === "work" && ids.has(n.id)) nodes.push(n);
+    if (n.type === "author") authorById.set(n.id, n);
+  });
+  // 相关作者:扩散到作品的全部作者(含合著者)一并加入视图,供「作家节点」开关控制
+  const relatedAuthorIds = new Set<string>([author.id]);
+  fullData.nodes.forEach((n) => {
+    if (n.type !== "work" || !ids.has(n.id)) return;
+    nodes.push(n);
+    workAuthorIds(n).forEach((aid) => {
+      if (relatedAuthorIds.has(aid)) return;
+      const related = authorById.get(aid);
+      if (related) {
+        relatedAuthorIds.add(aid);
+        nodes.push(related);
+      }
+    });
   });
   const edges: any[] = [];
-  works.forEach((w) => edges.push({ source: w.id, target: author.id, type: "authored" }));
+  // authored 边:ids 中作品的作者归属(去重)
+  const authoredKeys = new Set<string>();
+  fullData.nodes.forEach((n) => {
+    if (n.type !== "work" || !ids.has(n.id)) return;
+    workAuthorIds(n).forEach((aid) => {
+      if (!relatedAuthorIds.has(aid)) return;
+      const key = n.id + "->" + aid;
+      if (!authoredKeys.has(key)) {
+        authoredKeys.add(key);
+        edges.push({ source: n.id, target: aid, type: "authored" });
+      }
+    });
+  });
   fullData.edges.forEach((e) => {
     if (e.type === "echo" && ids.has(e.source) && ids.has(e.target)) edges.push({ ...e });
   });
   return { nodes, edges };
+}
+
+// 作者视图的作家节点开关:隐藏相关作者,但保留中心作者作为视图锚点
+// (其 authored 边随之保留;相关作者的 authored 边被过滤)
+function filterRelatedAuthors(data: GraphData, keepAuthorId: string): GraphData {
+  const visibleIds: Record<string, boolean> = {};
+  data.nodes.forEach((n) => {
+    if (n.type !== "author" || n.id === keepAuthorId) visibleIds[n.id] = true;
+  });
+  return {
+    nodes: data.nodes.filter((n) => visibleIds[n.id]),
+    edges: data.edges.filter((e) => visibleIds[e.source] && visibleIds[e.target]),
+  };
 }
 
 export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
@@ -56,6 +101,7 @@ export function renderAuthorView(author: GraphNode, opts?: ViewOpts) {
   dispatch({ type: "SET_AUTHOR", id: author.id });
   dispatch({ type: "SET_PANEL", panel: { type: "author", author } });
   let data = authorViewData(author, hops, fullData);
+  if (!showAuthors) data = filterRelatedAuthors(data, author.id); // 隐藏相关作者,保留中心锚点
   if (!showIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛作品
   commitView("author", data, opts || {});
   syncUrl({
@@ -70,6 +116,7 @@ export function expandAuthorDebounced(hops: number) {
   if (!author) return;
   dispatch({ type: "SET_EXPAND", value: hops });
   let data = authorViewData(author, hops, st.fullData);
+  if (!st.showAuthors) data = filterRelatedAuthors(data, author.id);
   if (!st.showIslands) data = filterAuthorIslands(data); // 作者视图隐藏孤岛作品
   dispatch({ type: "SET_VIEW_DATA", data });
   const works = data.nodes.filter((n) => n.type === "work").length;

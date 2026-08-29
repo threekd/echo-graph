@@ -183,6 +183,21 @@ def _space_rows(owner: str) -> dict:
     }
 
 
+def _batch_is_pending(b: dict) -> bool:
+    """批次是否含待审核内容(与前端 draftCountOf 判定一致)。
+
+    有待审核(draft)涟漪,或无涟漪孤儿批次源书未发布 → pending;
+    已审核/驳回(全部 published_to_id 非空或 reviewStatus=rejected) → 非 pending。
+    """
+    if b["ripples"]:
+        return any(
+            not r["edge"].get("published_to_id")
+            and r["edge"].get("reviewStatus") != "rejected"
+            for r in b["ripples"]
+        )
+    return not bool(b["source"]["work"].get("published_to_id"))
+
+
 def _draft_batches(
     owner_id: str, space: dict[str, list[dict]] | None = None
 ) -> tuple[list[dict], list[dict]]:
@@ -297,10 +312,13 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
     # 个人库全量行(排除 AI 草稿、含 author_id),供编辑弹窗下拉(轻量,不计算 warnings)
     space_rows = _space_rows(owner)
 
-    # 收集批次内全部作者/作品,批量算去重提示(源书与目标作品都会用)
+    # 只对待审核批次收集作者/作品并计算去重提示;已审核批次前端只展示
+    # 「已复用」标记,无需「将自动复用」提示——避免每次加载都做
+    # O(草稿×星云) 的全量基础匹配(hints_w 是大头)。
     batch_works: dict[str, dict] = {}
     batch_authors: dict[str, dict] = {}
-    for b in batches:
+    pending_batches = [b for b in batches if _batch_is_pending(b)]
+    for b in pending_batches:
         src = b["source"]
         batch_works[src["work"]["id"]] = src["work"]
         for a in src["authors"]:
@@ -314,7 +332,7 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
     # 作品作者名按 work_authors 解析(works 表没有 author_id 列),
     # 供同名异书(exact_diff_author)降级判断使用;三形式(中文/原文/英文)都带出
     work_author_names: dict[str, dict[str, list[str]]] = {}
-    for b in batches:
+    for b in pending_batches:
         work_author_names[b["source"]["work"]["id"]] = _author_forms(b["source"]["authors"])
         for r in b["ripples"]:
             if not r["target"]:
@@ -369,7 +387,7 @@ def llm_drafts(user: dict = Depends(require_admin_or_vip)) -> dict:  # noqa: B00
                 return hint.get("existing_id")
             return None
 
-        for b in batches:
+        for b in pending_batches:
             for r in b["ripples"]:
                 e = r["edge"]
                 src_id = resolve_public_work(e.get("source_work_id"))

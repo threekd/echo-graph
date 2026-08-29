@@ -48,6 +48,8 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const [confirmClear, setConfirmClear] = useState<{ workId: string; title: string } | null>(null);
   const [modal, setModal] = useState<EditModal | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // 用户手动点击过折叠/展开的批次:已审核批次默认折叠,但用户展开过的保持展开
+  const [userToggled, setUserToggled] = useState<Set<string>>(new Set());
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [reuseSource, setReuseSource] = useState<{
     workId: string;
@@ -78,6 +80,7 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const reload = () => setReloadKey((k) => k + 1);
 
   const toggleCollapsed = (workId: string) => {
+    setUserToggled((prev) => new Set(prev).add(workId));
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(workId)) next.delete(workId);
@@ -396,9 +399,11 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
   const pendingBatches = data ? data.batches.filter((b) => draftCountOf(b) > 0) : [];
   const archivedBatches = data ? data.batches.filter((b) => draftCountOf(b) === 0) : [];
 
-  const renderBatchCard = (b: LlmDraftBatch) => {
+  const renderBatchCard = (b: LlmDraftBatch, defaultCollapsed = false) => {
     const workId = b.source.work.id;
-    const isCollapsed = collapsed.has(workId);
+    // 已审核批次默认折叠(除非用户手动展开过);待处理批次默认展开
+    const isCollapsed =
+      defaultCollapsed && !userToggled.has(workId) ? true : collapsed.has(workId);
     return (
     <div className={"llm-batch" + (isCollapsed ? " collapsed" : "")} key={workId}>
       <div
@@ -720,14 +725,14 @@ export default function LlmDraftsPanel({ authFetch, onStatus, onPublicChanged }:
         <p className="llm-empty">暂无待审核的 AI 草稿，可先导入书籍。</p>
       ) : (
         <>
-          {pendingBatches.map(renderBatchCard)}
+          {pendingBatches.map((b) => renderBatchCard(b))}
           {archivedBatches.length > 0 && (
             <div className="llm-archived">
               <div className="llm-archived-head" onClick={() => setArchivedOpen((o) => !o)}>
                 <span className={"llm-collapse-indicator" + (archivedOpen ? " open" : "")} aria-hidden="true">▸</span>
                 <span className="llm-toolbar-title">已审核批次({archivedBatches.length})</span>
               </div>
-              {archivedOpen && archivedBatches.map(renderBatchCard)}
+              {archivedOpen && archivedBatches.map((b) => renderBatchCard(b, true))}
             </div>
           )}
         </>

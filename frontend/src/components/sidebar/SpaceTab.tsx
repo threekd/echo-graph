@@ -293,7 +293,7 @@ export default function SpaceTab(props: SpaceTabProps) {
           <button
             id="btn-users"
             className="side-btn"
-            title="用户管理(禁用/角色/星云可见性/VIP)"
+            title=""
             onClick={() => dispatch({ type: "SET_USER_ADMIN", open: true })}
           >
             用户管理
@@ -303,7 +303,7 @@ export default function SpaceTab(props: SpaceTabProps) {
           <button
             id="btn-ops"
             className="side-btn"
-            title="运维管理(审计日志/快照备份恢复)"
+            title=""
             onClick={() => dispatch({ type: "SET_OPS", open: true })}
           >
             运维管理

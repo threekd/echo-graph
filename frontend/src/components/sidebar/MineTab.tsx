@@ -38,7 +38,7 @@ export default function MineTab(props: MineTabProps) {
                 value={profileForm.nickname}
                 maxLength={32}
                 onChange={(e) => setProfileForm((f) => ({ ...f, nickname: e.target.value }))}
-                placeholder="展示用昵称(可选,默认用用户名)"
+                placeholder=""
               />
             </label>
             <label className="settings-field">
@@ -48,7 +48,7 @@ export default function MineTab(props: MineTabProps) {
                 maxLength={500}
                 rows={4}
                 onChange={(e) => setProfileForm((f) => ({ ...f, bio: e.target.value }))}
-                placeholder="介绍一下自己(可选,最多 500 字)"
+                placeholder="介绍一下自己"
               />
             </label>
             {profileError && <div className="auth-error">{profileError}</div>}
@@ -111,7 +111,7 @@ export default function MineTab(props: MineTabProps) {
       ) : (
         <div className="settings-section">
           <h3>我的</h3>
-          <p className="settings-hint">请先登录,即可编辑个人资料并查看关注/粉丝。</p>
+          <p className="settings-hint">请先登录,即可编辑个人资料。</p>
           <button
             id="btn-mine-login"
             className="side-btn"

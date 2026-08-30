@@ -379,11 +379,9 @@ export default function Contribute() {
     <>
       <div id="admin-modal" style={{ display: "flex" }}>
         <div className="admin-modal-card">
-          <h3>点亮星空(添加到我的星云)</h3>
+          <h3>点亮星空</h3>
           <p className="contribute-hint">
-            以下内容会直接加入你的星云(仅本人可见),之后可在「星云工坊」中继续编辑。
-            下拉列表来自你自己的星云数据;搜不到时第一行「添加新作品 / 新作者」
-            会打开标准新增页面——新名称必须按新增页面完整填写后才会保存,不会自动创建。
+            添加新的涟漪数据，添加后可在「星云工坊」中继续编辑。
           </p>
           <div id="admin-form">
             <label>

@@ -171,8 +171,7 @@ export default function UserAdmin({ onClose, meId }: Props) {
         <div id="admin-status">{status}</div>
         <div className="admin-body">
           <p className="llm-tip">
-            用户管理:可禁用/启用账号、调整角色与星云可见性、维护 VIP。禁用后该用户会话立即失效;
-            不能修改自己的角色/状态,引导管理员不可禁用或降级,系统至少保留一名可用管理员。
+            用户管理:可禁用/启用账号、调整角色与星云可见性、维护 VIP。
           </p>
           {loading && items.length === 0 ? (
             <p>加载中…</p>

@@ -15,7 +15,7 @@ export default function LogoutModal({ open, onCancel, onConfirm }: LogoutModalPr
         <p>确定退出当前账号吗?</p>
         <div className="admin-modal-actions">
           <button className="del" onClick={onConfirm}>
-            确认退出
+            确认
           </button>
           <button onClick={onCancel}>取消</button>
         </div>
